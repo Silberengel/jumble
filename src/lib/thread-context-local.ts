@@ -32,6 +32,9 @@ function eventMatchesPointer(ev: Event, eventId: string): boolean {
   }
 }
 
+/** Export for thread-context fetch hooks. */
+export { eventMatchesPointer }
+
 /** Session, navigation store, archive, publication store, and timeline disk — for parent/root strips. */
 export async function resolveThreadContextEventFromLocalStores(
   eventId: string,

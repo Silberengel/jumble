@@ -136,15 +136,26 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
   const rootInitialEvent = useMemo(() => {
     if (!finalEvent) return undefined
     const rootHex = getRootEventHexId(finalEvent)?.toLowerCase()
-    if (!rootHex || !/^[0-9a-f]{64}$/i.test(rootHex)) return undefined
-    const resolved = resolveDeclaredThreadRootEventHex(rootHex)
-    return client.peekSessionCachedEvent(resolved) ?? client.peekSessionCachedEvent(rootHex)
+    if (rootHex && /^[0-9a-f]{64}$/i.test(rootHex)) {
+      const resolved = resolveDeclaredThreadRootEventHex(rootHex)
+      return (
+        resolveNoteEventSync(resolved) ??
+        resolveNoteEventSync(rootHex) ??
+        resolveNoteEventSync(getRootBech32Id(finalEvent) ?? '')
+      )
+    }
+    const rootBech32 = getRootBech32Id(finalEvent)
+    return rootBech32 ? resolveNoteEventSync(rootBech32) : undefined
   }, [finalEvent])
   const parentInitialEvent = useMemo(() => {
     if (!finalEvent) return undefined
+    const parentBech32 = getParentBech32Id(finalEvent)
+    if (parentBech32) {
+      const sync = resolveNoteEventSync(parentBech32)
+      if (sync) return sync
+    }
     const parentHex = getParentEventHexId(finalEvent)?.toLowerCase()
-    if (!parentHex || !/^[0-9a-f]{64}$/i.test(parentHex)) return undefined
-    return client.peekSessionCachedEvent(parentHex)
+    return parentHex ? resolveNoteEventSync(parentHex) : undefined
   }, [finalEvent])
   const { isFetching: isFetchingRootEvent, event: rootEvent, refetch: refetchRoot } =
     useFetchThreadContextEvent(rootEventId, finalEvent, 'root', rootInitialEvent)
@@ -156,6 +167,13 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
     rootEvent && selfHex && rootEvent.id.toLowerCase() !== selfHex ? rootEvent : undefined
   const parentEventForStrip =
     parentEvent && selfHex && parentEvent.id.toLowerCase() !== selfHex ? parentEvent : undefined
+  /** When root === parent, root fetch can miss while parent is already cached from the feed blurb. */
+  const effectiveRootEventForStrip = useMemo(() => {
+    if (rootEventForStrip) return rootEventForStrip
+    if (!parentEventForStrip || !rootEventId || !parentEventId) return undefined
+    if (!eventPointersReferenceSameNote(rootEventId, parentEventId)) return undefined
+    return parentEventForStrip
+  }, [rootEventForStrip, parentEventForStrip, rootEventId, parentEventId])
   const { pubkey } = useNostr()
   const { relays: statsRelays, currentRelaysKey } = useNoteStatsRelayHints()
 
@@ -534,13 +552,13 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
         {rootEventId && (
           <ParentNote
             key={`thread-root-${finalEvent.id}`}
-            isFetching={isFetchingRootEvent && !rootEventForStrip}
-            event={rootEventForStrip}
+            isFetching={isFetchingRootEvent && !effectiveRootEventForStrip}
+            event={effectiveRootEventForStrip}
             eventBech32Id={rootEventId}
             isConsecutive={
               !parentEventId ||
               eventPointersReferenceSameNote(parentEventId, rootEventId) ||
-              isConsecutive(rootEventForStrip, parentEventForStrip)
+              isConsecutive(effectiveRootEventForStrip, parentEventForStrip)
             }
           />
         )}
@@ -553,12 +571,12 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
               event={parentEventForStrip}
               eventBech32Id={parentEventId}
               isFetching={false}
-              isConsecutive={isConsecutive(rootEventForStrip, parentEventForStrip)}
+              isConsecutive={isConsecutive(effectiveRootEventForStrip, parentEventForStrip)}
             />
           ) : isFetchingParentEvent ? (
             <ThreadContextSkeleton key={`parent-note-skeleton-${finalEvent.id}`} />
           ) : null)}
-        {(rootEventForStrip || parentEventForStrip) && <Separator className="my-3" />}
+        {(effectiveRootEventForStrip || parentEventForStrip) && <Separator className="my-3" />}
         <Note
           key={`note-${finalEvent.id}`}
           event={finalEvent}

@@ -1,7 +1,11 @@
 import { THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
 import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
-import { resolveThreadContextEventFromLocalStores } from '@/lib/thread-context-local'
+import { resolveNoteEventSync } from '@/lib/resolve-note-event-sync'
+import {
+  eventMatchesPointer,
+  resolveThreadContextEventFromLocalStores
+} from '@/lib/thread-context-local'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -10,7 +14,7 @@ import { getParentETag, getRootETag } from '@/lib/event'
 import { buildThreadContextFetchRelayUrls } from '@/lib/thread-context-relays'
 import client, { eventService } from '@/services/client.service'
 import { Event } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 export type ThreadContextRole = 'parent' | 'root'
 
@@ -52,9 +56,16 @@ export function useFetchThreadContextEvent(
   const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReplyIngress()
   const [error, setError] = useState<Error | null>(null)
-  const [event, setEvent] = useState<Event | undefined>(initialEvent)
-  const [isFetching, setIsFetching] = useState(!initialEvent)
+  const [event, setEvent] = useState<Event | undefined>(() =>
+    eventId ? resolveNoteEventSync(eventId, initialEvent) : initialEvent
+  )
+  const [isFetching, setIsFetching] = useState(() => {
+    if (!eventId) return false
+    return !resolveNoteEventSync(eventId, initialEvent)
+  })
   const [refetchToken, setRefetchToken] = useState(0)
+  const eventRef = useRef(event)
+  eventRef.current = event
 
   const refetch = useCallback(() => {
     setRefetchToken((n) => n + 1)
@@ -83,6 +94,18 @@ export function useFetchThreadContextEvent(
 
     const skipShortcuts = refetchToken > 0
 
+    if (!skipShortcuts) {
+      const syncHit = resolveNoteEventSync(eventId, initialEvent)
+      if (syncHit && !isEventDeleted(syncHit)) {
+        setEvent(syncHit)
+        addReplies([syncHit])
+        setIsFetching(false)
+        return () => {
+          cancelled = true
+        }
+      }
+    }
+
     void (async () => {
       if (!skipShortcuts) {
         const local = await resolveThreadContextEventFromLocalStores(eventId, initialEvent)
@@ -95,7 +118,15 @@ export function useFetchThreadContextEvent(
         }
       }
 
-      setEvent(undefined)
+      const cachedWhileFetching =
+        resolveNoteEventSync(eventId, initialEvent) ??
+        (eventRef.current && eventMatchesPointer(eventRef.current, eventId)
+          ? eventRef.current
+          : undefined)
+
+      if (!cachedWhileFetching) {
+        setEvent(undefined)
+      }
       setError(null)
       setIsFetching(true)
 
@@ -137,12 +168,18 @@ export function useFetchThreadContextEvent(
           setEvent(fetchedEvent)
           addReplies([fetchedEvent])
         } else {
-          setEvent(undefined)
+          const fallback =
+            resolveNoteEventSync(eventId, initialEvent) ??
+            (cachedWhileFetching && !isEventDeleted(cachedWhileFetching)
+              ? cachedWhileFetching
+              : undefined)
+          setEvent(fallback)
         }
       } catch (err) {
         if (!cancelled) {
           setError(err as Error)
-          setEvent(undefined)
+          const fallback = resolveNoteEventSync(eventId, initialEvent)
+          setEvent(fallback && !isEventDeleted(fallback) ? fallback : undefined)
         }
       } finally {
         if (!cancelled) {

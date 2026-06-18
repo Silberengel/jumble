@@ -1,7 +1,7 @@
 import { memo } from 'react'
 import { ExtendedKind, isNip52CalendarCardKind } from '@/constants'
 import { Separator } from '@/components/ui/separator'
-import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
+import { getCachedThreadContextEvents, seedThreadContextForNavigation } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'
 import { preloadNotePageChunk } from '@/pages/secondary/NotePage/NotePageRoute'
 import { useSmartNoteNavigationOptional } from '@/PageManager'
@@ -121,7 +121,10 @@ function MainNoteCard({
             ? event
             : undefined
         )
-        navigateToNote(noteUrl, event, getCachedThreadContextEvents(event))
+        void (async () => {
+          await seedThreadContextForNavigation(event)
+          navigateToNote(noteUrl, event, getCachedThreadContextEvents(event))
+        })()
       }}
     >
       <div

@@ -1,5 +1,12 @@
-import { getParentBech32Id, getRootBech32Id } from '@/lib/event'
+import {
+  getParentBech32Id,
+  getParentEventHexId,
+  getRootBech32Id,
+  getRootEventHexId,
+  resolveDeclaredThreadRootEventHex
+} from '@/lib/event'
 import { toNote } from '@/lib/link'
+import { resolveNoteEventSync } from '@/lib/resolve-note-event-sync'
 import { prefetchThreadContextForNavigation } from '@/lib/thread-context-local'
 import client from '@/services/client.service'
 import type { Event } from 'nostr-tools'
@@ -12,13 +19,22 @@ import { navigationEventStore } from '@/services/navigation-event-store'
  */
 export function getCachedThreadContextEvents(forEvent: Event): Event[] {
   const byId = new Map<string, Event>()
-  const tryAdd = (bech32OrHex?: string) => {
-    if (!bech32OrHex?.trim()) return
-    const ev = client.peekSessionCachedEvent(bech32OrHex.trim())
+  const tryAdd = (pointer?: string) => {
+    if (!pointer?.trim()) return
+    const ev = resolveNoteEventSync(pointer.trim())
     if (ev) byId.set(ev.id.toLowerCase(), ev)
   }
   tryAdd(getParentBech32Id(forEvent))
   tryAdd(getRootBech32Id(forEvent))
+  const parentHex = getParentEventHexId(forEvent)?.toLowerCase()
+  const rootHex = getRootEventHexId(forEvent)?.toLowerCase()
+  if (parentHex) tryAdd(parentHex)
+  if (rootHex) {
+    tryAdd(rootHex)
+    if (/^[0-9a-f]{64}$/i.test(rootHex)) {
+      tryAdd(resolveDeclaredThreadRootEventHex(rootHex))
+    }
+  }
   return [...byId.values()]
 }
 
