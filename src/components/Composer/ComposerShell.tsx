@@ -3,7 +3,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useVisualViewportInset } from '@/hooks/useVisualViewportInset'
 import { cn } from '@/lib/utils'
 import { ChevronLeft } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useRef } from 'react'
 
 export type ComposerShellProps = {
   titlebar?: ReactNode
@@ -26,9 +26,27 @@ export function ComposerShell({
   pinFooterToViewport = false
 }: ComposerShellProps) {
   const { bottomInset } = useVisualViewportInset()
+  const shellRef = useRef<HTMLDivElement>(null)
+  const footerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!pinFooterToViewport || !footer) return
+    const shell = shellRef.current
+    const footerEl = footerRef.current
+    if (!shell || !footerEl) return
+
+    const syncSpacer = () => {
+      shell.style.setProperty('--composer-footer-spacer', `${footerEl.offsetHeight}px`)
+    }
+    syncSpacer()
+    const ro = new ResizeObserver(syncSpacer)
+    ro.observe(footerEl)
+    return () => ro.disconnect()
+  }, [pinFooterToViewport, footer])
 
   return (
     <div
+      ref={shellRef}
       className={cn(
         'flex min-h-0 min-w-0 flex-1 flex-col bg-background',
         pinFooterToViewport && 'relative',
@@ -41,6 +59,7 @@ export function ComposerShell({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">{children}</div>
       {footer ? (
         <div
+          ref={footerRef}
           className={cn(
             'shrink-0 border-t border-border bg-background',
             pinFooterToViewport && 'fixed left-0 right-0 z-[52]'
@@ -58,7 +77,7 @@ export function ComposerShell({
         </div>
       ) : null}
       {pinFooterToViewport && footer ? (
-        <div className="shrink-0" aria-hidden style={{ height: 'var(--composer-footer-spacer, 7rem)' }} />
+        <div className="shrink-0" aria-hidden style={{ height: 'var(--composer-footer-spacer, 3.5rem)' }} />
       ) : null}
     </div>
   )
@@ -68,6 +87,9 @@ export type ComposerTitlebarProps = {
   title: ReactNode
   onBack?: () => void
   backDisabled?: boolean
+  clearLabel?: string
+  onClear?: () => void
+  clearDisabled?: boolean
   publishLabel: string
   onPublish?: () => void
   publishDisabled?: boolean
@@ -79,6 +101,9 @@ export function ComposerTitlebar({
   title,
   onBack,
   backDisabled,
+  clearLabel,
+  onClear,
+  clearDisabled,
   publishLabel,
   onPublish,
   publishDisabled,
@@ -101,6 +126,19 @@ export function ComposerTitlebar({
         </Button>
       ) : null}
       <div className="min-w-0 flex-1 truncate text-base font-semibold">{title}</div>
+      {onClear ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="shrink-0"
+          title={clearLabel}
+          disabled={clearDisabled}
+          onClick={onClear}
+        >
+          {clearLabel}
+        </Button>
+      ) : null}
       {optionsSlot}
       {onPublish ? (
         <Button

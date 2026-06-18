@@ -105,6 +105,8 @@ const PostTextarea = forwardRef<
     extraPreviewTags?: string[][]
     addClientTag?: boolean
     contentWarning?: TContentWarningDraftOptions
+    /** When false (mobile page composer), editor uses a fixed height instead of flex-grow. */
+    fillAvailableHeight?: boolean
   }
 >(
   (
@@ -132,7 +134,8 @@ const PostTextarea = forwardRef<
       musicTrackMetadata,
       extraPreviewTags,
       addClientTag = true,
-      contentWarning
+      contentWarning,
+      fillAvailableHeight = true
     },
     ref
   ) => {
@@ -215,34 +218,46 @@ const PostTextarea = forwardRef<
     const notifyEditorNonemptyRef = useRef(notifyEditorNonempty)
     notifyEditorNonemptyRef.current = notifyEditorNonempty
 
+    const pageEditorShellClass = 'h-[min(42dvh,24rem)] min-h-[12rem] shrink-0'
+
     const composerPaneHeightClass = useMemo(
-      () =>
-        kind === ExtendedKind.POLL
-          ? isSmallScreen
-            ? 'flex-1 min-h-0 max-h-40'
-            : 'h-32'
-          : kind === kinds.Highlights
+      () => {
+        if (kind === ExtendedKind.POLL) {
+          return fillAvailableHeight
             ? isSmallScreen
-              ? 'min-h-[4.5rem] max-h-[min(22dvh,9rem)] shrink-0'
-              : 'h-32 max-h-36 shrink-0'
-            : 'flex-1 min-h-[14rem]',
-      [isSmallScreen, kind]
+              ? 'flex-1 min-h-0 max-h-40'
+              : 'h-32'
+            : 'min-h-0 max-h-40 shrink-0'
+        }
+        if (kind === kinds.Highlights) {
+          return isSmallScreen
+            ? 'min-h-[4.5rem] max-h-[min(22dvh,9rem)] shrink-0'
+            : 'h-32 max-h-36 shrink-0'
+        }
+        if (!fillAvailableHeight) {
+          return 'flex-1 min-h-0'
+        }
+        return 'flex-1 min-h-[14rem]'
+      },
+      [fillAvailableHeight, isSmallScreen, kind]
     )
 
     const composerFillsShell =
-      kind !== ExtendedKind.POLL && kind !== kinds.Highlights
+      fillAvailableHeight && kind !== ExtendedKind.POLL && kind !== kinds.Highlights
+
+    const composerUsesPageShell =
+      !fillAvailableHeight && kind !== ExtendedKind.POLL && kind !== kinds.Highlights
 
     const composerBodyScrollClass = cn(
       composerPaneHeightClass,
-      composerFillsShell && 'flex flex-col',
-      'min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y',
+      'flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y',
       'border rounded-lg focus-within:ring-1 focus-within:ring-ring',
       className
     )
 
     const previewBodyScrollClass = cn(
       composerPaneHeightClass,
-      'min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y'
+      'flex-1 min-h-0 overflow-y-auto overflow-x-hidden overscroll-y-contain popover-scroll-y'
     )
 
     const previewSurfaceClass = 'min-h-0'
@@ -441,8 +456,9 @@ const PostTextarea = forwardRef<
           setActiveTab(tab)
         }}
         className={cn(
-          'flex min-h-0 flex-col gap-2 overflow-hidden',
-          composerFillsShell && 'min-h-[14rem] flex-1'
+          'flex flex-col gap-2 overflow-hidden',
+          composerFillsShell && 'min-h-0 min-h-[14rem] flex-1',
+          composerUsesPageShell && pageEditorShellClass
         )}
       >
         <div className="flex min-w-0 shrink-0 items-center gap-2">
@@ -464,13 +480,12 @@ const PostTextarea = forwardRef<
           value="edit"
           forceMount
           className={cn(
-            'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            composerFillsShell && 'flex-1 overflow-hidden'
+            'mt-0 flex flex-1 flex-col min-h-0 overflow-hidden data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0'
           )}
         >
           <div className={composerBodyScrollClass}>
             {editor ? (
-              <EditorContent className="tiptap flex min-h-0 flex-1 flex-col" editor={editor} />
+              <EditorContent className="tiptap flex min-h-0 flex-1 flex-col [&_.ProseMirror]:min-h-full" editor={editor} />
             ) : (
               <div className={editorShellClass} aria-hidden>
                 {placeholderText}
@@ -482,11 +497,10 @@ const PostTextarea = forwardRef<
           value="preview"
           forceMount
           className={cn(
-            'mt-0 flex min-h-0 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0',
-            composerFillsShell && 'flex-1 overflow-hidden'
+            'mt-0 flex flex-1 flex-col min-h-0 overflow-hidden data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0'
           )}
         >
-          <div className={cn('flex min-h-0 flex-col gap-2', composerFillsShell && 'flex-1')}>
+          <div className={cn('flex min-h-0 flex-1 flex-col gap-2')}>
             <div className="shrink-0 text-xs text-muted-foreground">
               kind {kindDescription.number}: {kindDescription.description}
             </div>

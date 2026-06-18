@@ -173,7 +173,13 @@ export function AdvancedEventLabMarkupToolbar({
     labWithInsertAnchor(anchor, () => fn(v))
   }
 
+  const onInsertSelect = (fn: (v: EditorView) => void) => (e: Event) => {
+    e.preventDefault()
+    run(fn)
+  }
+
   const menuPortalProps = menuPortalContainer ? { portalContainer: menuPortalContainer } : {}
+  const menuContentProps = { ...menuPortalProps, onPointerDownCapture: captureSelection }
 
   const barPointerHandlers = {
     onPointerDownCapture: captureSelection
@@ -226,7 +232,7 @@ export function AdvancedEventLabMarkupToolbar({
           <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(20rem,92vw)] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+      <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-[min(20rem,92vw)] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
         <DropdownMenuLabel>{t('Advanced lab tb citationsHint')}</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => setCitationCreateOpen(true)}>
           {t('Create and insert citation')}
@@ -293,7 +299,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto w-56">
+          <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto w-56">
             <DropdownMenuLabel>{t('Advanced lab tb headings hint')}</DropdownMenuLabel>
             {(
               [
@@ -309,15 +315,14 @@ export function AdvancedEventLabMarkupToolbar({
               return (
                 <DropdownMenuItem
                   key={labelKey}
-                  onSelect={() =>
-                    run((v) =>
+                  onSelect={onInsertSelect((v) =>
+                    
                       labInsertRaw(
                         v,
                         sliceRef,
                         `${n === 1 ? '' : '\n'}${'#'.repeat(n)} ${t('Advanced lab tb heading placeholder')}\n`
                       )
-                    )
-                  }
+                  )}
                 >
                   {t(labelKey)}
                 </DropdownMenuItem>
@@ -325,28 +330,26 @@ export function AdvancedEventLabMarkupToolbar({
             })}
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(
                     v,
                     sliceRef,
                     `\n${t('Advanced lab tb heading placeholder')}\n===\n`
                   )
-                )
-              }
+              )}
             >
               {t('Advanced lab tb setextH1')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(
                     v,
                     sliceRef,
                     `\n${t('Advanced lab tb heading placeholder')}\n---\n`
                   )
-                )
-              }
+              )}
             >
               {t('Advanced lab tb setextH2')}
             </DropdownMenuItem>
@@ -368,50 +371,48 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
-            <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '**', 'bold'))}>
+          <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-56">
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '**', 'bold'))}>
               {t('Advanced lab tb bold')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '*', 'italic'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '*', 'italic'))}>
               {t('Advanced lab tb italic')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '__', 'bold'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '__', 'bold'))}>
               {t('Advanced lab tb boldUnderscore')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '_', 'italic'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '_', 'italic'))}>
               {t('Advanced lab tb italicUnderscore')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '~~', 'strikethrough'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '~~', 'strikethrough'))}>
               {t('Advanced lab tb strike')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '`', 'code'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '`', 'code'))}>
               {t('Advanced lab tb inlineCode')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertSnippet(v, sliceRef, '[', 'link text', '](https://example.com)')
-                )
-              }
+              )}
             >
               <Link2 className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb link')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertSnippet(v, sliceRef, '![', 'alt text', '](https://example.com/image.png)')
-                )
-              }
+              )}
             >
               <ImageIcon className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb image')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertSnippet(
                     v,
                     sliceRef,
@@ -419,15 +420,14 @@ export function AdvancedEventLabMarkupToolbar({
                     'link text',
                     '](https://example.com "Link title")'
                   )
-                )
-              }
+              )}
             >
               <Link2 className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb linkTitled')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertSnippet(
                     v,
                     sliceRef,
@@ -435,14 +435,13 @@ export function AdvancedEventLabMarkupToolbar({
                     'alt text',
                     '](https://example.com/image.png "Image title")'
                   )
-                )
-              }
+              )}
             >
               <ImageIcon className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb imageTitled')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '  \n'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '  \n'))}>
               <Pilcrow className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb hardBreak')}
             </DropdownMenuItem>
@@ -466,43 +465,41 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n- item one\n- item two\n'))}>
+          <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-56">
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n- item one\n- item two\n'))}>
               <List className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb bulletList')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n* item one\n* item two\n'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n* item one\n* item two\n'))}>
               <List className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb bulletListStar')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n1. first\n2. second\n'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n1. first\n2. second\n'))}>
               <ListOrdered className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb orderedList')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(
                     v,
                     sliceRef,
                     '\n4. item starting at four\n5. next item\n'
                   )
-                )
-              }
+              )}
             >
               <ListOrdered className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb orderedListStart')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(
                     v,
                     sliceRef,
                     '\n- [x] Checked box\n- [ ] Unchecked box\n'
                   )
-                )
-              }
+              )}
             >
               <ListTodo className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb taskItem')}
@@ -525,35 +522,33 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-64">
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n> quoted line\n'))}>
+          <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-64">
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n> quoted line\n'))}>
               <Quote className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb blockquote')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(
                     v,
                     sliceRef,
                     '\n| Col A | Col B |\n| --- | --- |\n| cell | cell |\n'
                   )
-                )
-              }
+              )}
             >
               <Table2 className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb pipeTable')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n[^1]\n'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n[^1]\n'))}>
               {t('Advanced lab tb footnoteRef')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(v, sliceRef, '\n[^1]: Footnote text goes here.\n')
-                )
-              }
+              )}
             >
               {t('Advanced lab tb footnoteDef')}
             </DropdownMenuItem>
@@ -581,7 +576,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
+          <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
             <p className="text-xs text-muted-foreground mb-2 px-1">{t('Advanced lab tb codeBlockHint')}</p>
             <Input
               value={codeFilter}
@@ -627,25 +622,23 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+          <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
             <DropdownMenuLabel>{t('Advanced lab tb mathIntro')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               <DropdownMenuItem
-                onSelect={() =>
-                  run((v) =>
+                onSelect={onInsertSelect((v) =>
+                  
                     labInsertSnippet(v, sliceRef, '$', 'x^2 + y^2 = r^2', '$')
-                  )
-                }
+                )}
               >
                 {t('Advanced lab tb mathInline')}
               </DropdownMenuItem>
               <DropdownMenuItem
-                onSelect={() =>
-                  run((v) =>
+                onSelect={onInsertSelect((v) =>
+                  
                     labInsertSnippet(v, sliceRef, '\n$$\n', 'E = mc^2', '\n$$\n')
-                  )
-                }
+                )}
               >
                 {t('Advanced lab tb mathDisplay')}
               </DropdownMenuItem>
@@ -653,79 +646,77 @@ export function AdvancedEventLabMarkupToolbar({
             <DropdownMenuSeparator />
             <DropdownMenuLabel>{t('Advanced lab tb mathCommon')}</DropdownMenuLabel>
             <DropdownMenuItem
-              onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\frac{numerator}{denominator}$'))}
+              onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\frac{numerator}{denominator}$'))}
             >
               {t('Advanced lab tb katexFrac')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\sqrt{x}$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\sqrt{x}$'))}>
               {t('Advanced lab tb katexSqrt')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\sum_{i=1}^{n} i$'))}
+              onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\sum_{i=1}^{n} i$'))}
             >
               {t('Advanced lab tb katexSum')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\int_{a}^{b} f(x)\\,dx$'))}
+              onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\int_{a}^{b} f(x)\\,dx$'))}
             >
               {t('Advanced lab tb katexInt')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(
                     v,
                     sliceRef,
                     '$$\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}$$'
                   )
-                )
-              }
+              )}
             >
               {t('Advanced lab tb katexMatrix')}
             </DropdownMenuItem>
             <DropdownMenuItem
-              onSelect={() =>
-                run((v) =>
+              onSelect={onInsertSelect((v) =>
+                
                   labInsertRaw(
                     v,
                     sliceRef,
                     '$$\\begin{cases} x & x > 0 \\\\ -x & x \\le 0 \\end{cases}$$'
                   )
-                )
-              }
+              )}
             >
               {t('Advanced lab tb katexCases')}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuLabel>{t('Advanced lab tb mathGreek')}</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\alpha$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\alpha$'))}>
               <code className="text-xs mr-2">{'\\alpha'}</code> {t('Advanced lab tb greekAlpha')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\beta$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\beta$'))}>
               <code className="text-xs mr-2">{'\\beta'}</code> {t('Advanced lab tb greekBeta')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\gamma$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\gamma$'))}>
               <code className="text-xs mr-2">{'\\gamma'}</code> {t('Advanced lab tb greekGamma')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\delta$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\delta$'))}>
               <code className="text-xs mr-2">{'\\delta'}</code> {t('Advanced lab tb greekDelta')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\pi$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\pi$'))}>
               <code className="text-xs mr-2">{'\\pi'}</code> {t('Advanced lab tb greekPi')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\theta$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\theta$'))}>
               <code className="text-xs mr-2">{'\\theta'}</code> {t('Advanced lab tb greekTheta')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\lambda$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\lambda$'))}>
               <code className="text-xs mr-2">{'\\lambda'}</code> {t('Advanced lab tb greekLambda')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\sigma$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\sigma$'))}>
               <code className="text-xs mr-2">{'\\sigma'}</code> {t('Advanced lab tb greekSigma')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\omega$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\omega$'))}>
               <code className="text-xs mr-2">{'\\omega'}</code> {t('Advanced lab tb greekOmega')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '$\\infty$'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '$\\infty$'))}>
               <code className="text-xs mr-2">{'\\infty'}</code> {t('Advanced lab tb greekInfty')}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -745,15 +736,15 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-48">
+          <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-48">
             <DropdownMenuLabel>{t('Advanced lab tb horizontalRules')}</DropdownMenuLabel>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n---\n'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n---\n'))}>
               {t('Advanced lab tb hrDashes')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n***\n'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n***\n'))}>
               {t('Advanced lab tb hrAsterisks')}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n___\n'))}>
+            <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n___\n'))}>
               {t('Advanced lab tb hrUnderscores')}
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -787,14 +778,13 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(32rem,80dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+        <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(32rem,80dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocTitlesHint')}</DropdownMenuLabel>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRawWithOptionalBlockLeadNl(v, sliceRef, `= ${t('Advanced lab tb documentTitle')}\n`)
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocLevel0')}
           </DropdownMenuItem>
@@ -815,15 +805,14 @@ export function AdvancedEventLabMarkupToolbar({
             return (
               <DropdownMenuItem
                 key={labelKey}
-                onSelect={() =>
-                  run((v) =>
+                onSelect={onInsertSelect((v) =>
+                  
                     labInsertRaw(
                       v,
                       sliceRef,
                       `\n${'='.repeat(n + 1)} ${t('Advanced lab tb sectionTitle')}\n`
                     )
-                  )
-                }
+                )}
               >
                 {t(labelKey)}
               </DropdownMenuItem>
@@ -847,57 +836,55 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
-          <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '*', 'bold'))}>
+        <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-56">
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '*', 'bold'))}>
             {t('Advanced lab tb adocBold')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '_', 'italic'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '_', 'italic'))}>
             {t('Advanced lab tb adocItalic')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '`', 'mono'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '`', 'mono'))}>
             {t('Advanced lab tb adocMono')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(v, sliceRef, 'link:https://example.com[', 'link text', ']')
-              )
-            }
+            )}
           >
             <Link2 className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocLink')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRaw(
                   v,
                   sliceRef,
                   '\nimage::https://example.com/image.png[Alt text, width=640]\n'
                 )
-              )
-            }
+            )}
           >
             <ImageIcon className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocImage')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, ' +\n'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, ' +\n'))}>
             {t('Advanced lab tb adocLineBreak')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '^', 'sup'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '^', 'sup'))}>
             {t('Advanced lab tb adocSuperscript')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '~', 'sub'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labWrapOrSnippet(v, sliceRef, '~', 'sub'))}>
             {t('Advanced lab tb adocSubscript')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => run((v) => labInsertSnippet(v, sliceRef, '+++', 'raw or HTML', '+++'))}
+            onSelect={onInsertSelect((v) => labInsertSnippet(v, sliceRef, '+++', 'raw or HTML', '+++'))}
           >
             {t('Advanced lab tb adocPassthrough')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'footnote:[Footnote text]'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'footnote:[Footnote text]'))}>
             {t('Advanced lab tb adocFootnote')}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -920,27 +907,26 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n* item one\n* item two\n'))}>
+        <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-56">
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n* item one\n* item two\n'))}>
             {t('Advanced lab tb adocUnordered')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n. first step\n. second step\n'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n. first step\n. second step\n'))}>
             {t('Advanced lab tb adocOrdered')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\nterm:: definition line\n'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\nterm:: definition line\n'))}>
             {t('Advanced lab tb adocLabeled')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRaw(
                   v,
                   sliceRef,
                   '\n[start=4]\n. fourth item\n. fifth item\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocOrderedStart')}
           </DropdownMenuItem>
@@ -962,29 +948,27 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-64">
+        <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-64">
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(v, sliceRef, '\n____\n', 'Quoted paragraph', '\n____\n')
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocQuote')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(v, sliceRef, '\n....\n', 'Literal monospace block', '\n....\n')
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocLiteral')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(
                   v,
                   sliceRef,
@@ -992,14 +976,13 @@ export function AdvancedEventLabMarkupToolbar({
                   'Note body',
                   '\n====\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocNote')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(
                   v,
                   sliceRef,
@@ -1007,14 +990,13 @@ export function AdvancedEventLabMarkupToolbar({
                   'Tip body',
                   '\n====\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocTip')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(
                   v,
                   sliceRef,
@@ -1022,14 +1004,13 @@ export function AdvancedEventLabMarkupToolbar({
                   'Warning body',
                   '\n====\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocWarning')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(
                   v,
                   sliceRef,
@@ -1037,14 +1018,13 @@ export function AdvancedEventLabMarkupToolbar({
                   'Important body',
                   '\n====\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocImportant')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(
                   v,
                   sliceRef,
@@ -1052,15 +1032,14 @@ export function AdvancedEventLabMarkupToolbar({
                   'Caution body',
                   '\n====\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocCaution')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(
                   v,
                   sliceRef,
@@ -1068,23 +1047,21 @@ export function AdvancedEventLabMarkupToolbar({
                   'Example body',
                   '\n====\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocExampleBlock')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(v, sliceRef, '\n****\n', 'Sidebar body', '\n****\n')
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocSidebar')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(
                   v,
                   sliceRef,
@@ -1092,17 +1069,15 @@ export function AdvancedEventLabMarkupToolbar({
                   'Listing body (often line-oriented text)',
                   '\n----\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocListing')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(v, sliceRef, '\n--\n', 'Open block body', '\n--\n')
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocOpenBlock')}
           </DropdownMenuItem>
@@ -1124,74 +1099,70 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+        <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocStructureHint')}</DropdownMenuLabel>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRaw(
                   v,
                   sliceRef,
                   '\n|===\n|Column 1 |Column 2\n\n|Cell A |Cell B\n|===\n'
                 )
-              )
-            }
+            )}
           >
             <Table2 className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocTable')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) => labInsertRawWithOptionalBlockLeadNl(v, sliceRef, '[#section-anchor]\n'))
-            }
+            onSelect={onInsertSelect((v) =>
+              labInsertRawWithOptionalBlockLeadNl(v, sliceRef, '[#section-anchor]\n')
+            )}
           >
             <Hash className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocAnchor')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(v, sliceRef, '<<section-anchor,', 'link label', '>>')
-              )
-            }
+            )}
           >
             <Link2 className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocXref')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRaw(v, sliceRef, '\nvideo::https://example.com/video.mp4[width=640]\n')
-              )
-            }
+            )}
           >
             <Film className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocVideo')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRaw(v, sliceRef, '\naudio::https://example.com/audio.mp3[]\n')
-              )
-            }
+            )}
           >
             <Volume2 className="h-3.5 w-3.5 mr-2 inline" />
             {t('Advanced lab tb adocAudio')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n// Comment line\n'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, '\n// Comment line\n'))}>
             {t('Advanced lab tb adocComment')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'kbd:[Ctrl+T]'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'kbd:[Ctrl+T]'))}>
             {t('Advanced lab tb adockbd')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'menu:View[Zoom > In]'))}
+            onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'menu:View[Zoom > In]'))}
           >
             {t('Advanced lab tb adocMenu')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'btn:[OK]'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'btn:[OK]'))}>
             {t('Advanced lab tb adocBtn')}
           </DropdownMenuItem>
         </DropdownMenuContent>
@@ -1218,7 +1189,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
+        <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
           <p className="text-xs text-muted-foreground mb-2 px-1">{t('Advanced lab tb adocSourceHint')}</p>
           <Input
             value={langFilter}
@@ -1266,84 +1237,81 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+        <DropdownMenuContent {...menuContentProps} align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocStemHint')}</DropdownMenuLabel>
           <DropdownMenuItem
-            onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', 'x^2 + y^2', ']'))}
+            onSelect={onInsertSelect((v) => labInsertSnippet(v, sliceRef, 'stem:[', 'x^2 + y^2', ']'))}
           >
             {t('Advanced lab tb adocStemInline')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'latexmath:[', 'x^2 + y^2', ']'))}
+            onSelect={onInsertSelect((v) => labInsertSnippet(v, sliceRef, 'latexmath:[', 'x^2 + y^2', ']'))}
           >
             {t('Advanced lab tb adocLatexmathInline')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertSnippet(v, sliceRef, '\n[stem]\n++++\n', 'E = mc^2', '\n++++\n')
-              )
-            }
+            )}
           >
             {t('Advanced lab tb adocStemBlock')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
-            onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\frac{a}{b}', ']'))}
+            onSelect={onInsertSelect((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\frac{a}{b}', ']'))}
           >
             {t('Advanced lab tb katexFrac')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\sqrt{x}', ']'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\sqrt{x}', ']'))}>
             {t('Advanced lab tb katexSqrt')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\sum_{i=1}^{n} i', ']'))}
+            onSelect={onInsertSelect((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\sum_{i=1}^{n} i', ']'))}
           >
             {t('Advanced lab tb katexSum')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\int_{a}^{b} f(x)\\,dx', ']'))}
+            onSelect={onInsertSelect((v) => labInsertSnippet(v, sliceRef, 'stem:[', '\\int_{a}^{b} f(x)\\,dx', ']'))}
           >
             {t('Advanced lab tb katexInt')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRaw(
                   v,
                   sliceRef,
                   '\n[stem]\n++++\n\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}\n++++\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb katexMatrix')}
           </DropdownMenuItem>
           <DropdownMenuItem
-            onSelect={() =>
-              run((v) =>
+            onSelect={onInsertSelect((v) =>
+              
                 labInsertRaw(
                   v,
                   sliceRef,
                   '\n[stem]\n++++\n\\begin{cases} x & x > 0 \\\\ -x & x \\le 0 \\end{cases}\n++++\n'
                 )
-              )
-            }
+            )}
           >
             {t('Advanced lab tb katexCases')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>{t('Advanced lab tb mathGreek')}</DropdownMenuLabel>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\alpha]'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'stem:[\\alpha]'))}>
             <code className="text-xs mr-2">{'\\alpha'}</code> {t('Advanced lab tb greekAlpha')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\beta]'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'stem:[\\beta]'))}>
             <code className="text-xs mr-2">{'\\beta'}</code> {t('Advanced lab tb greekBeta')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\pi]'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'stem:[\\pi]'))}>
             <code className="text-xs mr-2">{'\\pi'}</code> {t('Advanced lab tb greekPi')}
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, 'stem:[\\infty]'))}>
+          <DropdownMenuItem onSelect={onInsertSelect((v) => labInsertRaw(v, sliceRef, 'stem:[\\infty]'))}>
             <code className="text-xs mr-2">{'\\infty'}</code> {t('Advanced lab tb greekInfty')}
           </DropdownMenuItem>
         </DropdownMenuContent>

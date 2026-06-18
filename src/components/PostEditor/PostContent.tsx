@@ -208,6 +208,7 @@ export default function PostContent({
   composerMode = 'full',
   onOpenOptions,
   onPublishRequestRef,
+  onClearRequestRef,
   onComposerUiStateChange
 }: {
   /** When false, the post shell is closed (e.g. dialog). Used to re-sync the TipTap body when reopened. */
@@ -238,6 +239,7 @@ export default function PostContent({
   onOpenOptions?: () => void
   /** Parent page wires titlebar Publish to this ref. */
   onPublishRequestRef?: RefObject<(() => void) | null>
+  onClearRequestRef?: RefObject<(() => void) | null>
   onComposerUiStateChange?: (state: {
     publishDisabled: boolean
     posting: boolean
@@ -2923,20 +2925,40 @@ export default function PostContent({
     setUploadProgresses([])
   }
 
+  const handleClearRef = useRef(handleClear)
+  handleClearRef.current = handleClear
+
+  useEffect(() => {
+    if (!onClearRequestRef) return
+    const ref = onClearRequestRef as React.MutableRefObject<(() => void) | null>
+    ref.current = () => {
+      handleClearRef.current()
+    }
+    return () => {
+      ref.current = null
+    }
+  }, [onClearRequestRef])
+
   return (
     <div
       className={cn(
         'min-w-0',
-        isSmallScreen ? 'flex min-h-0 flex-1 flex-col' : 'flex min-h-0 flex-1 max-h-full flex-col'
+        isPageLayout
+          ? 'flex flex-col gap-2'
+          : isSmallScreen
+            ? 'flex min-h-0 flex-1 flex-col'
+            : 'flex min-h-0 flex-1 max-h-full flex-col'
       )}
     >
       <NeventPickerProvider>
         <div
           className={cn(
             'min-w-0',
-            isSmallScreen
-              ? cn('flex min-h-0 flex-1 flex-col gap-2', isHighlight && 'overflow-hidden')
-              : 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pr-1'
+            isPageLayout
+              ? 'flex flex-col gap-2'
+              : isSmallScreen
+                ? cn('flex min-h-0 flex-1 flex-col gap-2', isHighlight && 'overflow-hidden')
+                : 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pr-1'
           )}
         >
           <ComposerHeaderScroll enabled={(isSmallScreen && !isPageLayout) || (isDiscussionThread && !parentEvent)}>
@@ -3779,12 +3801,17 @@ export default function PostContent({
       <div
         className={cn(
           'flex min-w-0 flex-col overflow-hidden',
-          isHighlight ? 'min-h-0 min-w-0 flex-1 gap-2' : 'min-h-0 flex-1'
+          isPageLayout
+            ? 'shrink-0'
+            : isHighlight
+              ? 'min-h-0 min-w-0 flex-1 gap-2'
+              : 'min-h-0 flex-1'
         )}
       >
-      <div className={cn('flex min-h-0 flex-col', !isHighlight && 'min-h-0 flex-1')}>
+      <div className={cn('flex min-h-0 flex-col', !isHighlight && !isPageLayout && 'min-h-0 flex-1')}>
       <PostTextarea
           ref={textareaRef}
+          fillAvailableHeight={!isPageLayout}
           text={text}
           setText={setText}
           onEditorNonemptyChange={handleEditorNonemptyChange}

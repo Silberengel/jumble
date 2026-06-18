@@ -22,6 +22,7 @@ export type ComposerContentProps = {
   composerMode?: 'full' | 'reply' | 'note' | 'discussion' | 'article'
   onOpenOptions?: () => void
   onPublishRequestRef?: RefObject<(() => void) | null>
+  onClearRequestRef?: RefObject<(() => void) | null>
   onComposerUiStateChange?: (state: {
     publishDisabled: boolean
     posting: boolean

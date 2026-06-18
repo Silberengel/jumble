@@ -41,6 +41,7 @@ import {
   type ComposerContentProps
 } from '@/components/Composer/ComposerModes'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
+import { cn } from '@/lib/utils'
 
 export type ComposerPageProps = {
   replySegment?: string
@@ -59,9 +60,11 @@ function ComposerPageInner({
   )
   const session = useComposerSessionRequired()
   const publishRef = useRef<(() => void) | null>(null)
+  const clearRef = useRef<(() => void) | null>(null)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
   const advancedLabPortalRef = useRef<HTMLElement | null>(null)
   const [advancedLabPortalContainer, setAdvancedLabPortalContainer] = useState<HTMLElement | null>(null)
+  const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
   const [parentEvent, setParentEvent] = useState<Event | undefined>()
   const [loadingParent, setLoadingParent] = useState(Boolean(replySegment))
   const [title, setTitle] = useState(t('New Note'))
@@ -188,8 +191,11 @@ function ComposerPageInner({
           setAdvancedLabPortalContainer(el)
         }}
         data-advanced-lab-shell
-        className="pointer-events-none fixed inset-0 z-[400]"
-        aria-hidden
+        className={cn(
+          'fixed inset-0 z-[400] h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw]',
+          advancedLabOpen ? 'pointer-events-auto' : 'pointer-events-none'
+        )}
+        aria-hidden={!advancedLabOpen}
       />
       <ComposerShell
         pinFooterToViewport
@@ -198,19 +204,13 @@ function ComposerPageInner({
             title={title}
             onBack={requestClose}
             backDisabled={publishing}
+            clearLabel={t('Clear')}
+            onClear={() => clearRef.current?.()}
+            clearDisabled={publishing}
             publishLabel={publishLabel}
             onPublish={() => publishRef.current?.()}
             publishDisabled={publishDisabled}
             publishing={publishing}
-            optionsSlot={
-              <button
-                type="button"
-                className="shrink-0 text-sm text-muted-foreground hover:text-foreground px-2 py-1"
-                onClick={onOpenOptions}
-              >
-                {t('Options')}
-              </button>
-            }
           />
         }
         blockBanner={
@@ -254,7 +254,6 @@ function ComposerPageInner({
         }
         footer={
           <ComposerFooter>
-            <div ref={(el) => el?.style.setProperty('--composer-footer-spacer', '7rem')} />
             <div id="composer-page-footer-slot" className="min-h-[2.5rem]" />
           </ComposerFooter>
         }
@@ -272,9 +271,11 @@ function ComposerPageInner({
             pickerPortalContainer={pickerPortalContainer}
             advancedLabPortalContainer={advancedLabPortalContainer}
             advancedLabPortalRef={advancedLabPortalRef}
+            onAdvancedLabOpenChange={setAdvancedLabOpen}
             layoutMode="page"
             onOpenOptions={onOpenOptions}
             onPublishRequestRef={publishRef}
+            onClearRequestRef={clearRef}
             onComposerUiStateChange={onComposerUiStateChange}
           />
         </ComposerBody>

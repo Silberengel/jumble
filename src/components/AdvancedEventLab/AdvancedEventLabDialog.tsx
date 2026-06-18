@@ -191,8 +191,9 @@ function shouldBlockLabOutsideDismiss(
   portalBackdrop: boolean,
   target: EventTarget | null
 ): boolean {
-  if (!portalContainer && !portalBackdrop) return false
-  return !isLabNestedOverlayTarget(target)
+  if (portalBackdrop) return true
+  if (!portalContainer) return false
+  return isLabNestedOverlayTarget(target)
 }
 
 export type AdvancedEventLabDialogProps = {
@@ -1248,7 +1249,7 @@ export default function AdvancedEventLabDialog({
                     markupMode={markupMode}
                     viewRef={markupView}
                     sliceRef={sliceRef}
-                    menuPortalContainer={portalContainer}
+                    menuPortalContainer={labPickerPortalContainer ?? portalContainer}
                   />
                   <div
                     ref={markupHost}
