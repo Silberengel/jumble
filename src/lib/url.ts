@@ -12,6 +12,23 @@ function stripTrailingCommasFromHostname(url: URL): void {
   url.hostname = h.replace(/,+$/g, '')
 }
 
+/** Trailing dot on hostname (e.g. `mercury-relay.imwald.eu.`) breaks HTTP index vs WebSocket routing. */
+function stripTrailingDotsFromHostname(url: URL): void {
+  let h = url.hostname
+  while (h.endsWith('.')) h = h.slice(0, -1)
+  if (h !== url.hostname) url.hostname = h
+}
+
+const httpUrlNormalizeCache = new Map<string, string>()
+
+/** Bare profile/website hosts like `www.example.com` or `btcmap.org/path`. */
+function looksLikeBareHttpUrl(input: string): boolean {
+  const v = input.trim()
+  if (!v || looksLikeNostrBech32Identifier(v) || v.includes(' ')) return false
+  if (/^localhost(?::\d+)?(?:\/.*)?$/i.test(v)) return true
+  return /^[a-z0-9][a-z0-9.-]*\.[a-z0-9][a-z0-9.-]*(?:[:/][^\s]*)?$/i.test(v)
+}
+
 export function isWebsocketUrl(url: string): boolean {
   return /^wss?:\/\/.+$/.test(url)
 }
@@ -266,6 +283,7 @@ export function normalizeUrl(url: string): string {
 
     const p = new URL(trimmed)
     stripTrailingCommasFromHostname(p)
+    stripTrailingDotsFromHostname(p)
     p.hostname = applyRelayHostnameAliases(p.hostname)
 
     if (p.protocol !== 'ws:' && p.protocol !== 'wss:') {
@@ -313,17 +331,27 @@ export function normalizeUrl(url: string): string {
 }
 
 export function normalizeHttpUrl(url: string): string {
+  const trimmed = url.trim()
+  if (!trimmed) return ''
+  const cached = httpUrlNormalizeCache.get(trimmed)
+  if (cached !== undefined) return cached
+
+  let result = ''
   try {
-    const trimmed = url.trim()
-    if (!trimmed) return ''
-    if (!trimmed.includes('://')) {
-      logger.debug('HTTP URL requires http: or https: prefix', { url: trimmed })
-      return ''
+    let candidate = trimmed
+    if (!candidate.includes('://')) {
+      if (!looksLikeBareHttpUrl(candidate)) {
+        httpUrlNormalizeCache.set(trimmed, '')
+        return ''
+      }
+      candidate = `https://${candidate}`
     }
-    const p = new URL(trimmed)
+    const p = new URL(candidate)
     stripTrailingCommasFromHostname(p)
+    stripTrailingDotsFromHostname(p)
     p.hostname = applyRelayHostnameAliases(p.hostname)
     if (p.protocol !== 'http:' && p.protocol !== 'https:') {
+      httpUrlNormalizeCache.set(trimmed, '')
       return ''
     }
     p.pathname = p.pathname.replace(/\/+/g, '/')
@@ -336,11 +364,16 @@ export function normalizeHttpUrl(url: string): string {
     }
     p.searchParams.sort()
     p.hash = ''
-    return p.toString()
+    result =
+      (p.pathname && p.pathname !== '/') || p.search
+        ? p.toString()
+        : p.origin
   } catch (error) {
     logger.error('Invalid URL', { error, url })
-    return ''
+    result = ''
   }
+  httpUrlNormalizeCache.set(trimmed, result)
+  return result
 }
 
 /** Relay WebSocket URL → HTTPS homepage (NIP-11 document origin). */

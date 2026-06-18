@@ -1722,6 +1722,8 @@ class ClientService extends EventTarget {
 
   async publishEvent(relayUrls: string[], event: NEvent, publishExtras?: TPublishEventExtras) {
     const trace: PublishTrace | undefined = publishExtras?.publishTrace
+    /** Per-relay step detail lives in PublishTrace or RelayPublishOpBatch summary. */
+    const relayDbg = (_message: string, _detail?: Record<string, unknown>) => {}
     activityTrace.trace('publish', 'client.publishEvent', {
       kind: event.kind,
       relayCount: relayUrls.length,
@@ -1786,7 +1788,7 @@ class ClientService extends EventTarget {
       })
     }
 
-    logger.debug('[PublishEvent] Starting publishEvent', {
+    logger.debug('[PublishEvent] start', {
       eventId: event.id?.substring(0, 8),
       kind: event.kind,
       relayCount: publishTargetUrls.length,
@@ -1815,8 +1817,6 @@ class ClientService extends EventTarget {
         totalRelayCount: publishTargetUrls.length,
         allRelays: publishTargetUrls
       })
-    } else {
-      logger.debug('[PublishEvent] Unique relays', { count: publishTargetUrls.length, relays: publishTargetUrls.slice(0, 5) })
     }
 
     const publishBatchSource = publishExtras?.publishBatchLabel
@@ -1875,7 +1875,7 @@ class ClientService extends EventTarget {
           publishWaves * perWaveBudgetMs + 25_000
         )
       )
-      logger.debug('[PublishEvent] Setting up global timeout', {
+      relayDbg('[PublishEvent] global timeout configured', {
         publishGlobalDeadlineMs,
         publishWaves,
         relayCount: publishTargetUrls.length,
@@ -1914,7 +1914,7 @@ class ClientService extends EventTarget {
 
       const globalTimeout = setTimeout(() => {
         if (hasResolved) {
-          logger.debug('[PublishEvent] Already resolved, ignoring timeout')
+          relayDbg('[PublishEvent] Already resolved, ignoring timeout')
           return
         }
 
@@ -1941,7 +1941,7 @@ class ClientService extends EventTarget {
             totalRelays: publishTargetUrls.length
           })
           maybeEmitNewEventForLiveFeeds()
-          logger.debug('[PublishEvent] Resolving due to timeout', {
+          relayDbg('[PublishEvent] Resolving due to timeout', {
             success: successCount >= publishTargetUrls.length / 3,
             successCount,
             totalCount: publishTargetUrls.length,
@@ -1957,7 +1957,7 @@ class ClientService extends EventTarget {
         }
       }, publishGlobalDeadlineMs)
 
-      logger.debug('[PublishEvent] Starting Promise.allSettled for all relays')
+      relayDbg('[PublishEvent] Starting Promise.allSettled for all relays')
       const relayPublishAllSettled = Promise.allSettled(
         publishTargetUrls.map(async (url, index) => {
           // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -1970,7 +1970,7 @@ class ClientService extends EventTarget {
               return url.slice(0, 48)
             }
           })()
-          logger.debug(`[PublishEvent] Starting relay ${index + 1}/${publishTargetUrls.length}`, { url })
+          relayDbg(`[PublishEvent] Starting relay ${index + 1}/${publishTargetUrls.length}`, { url })
           const isLocal = isLocalNetworkUrl(url)
           /** Match pool handshake budget; a shorter outer race used to abort `ensureRelay` at 8s while the pool allowed 20s — slow TLS never won. */
           const connectionTimeout = isLocal
@@ -1997,7 +1997,7 @@ class ClientService extends EventTarget {
                 try {
             if (urlMatchesConfiguredHttpIndexRelay(url, httpIndexBasesForPublish)) {
               const base = normalizeHttpRelayUrl(url) || url
-              logger.debug(`[PublishEvent] Publishing to kind 10243 HTTP index relay`, { url: base })
+              relayDbg(`[PublishEvent] Publishing to kind 10243 HTTP index relay`, { url: base })
               await Promise.race([
                 publishEventToHttpRelay(base, event),
                 new Promise<never>((_, reject) =>
@@ -2017,7 +2017,7 @@ class ClientService extends EventTarget {
             let relay: Relay
             for (let wsAttempt = 0; wsAttempt < 2; wsAttempt++) {
               try {
-                logger.debug(`[PublishEvent] Ensuring relay connection`, {
+                relayDbg(`[PublishEvent] Ensuring relay connection`, {
                   url,
                   isLocal,
                   connectionTimeout,
@@ -2040,7 +2040,7 @@ class ClientService extends EventTarget {
                     ])
 
                 relay = await connectionPromise
-                logger.debug(`[PublishEvent] Relay connected`, { url })
+                relayDbg(`[PublishEvent] Relay connected`, { url })
                 const relayKeyPub = normalizeUrl(url) || url
                 patchRelayNoticeForFetchFailures(relay as unknown as AbstractRelay, relayKeyPub, (u, m) =>
                   that.handleRelayNoticeSession(u, m)
@@ -2048,12 +2048,12 @@ class ClientService extends EventTarget {
 
                 applyRelayNip42AckTimeout(relay as unknown as AbstractRelay)
 
-                logger.debug(`[PublishEvent] Publishing to relay`, { url })
+                relayDbg(`[PublishEvent] Publishing to relay`, { url })
 
                 const publishPromise = relay
                   .publish(event)
                   .then(() => {
-                    logger.debug(`[PublishEvent] Successfully published to relay`, { url })
+                    relayDbg(`[PublishEvent] Successfully published to relay`, { url })
                     that.recordPublishSuccess(url, Date.now() - startMs)
                     this.trackEventSeenOn(event.id, relay)
                     successCount++
@@ -2069,7 +2069,7 @@ class ClientService extends EventTarget {
                       isRelayAuthRequiredErrorMessage(error.message) &&
                       that.canSignerAuthenticateRelay()
                     ) {
-                      logger.debug(`[PublishEvent] Auth required, attempting authentication`, { url })
+                      relayDbg(`[PublishEvent] Auth required, attempting authentication`, { url })
                       applyRelayNip42AckTimeout(relay as unknown as AbstractRelay)
                       const signAuth = (authEvt: EventTemplate) =>
                         queueRelayAuthSign(() => that.signer!.signEvent(authEvt))
@@ -2093,7 +2093,7 @@ class ClientService extends EventTarget {
                             if (!isRelayConnectionClosedError(retryErr) || authPubAttempt === 1) {
                               throw retryErr
                             }
-                            logger.debug('[PublishEvent] Publish after auth on closed socket; reconnecting', {
+                            relayDbg('[PublishEvent] Publish after auth on closed socket; reconnecting', {
                               url
                             })
                             try {
@@ -2109,7 +2109,7 @@ class ClientService extends EventTarget {
                       }
                       return publishAfterAuth()
                         .then(() => {
-                          logger.debug(`[PublishEvent] Successfully published after auth`, { url })
+                          relayDbg(`[PublishEvent] Successfully published after auth`, { url })
                           that.recordPublishSuccess(url, Date.now() - startMs)
                           this.trackEventSeenOn(event.id, relay)
                           successCount++
@@ -2225,7 +2225,7 @@ class ClientService extends EventTarget {
               ms: Date.now() - startMs,
               error: rs?.error
             })
-            logger.debug(`[PublishEvent] Relay finished`, { 
+            relayDbg(`[PublishEvent] Relay finished`, { 
               url, 
               finishedCount: currentFinished, 
               totalRelays: publishTargetUrls.length,
@@ -2245,7 +2245,7 @@ class ClientService extends EventTarget {
                 finishedCount: currentFinished,
                 totalRelays: publishTargetUrls.length
               })
-              logger.debug('[PublishEvent] All relays finished, resolving', {
+              relayDbg('[PublishEvent] All relays finished, resolving', {
                 success: successCount >= publishTargetUrls.length / 3,
                 successCount,
                 totalCount: publishTargetUrls.length,
@@ -2272,7 +2272,7 @@ class ClientService extends EventTarget {
                   finishedRelays: currentFinished,
                   graceMs: EARLY_PUBLISH_SUCCESS_GRACE_MS
                 })
-                logger.debug('[PublishEvent] Resolving after first success grace', {
+                relayDbg('[PublishEvent] Resolving after first success grace', {
                   success: successCount >= publishTargetUrls.length / 3,
                   successCount,
                   totalCount: publishTargetUrls.length,

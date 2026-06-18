@@ -1730,12 +1730,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   )
 
   const pushSecondaryPage = (url: string, index?: number) => {
-    logger.component('PageManager', 'pushSecondaryPage called', { url })
-
     const now = Date.now()
     const recent = recentSecondaryPushRef.current
     if (recent?.url === url && now - recent.at < 400) {
-      logger.component('PageManager', 'pushSecondaryPage skipped (recent duplicate)', { url })
       return
     }
     if (isCurrentPage(secondaryStackRef.current, url)) {
@@ -1751,7 +1748,6 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       if (isSmallScreen && top) {
         window.history.pushState({ index: top.index, url }, '', url)
       }
-      logger.component('PageManager', 'pushSecondaryPage skipped (already on stack)', { url })
       return
     }
     recentSecondaryPushRef.current = { url, at: now }
@@ -1783,23 +1779,20 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
     
     setSecondaryStack((prevStack) => {
-      logger.component('PageManager', 'Current secondary stack length', { length: prevStack.length })
-      
       // For relay pages, clear the stack and start fresh to avoid confusion
       if (
         url.startsWith('/relays/') ||
         url.startsWith('/home/relays/') ||
         url.startsWith('/explore/relays/')
       ) {
-        logger.component('PageManager', 'Clearing stack for relay navigation')
         const { newStack, newItem } = pushNewPageToStack([], url, maxStackSize, 0)
-        logger.component('PageManager', 'New stack created', { 
-          newStackLength: newStack.length, 
-          hasNewItem: !!newItem 
-        })
         if (newItem) {
           window.history.pushState({ index: newItem.index, url }, '', url)
         }
+        logger.component('PageManager', 'secondary push (relay reset)', {
+          url,
+          stackLength: newStack.length
+        })
         return newStack
       }
       
@@ -1817,17 +1810,13 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
         if (isSmallScreen && top) {
           window.history.pushState({ index: top.index, url }, '', url)
         }
-        logger.component('PageManager', 'Page already exists, not scrolling')
         return prevStack
       }
 
-      logger.component('PageManager', 'Creating new page for URL', { url, prevStackLength: prevStack.length })
       const { newStack, newItem } = pushNewPageToStack(prevStack, url, maxStackSize, index)
-      logger.component('PageManager', 'New page created', { 
-        newStackLength: newStack.length, 
-        prevStackLength: prevStack.length,
-        hasNewItem: !!newItem,
-        newItemUrl: newItem?.url,
+      logger.component('PageManager', 'secondary push', {
+        url,
+        stackLength: newStack.length,
         newItemIndex: newItem?.index
       })
       if (newItem) {
@@ -2273,14 +2262,9 @@ function isCurrentPage(stack: TStackItem[], url: string) {
   const currentPage = stack[stack.length - 1]
   if (!currentPage) return false
 
-  const match =
+  return (
     currentPage.url === url || secondaryPanelUrlsMatch(currentPage.url, url)
-  logger.component('PageManager', 'isCurrentPage check', {
-    currentUrl: currentPage.url,
-    newUrl: url,
-    match
-  })
-  return match
+  )
 }
 
 /** Route elements are `<Suspense><LazyPage /></Suspense>` — props must be applied to the lazy leaf, not Suspense. */
@@ -2433,12 +2417,12 @@ function pushNewPageToStack(
   }
 
   const newItem = { component, ref, url, index: currentIndex }
-  const newStack = [...stack, newItem]
-  const lastCachedIndex = newStack.findIndex((stack) => stack.component)
-  // Clear the oldest cached component if there are too many cached components
-  if (newStack.length - lastCachedIndex > maxStackSize) {
-    newStack[lastCachedIndex].component = null
+  const prior = stack.map((item) =>
+    item.component != null ? { ...item, component: null } : item
+  )
+  let newStack = [...prior, newItem]
+  if (newStack.length > maxStackSize) {
+    newStack = newStack.slice(newStack.length - maxStackSize)
   }
-  logger.component('PageManager', 'pushNewPageToStack: Success', { url, newStackLength: newStack.length, newItemIndex: currentIndex })
   return { newStack, newItem }
 }

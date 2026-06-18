@@ -1,4 +1,4 @@
-import { fetchWebMetadataCached } from '@/lib/web-metadata-cache'
+import { fetchWebMetadataCached, webMetadataCacheStatus } from '@/lib/web-metadata-cache'
 import { TWebMetadata } from '@/types'
 import { useEffect, useState } from 'react'
 import logger from '@/lib/logger'
@@ -22,20 +22,27 @@ export function useFetchWebMetadata(
     }
 
     let cancelled = false
-    logger.debug('[useFetchWebMetadata] Fetching OG metadata', { url })
+    const cacheStatus = webMetadataCacheStatus(url)
+    if (cacheStatus === 'miss') {
+      logger.debug('[useFetchWebMetadata] Fetching OG metadata', { url })
+    }
 
     setOgLoading(true)
-    setMetadata({})
+    if (cacheStatus === 'miss') {
+      setMetadata({})
+    }
 
     fetchWebMetadataCached(url)
       .then((metadata) => {
         if (cancelled) return
-        logger.debug('[useFetchWebMetadata] Received metadata', {
-          url,
-          hasTitle: !!metadata.title,
-          hasDescription: !!metadata.description,
-          hasImage: !!metadata.image
-        })
+        if (cacheStatus === 'miss') {
+          logger.debug('[useFetchWebMetadata] Received metadata', {
+            url,
+            hasTitle: !!metadata.title,
+            hasDescription: !!metadata.description,
+            hasImage: !!metadata.image
+          })
+        }
         setMetadata(metadata)
       })
       .catch((error) => {

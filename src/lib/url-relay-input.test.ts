@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { looksLikeRelayUrlInput, normalizeAnyRelayUrl } from '@/lib/url'
+import { looksLikeRelayUrlInput, normalizeAnyRelayUrl, normalizeHttpUrl } from '@/lib/url'
 
 describe('looksLikeRelayUrlInput', () => {
   it('rejects profile names and partial username typing', () => {
@@ -26,5 +26,26 @@ describe('looksLikeRelayUrlInput', () => {
 describe('normalizeAnyRelayUrl relay hostname aliases', () => {
   it('rewrites nostr.sovbit.host to relay.sovbit.host', () => {
     expect(normalizeAnyRelayUrl('wss://nostr.sovbit.host/')).toBe('wss://relay.sovbit.host/')
+  })
+
+  it('strips trailing dot from hostname', () => {
+    expect(normalizeAnyRelayUrl('wss://relay.example.com./')).toBe('wss://relay.example.com/')
+    expect(normalizeHttpUrl('https://mercury-relay.imwald.eu./')).toBe('https://mercury-relay.imwald.eu')
+  })
+})
+
+describe('normalizeHttpUrl', () => {
+  it('auto-prefixes bare website hosts with https', () => {
+    expect(normalizeHttpUrl('www.example.com')).toBe('https://www.example.com')
+    expect(normalizeHttpUrl('btcmap.org')).toBe('https://btcmap.org')
+  })
+
+  it('memoizes repeated normalization', () => {
+    expect(normalizeHttpUrl('https://memo.test')).toBe('https://memo.test')
+    expect(normalizeHttpUrl('https://memo.test')).toBe('https://memo.test')
+  })
+
+  it('rejects non-url bare strings', () => {
+    expect(normalizeHttpUrl('Nusa')).toBe('')
   })
 })

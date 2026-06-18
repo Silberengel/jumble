@@ -42,7 +42,7 @@
     <meta property="og:site_name" content="Imwald" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Imwald" />
-    <meta name="twitter:description" content="jumble.imwald.eu — a user-friendly Nostr client focused on relay feed browsing and relay discovery." />
+    <meta name="twitter:description" content="Imwald — a user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery." />
     <meta name="twitter:image" content="https://jumble.imwald.eu/og-image.png" />
   </head>
   <body>
@@ -59,24 +59,24 @@
           gap: 1rem;
           font-family: 'Playfair Display', Georgia, serif;
           font-size: 1rem;
-          color: #3d5346;
-          background: #f4f7f4;
         "
       >
-        <div
-          style="
-            width: 2rem;
-            height: 2rem;
-            border: 3px solid #c5d4c8;
-            border-top-color: #2f6f4f;
-            border-radius: 50%;
-            animation: imwald-spin 0.7s linear infinite;
-          "
-          aria-hidden="true"
-        ></div>
+        <div id="imwald-boot-splash-spinner" aria-hidden="true"></div>
         <p style="margin: 0; max-width: 18rem; text-align: center">Loading Imwald…</p>
       </div>
       <style>
+        #imwald-boot-splash {
+          color: #3d5346;
+          background: #f4f7f4;
+        }
+        #imwald-boot-splash-spinner {
+          width: 2rem;
+          height: 2rem;
+          border: 3px solid #c5d4c8;
+          border-top-color: #2f6f4f;
+          border-radius: 50%;
+          animation: imwald-spin 0.7s linear infinite;
+        }
         @keyframes imwald-spin {
           to {
             transform: rotate(360deg);
@@ -87,7 +87,7 @@
             color: #b8c9bf;
             background: #121e18;
           }
-          #imwald-boot-splash div[aria-hidden] {
+          #imwald-boot-splash-spinner {
             border-color: #2a3d32;
             border-top-color: #5a9e7a;
           }
