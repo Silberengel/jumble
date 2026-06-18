@@ -17,7 +17,7 @@ import {
   openAlexandriaPublicationFromNaddr
 } from '@/lib/link'
 import logger from '@/lib/logger'
-import { pubkeyToNpub } from '@/lib/pubkey'
+import { hexPubkeysEqual, pubkeyToNpub } from '@/lib/pubkey'
 import {
   batchFetchPublicationSectionEvents,
   buildPublicationSectionRelayUrls,
@@ -62,6 +62,7 @@ import {
   BellOff,
   Bookmark,
   Download,
+  MessageCircle,
   Pin,
   Settings,
   Share2,
@@ -978,21 +979,12 @@ export function useMenuActions({
       })
     }
 
+    const canSendPublicMessage =
+      Boolean(pubkey && onOpenPublicMessage && !hexPubkeysEqual(event.pubkey, pubkey))
+
     const connectionsSubMenu: SubMenuAction[] = [
-      ...(pubkey && event.pubkey !== pubkey && onOpenPublicMessage
-        ? [
-            {
-              label: t('Send public message'),
-              onClick: () => {
-                closeDrawer()
-                onOpenPublicMessage(event.pubkey)
-              }
-            }
-          ]
-        : []),
       {
         label: t('Share with Imwald'),
-        separator: pubkey != null && event.pubkey !== pubkey && !!onOpenPublicMessage,
         onClick: () => {
           const noteId = getNoteBech32Id(event)
           const path =
@@ -1264,6 +1256,18 @@ export function useMenuActions({
           : undefined,
         subMenu: isSmallScreen ? undefined : translateTargetSubmenu,
         subMenuSearchable: true
+      })
+    }
+
+    if (canSendPublicMessage && onOpenPublicMessage) {
+      actions.push({
+        icon: MessageCircle,
+        label: t('Send public message'),
+        separator: actions.length > 0,
+        onClick: () => {
+          closeDrawer()
+          checkLogin(() => onOpenPublicMessage(event.pubkey))
+        }
       })
     }
 

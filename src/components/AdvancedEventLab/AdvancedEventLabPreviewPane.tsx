@@ -37,7 +37,7 @@ export const AdvancedEventLabPreviewPane = memo(function AdvancedEventLabPreview
 
   if (!source.trim()) {
     return (
-      <p className="px-0 py-2 text-left text-sm text-muted-foreground">{t('Advanced lab preview empty')}</p>
+      <p className="text-left text-sm text-muted-foreground">{t('Advanced lab preview empty')}</p>
     )
   }
 

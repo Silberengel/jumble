@@ -76,7 +76,8 @@ export default function PostEditor({
   const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
   const advancedLabOpenRef = useRef(false)
   const composerDismissGuardUntilRef = useRef(0)
-  const prevOpenPropRef = useRef(open)
+  // Start false so a freshly mounted composer (open=true on first paint) still gets the dismiss guard.
+  const prevOpenPropRef = useRef(false)
   const blockDismissForAccountSwitch =
     isAccountSessionHydrating || isNip07LoginInFlight
 
@@ -84,6 +85,15 @@ export default function PostEditor({
     composerDismissGuardUntilRef.current = performance.now() + 500
   }
   prevOpenPropRef.current = open
+
+  useEffect(() => {
+    if (open) {
+      composerDismissGuardUntilRef.current = Math.max(
+        composerDismissGuardUntilRef.current,
+        performance.now() + 500
+      )
+    }
+  }, [open])
 
   useEffect(() => {
     advancedLabOpenRef.current = advancedLabOpen

@@ -294,6 +294,7 @@ export default function Note({
   const [highlightData, setHighlightData] = useState<HighlightData | undefined>(undefined)
   const [highlightDefaultContent, setHighlightDefaultContent] = useState<string>('')
   const [postEditorOpen, setPostEditorOpen] = useState(false)
+  const [postEditorMounted, setPostEditorMounted] = useState(false)
   const [publicMessageTo, setPublicMessageTo] = useState<string | null>(null)
   const [callInviteContent, setCallInviteContent] = useState<string | null>(null)
   const noteTranslation = useNoteTranslation(event.id)
@@ -316,10 +317,16 @@ export default function Note({
     setHighlightDefaultContent(eventContent ?? '')
     setPublicMessageTo(null)
     setCallInviteContent(null)
+    setPostEditorMounted(true)
     // Defer until the selection drawer has closed (avoids vaul/Radix sheet fighting on mobile).
     requestAnimationFrame(() => {
       setPostEditorOpen(true)
     })
+  }, [])
+
+  const mountComposerThenOpen = useCallback(() => {
+    setPostEditorMounted(true)
+    openComposerAfterOverlay(setPostEditorOpen)
   }, [])
 
   const openPublicMessage = useCallback((pubkey: string) => {
@@ -327,16 +334,16 @@ export default function Note({
     setHighlightDefaultContent('')
     setPublicMessageTo(pubkey)
     setCallInviteContent(null)
-    openComposerAfterOverlay(setPostEditorOpen)
-  }, [])
+    mountComposerThenOpen()
+  }, [mountComposerThenOpen])
 
   const openCallInvite = useCallback((url: string) => {
     setCallInviteContent(url)
     setPublicMessageTo(null)
     setHighlightData(undefined)
     setHighlightDefaultContent('')
-    openComposerAfterOverlay(setPostEditorOpen)
-  }, [])
+    mountComposerThenOpen()
+  }, [mountComposerThenOpen])
 
   const isHighlightableKind =
     event.kind === kinds.ShortTextNote ||
@@ -819,7 +826,7 @@ export default function Note({
           content
         )}
       </div>
-      {postEditorOpen ? (
+      {postEditorMounted ? (
         <PostEditor
           open={postEditorOpen}
           setOpen={(open) => {

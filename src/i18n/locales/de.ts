@@ -298,6 +298,8 @@ export default {
       'Profile event tags (e.g. lud16, nip05, website). Saved with kind 0.',
     'Tag value': 'Tag value',
     'Saving…': 'Speichern…',
+    Connections: 'Verbindungen',
+    Calls: 'Anrufe',
     'Share with Imwald': 'Mit Imwald teilen',
     'Share with Alexandria': 'Mit Alexandria teilen',
     'Start video call': 'Videoanruf starten',

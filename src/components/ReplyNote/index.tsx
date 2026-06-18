@@ -25,8 +25,10 @@ import { useMuteList } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import PostEditor from '../PostEditor/LazyPostEditor'
+import { openComposerAfterOverlay } from '../PostEditor/open-composer-after-overlay'
 import Collapsible from '../Collapsible'
 import MarkdownArticle from '../Note/LazyMarkdownArticle'
 import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
@@ -106,6 +108,34 @@ export default function ReplyNote({
     [event, noteTranslation]
   )
 
+  const [postEditorOpen, setPostEditorOpen] = useState(false)
+  const [postEditorMounted, setPostEditorMounted] = useState(false)
+  const [publicMessageTo, setPublicMessageTo] = useState<string | null>(null)
+  const [callInviteContent, setCallInviteContent] = useState<string | null>(null)
+
+  const mountComposerThenOpen = useCallback(() => {
+    setPostEditorMounted(true)
+    openComposerAfterOverlay(setPostEditorOpen)
+  }, [])
+
+  const openPublicMessage = useCallback(
+    (pubkey: string) => {
+      setPublicMessageTo(pubkey)
+      setCallInviteContent(null)
+      mountComposerThenOpen()
+    },
+    [mountComposerThenOpen]
+  )
+
+  const openCallInvite = useCallback(
+    (url: string) => {
+      setCallInviteContent(url)
+      setPublicMessageTo(null)
+      mountComposerThenOpen()
+    },
+    [mountComposerThenOpen]
+  )
+
   return (
     <div
       className={`clickable border-b pb-3 transition-colors duration-500 ${highlight ? 'bg-primary/50' : ''}`}
@@ -141,7 +171,12 @@ export default function ReplyNote({
                 timestampShort={isSmallScreen}
               />
             </div>
-            <NoteOptions event={event} className="shrink-0 [&_svg]:size-5" />
+            <NoteOptions
+              event={event}
+              className="shrink-0 [&_svg]:size-5"
+              onOpenPublicMessage={openPublicMessage}
+              onOpenCallInvite={openCallInvite}
+            />
           </div>
           {webReactionParentUrl ? (
             <div className="not-prose mt-1.5 max-w-full" data-parent-note-preview>
@@ -228,6 +263,20 @@ export default function ReplyNote({
           useIconOnlyLikeTrigger={isNip25ReactionKind(event.kind)}
         />
       )}
+      {postEditorMounted ? (
+        <PostEditor
+          open={postEditorOpen}
+          setOpen={(open) => {
+            setPostEditorOpen(open)
+            if (!open) {
+              setPublicMessageTo(null)
+              setCallInviteContent(null)
+            }
+          }}
+          defaultContent={callInviteContent ?? ''}
+          initialPublicMessageTo={publicMessageTo ?? undefined}
+        />
+      ) : null}
     </div>
   )
 }

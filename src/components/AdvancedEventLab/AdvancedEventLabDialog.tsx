@@ -1234,7 +1234,7 @@ export default function AdvancedEventLabDialog({
                   value="preview"
                   className="mt-0 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0"
                 >
-                  <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-background py-2 text-left">
+                  <div className="min-h-0 flex-1 overflow-y-auto rounded-md border border-border bg-background p-3 text-left">
                     <AdvancedEventLabPreviewPane
                       markupMode={markupMode}
                       source={previewDoc}
