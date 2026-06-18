@@ -21,25 +21,25 @@ import client, { eventService, queryService } from '@/services/client.service'
 import type { TSubRequestFilter } from '@/types'
 import { Filter, Event as NEvent, kinds, nip19 } from 'nostr-tools'
 import type { TFunction } from 'i18next'
-import type { TRootInfo } from './types'
+import type { TRootInfo, TThreadFeedItem, TBacklinkSubsection, TBacklinkDisplayRow } from './types'
 import {
   MISSING_THREAD_REPLY_SEARCH_RELAY_TIMEOUT_MS,
   MISSING_THREAD_REPLY_SEARCH_TIMEOUT_MS,
   THREAD_REPLY_LIMIT
-} from './types'
+} from './constants'
 
 export function threadResponseFilterOptions(rootInfo: TRootInfo | undefined) {
   return rootInfo?.type === 'I' ? { allowPageTargetedReactions: true as const } : undefined
 }
 
-export type { TRootInfo } from './types'
+export type { TRootInfo, TThreadFeedItem, TBacklinkSubsection, TBacklinkDisplayRow } from './types'
 export {
   THREAD_REPLY_LIMIT,
   THREAD_REPLY_SHOW_COUNT,
   MAX_PARENT_IDS_PER_NESTED_REQ,
   THREAD_PROFILE_BATCH_DEBOUNCE_MS,
   THREAD_PROFILE_CHUNK
-} from './types'
+} from './constants'
 
 /** Session + navigation context for parent walks while relay batches stream out-of-order. */
 export function seedThreadWalkFromLocalContext(
@@ -348,10 +348,6 @@ export function buildRepliesListAlignedWithNoteStats(
   }
   return collapseStaleAddressableRevisions(ordered)
 }
-
-export type TThreadFeedItem =
-  | { type: 'event'; event: NEvent }
-  | { type: 'missing'; id: string; pubkey: string; created_at: number }
 
 export function threadFeedItemCreatedAt(item: TThreadFeedItem): number {
   return item.type === 'event' ? item.event.created_at : item.created_at
@@ -722,8 +718,6 @@ export function replyFeedZapsFirst(sortedNonZapReplies: NEvent[], superchats: NE
   return replyFeedSuperchatsFirst(sortedNonZapReplies, superchats)
 }
 
-export type TBacklinkSubsection = 'primary' | 'bookmark' | 'list' | 'report'
-
 function sortWithinBacklinkGroup(events: NEvent[]): NEvent[] {
   return [...events].sort((a, b) => b.created_at - a.created_at)
 }
@@ -762,11 +756,6 @@ export function partitionAndSortBacklinkTail(tail: NEvent[]): NEvent[] {
     ...sortWithinBacklinkGroup(reports)
   ]
 }
-
-export type TBacklinkDisplayRow =
-  | { type: 'reply'; event: NEvent }
-  | { type: 'missing-reply'; id: string; pubkey: string; created_at: number }
-  | { type: 'backlink-run'; subsection: TBacklinkSubsection; events: NEvent[] }
 
 export function buildVisibleBacklinkRows(
   visibleFeed: TThreadFeedItem[],

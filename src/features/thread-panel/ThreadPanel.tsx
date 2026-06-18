@@ -1,5 +1,4 @@
 import { ExtendedKind } from '@/constants'
-import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
 import {
   getParentETag,
   isMentioningMutedUsers,
@@ -7,11 +6,8 @@ import {
 } from '@/lib/event'
 import logger from '@/lib/logger'
 import {
-  collectAttestedSuperchatsFromRepliesMap,
   isNestedThreadReplyParentKind,
-  isSuperchatKind,
-  partitionAttestedSuperchats,
-  replyFeedSuperchatsFirst
+  isSuperchatKind
 } from '@/lib/superchat'
 import { muteSetHas } from '@/lib/mute-set'
 import { normalizeAnyRelayUrl } from '@/lib/url'
@@ -25,7 +21,7 @@ import storage from '@/services/local-storage.service'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
-import { useReplyIngress } from '@/hooks/useReplyIngress'
+import { fetchArchivesNotePageBundle } from '@/lib/note-page-load-pipeline'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import {
@@ -36,7 +32,6 @@ import {
 import client, { eventService, queryService } from '@/services/client.service'
 import { resolveLocalEventsByHexIds } from '@/lib/local-event-resolve'
 import noteStatsService from '@/services/note-stats.service'
-import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import { formatPubkey, pubkeyToNpub } from '@/lib/pubkey'
 import { collectProfilePubkeysFromEvents } from '@/lib/profile-batch-coordinator'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
@@ -46,59 +41,59 @@ import { buildThreadInteractionFilters, buildThreadSuperchatPriorityFilters } fr
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import {
   buildRssWebNostrQueryRelayUrls,
-  isRssArticleUrlThreadInteraction,
-  isRssUrlThreadAntwortenTailKind
+  isRssArticleUrlThreadInteraction
 } from '@/lib/rss-web-feed'
 import type { TProfile } from '@/types'
 import { Filter, Event as NEvent, kinds } from 'nostr-tools'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { LoadingBar } from '../LoadingBar'
-import ReplyNote, { ReplyNoteSkeleton } from '../ReplyNote'
-import ThreadQuoteBacklink, { BacklinkAvatarStrip } from './ThreadQuoteBacklink'
+import { LoadingBar } from '@/components/LoadingBar'
+import ReplyNote, { ReplyNoteSkeleton } from '@/components/ReplyNote'
+import ThreadQuoteBacklink, { BacklinkAvatarStrip } from './components/ThreadQuoteBacklink'
+import threadPanelCache from './thread-panel-cache'
 import {
   MAX_PARENT_IDS_PER_NESTED_REQ,
   THREAD_PROFILE_BATCH_DEBOUNCE_MS,
   THREAD_PROFILE_CHUNK,
   THREAD_REPLY_LIMIT,
   THREAD_REPLY_SHOW_COUNT
-} from './types'
+} from './constants'
 import {
   backlinkRunSectionClass,
-  buildVisibleBacklinkRows,
   buildNoteStatsReplyIdSet,
   buildRepliesListAlignedWithNoteStats,
-  collectDisplayedThreadReplies,
   fetchPaymentAttestationsForRecipient,
   hydrateThreadRepliesFromStats,
-  isEaThreadTailBacklinkCandidate,
   isPollVoteKind,
   loadThreadRepliesFromLocalStores,
   mergeFetchedKind7ReactionsIntoRootNoteStats,
-  moveReportsToEndPreserveOrder,
-  normalizeHexEventId,
   openNoteHexId,
-  partitionAndSortBacklinkTail,
-  replyIsInSubtreeBelowOpenNote,
-  replyFeedZapsFirst,
   replyIdPresentInRepliesMap,
   replyMatchesThreadForList,
   seedThreadWalkFromLocalContext,
   shouldIncludeSuperchatInThreadReply,
   threadBacklinkRelationLabel,
   threadResponseFilterOptions,
-  eventsToThreadFeedItems,
-  insertMissingStatsReplyPlaceholders,
-  partitionStatsRepliesForMissingPlaceholders,
-  peekThreadStatsReplyEvent,
   type TThreadFeedItem
-} from './reply-list-utils'
-import MissingThreadReply from './MissingThreadReply'
+} from './thread-panel-utils'
+import {
+  buildThreadPanelDisplayRows,
+  buildThreadPanelMergedFeed,
+  buildThreadPanelQuoteUiIdSet,
+  buildThreadPanelReplies,
+  buildThreadPanelStatsMissingPartition,
+  buildThreadPanelVisibleFeed,
+  isDiscussionThreadRoot
+} from './buildThreadPanelView'
+import MissingThreadReply from './components/MissingThreadReply'
 import { useThreadRootInfo } from './useThreadRootInfo'
-import { useThreadAttestedPayments } from './useThreadAttestedPayments'
+import { useThreadAttestedPayments } from './thread-attested-payments'
+import { useThreadPanelStore } from './useThreadPanel'
+import { ThreadPanelEngine } from './ThreadPanelEngine'
+import { ThreadPanelProvider } from './ThreadPanelContext'
 
-function ReplyNoteList({
+function ThreadPanel({
   index: _pageIndex,
   event,
   sort = 'oldest',
@@ -136,9 +131,10 @@ function ReplyNoteList({
   const relayAuthoritativeRead =
     singleRelayAuthoritativeRead ?? browsingRelayUrls.length === 1
   const rootInfo = useThreadRootInfo(event)
-  const { repliesMap, addReplies } = useReplyIngress()
-  const isDiscussionRoot = event.kind === ExtendedKind.DISCUSSION
+  const { repliesMap, addReplies, panelIngress } = useThreadPanelStore(event)
+  const isDiscussionRoot = isDiscussionThreadRoot(event)
   const threadRelayUrlsRef = useRef<string[]>([])
+  const threadPanelEngineRef = useRef(new ThreadPanelEngine())
   const replyFetchGenRef = useRef(0)
   const shouldIncludeAttestedSuperchat = useCallback(
     (evt: NEvent) => {
@@ -181,309 +177,70 @@ function ReplyNoteList({
     [rootInfo?.type]
   )
 
-  const replies: NEvent[] = useMemo(() => {
-    const threadDisplayed = collectDisplayedThreadReplies(
+  const viewBuildBase = useMemo(
+    () => ({
       event,
       rootInfo,
       repliesMap,
       isDiscussionRoot,
       mutePubkeySet,
       hideContentMentioningMutedUsers,
-      statsReplyIds,
-      isEventDeleted
-    )
-    const replyEvents = buildRepliesListAlignedWithNoteStats(
-      noteStats?.replies,
+      statsReplies: noteStats?.replies,
+      statsUpdatedAt: noteStats?.updatedAt,
+      attestedPaymentIds,
+      sort,
+      showQuotes,
+      isEventDeleted,
+      bookmarkAuthorPubkeys: noteStats?.bookmarkPubkeySet
+    }),
+    [
+      event,
+      rootInfo,
       repliesMap,
-      threadDisplayed,
+      isDiscussionRoot,
       mutePubkeySet,
       hideContentMentioningMutedUsers,
-      rootInfo,
-      isEventDeleted
-    )
-    const replyIdSet = new Set(replyEvents.map((r) => r.id))
-
-    const threadWalkFromRepliesMap = new Map<string, NEvent>()
-    for (const { events: bucket } of repliesMap.values()) {
-      for (const e of bucket) {
-        threadWalkFromRepliesMap.set(e.id.toLowerCase(), e)
-      }
-    }
-
-    const includeThreadReply = (evt: NEvent) => {
-      if (isEventDeleted(evt)) return false
-      if (isPollVoteKind(evt)) return false
-      if (
-        shouldHideThreadResponseEvent(
-          evt,
-          mutePubkeySet,
-          hideContentMentioningMutedUsers,
-          threadResponseHideOpts
-        )
-      ) {
-        return false
-      }
-      if (isSuperchatKind(evt.kind)) {
-        return shouldIncludeSuperchatInThreadReply(
-          evt,
-          event,
-          rootInfo,
-          isDiscussionRoot,
-          threadWalkFromRepliesMap,
-          event.pubkey
-        )
-      }
-      if (statsReplyIds.has(evt.id)) return true
-      if (
-        rootInfo &&
-        !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, threadWalkFromRepliesMap)
-      ) {
-        return false
-      }
-      const opHex = openNoteHexId(event)
-      const opHexLower = opHex?.toLowerCase()
-      const viewingThreadRoot =
-        opHexLower &&
-        ((rootInfo?.type === 'E' && rootInfo.id.trim().toLowerCase() === opHexLower) ||
-          (rootInfo?.type === 'A' && rootInfo.eventId.trim().toLowerCase() === opHexLower))
-      if (
-        opHexLower &&
-        rootInfo &&
-        !viewingThreadRoot &&
-        !replyIsInSubtreeBelowOpenNote(evt, opHexLower, threadWalkFromRepliesMap)
-      ) {
-        return false
-      }
-      return true
-    }
-
-    for (const evt of collectAttestedSuperchatsFromRepliesMap(
-      repliesMap,
-      attestedPaymentIds,
-      replyIdSet,
-      includeThreadReply
-    )) {
-      replyIdSet.add(evt.id)
-      replyEvents.push(evt)
-    }
-
-    const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replyEvents, attestedPaymentIds)
-    const zaps = superchats
-    const replyScoreById =
-      sort === 'top' || sort === 'controversial' || sort === 'most-zapped'
-        ? new Map(
-            nonZaps.map((reply) => {
-              const stats = noteStatsService.getNoteStats(reply.id)
-              let upvotes = 0
-              let downvotes = 0
-              for (const reaction of stats?.likes ?? []) {
-                if (isDiscussionRoot ? isDiscussionUpvoteEmoji(reaction.emoji) : reaction.emoji === '⬆️') {
-                  upvotes++
-                } else if (
-                  isDiscussionRoot ? isDiscussionDownvoteEmoji(reaction.emoji) : reaction.emoji === '⬇️'
-                ) {
-                  downvotes++
-                }
-              }
-              return [
-                reply.id,
-                {
-                  vote: upvotes - downvotes,
-                  controversy: Math.min(upvotes, downvotes),
-                  zapAmount: (stats?.zaps ?? []).reduce((sum, zap) => sum + zap.amount, 0)
-                }
-              ] as const
-            })
-          )
-        : new Map<string, { vote: number; controversy: number; zapAmount: number }>()
-
-    // Sort notes/comments; zap receipts (9735) are always listed first, largest sats → smallest
-    switch (sort) {
-      case 'oldest':
-        return replyFeedZapsFirst(
-          [...nonZaps].sort((a, b) => a.created_at - b.created_at),
-          zaps
-        )
-      case 'newest':
-        return replyFeedZapsFirst(
-          [...nonZaps].sort((a, b) => b.created_at - a.created_at),
-          zaps
-        )
-      case 'top':
-        return replyFeedZapsFirst(
-          [...nonZaps].sort((a, b) => {
-            const scoreA = replyScoreById.get(a.id)?.vote ?? 0
-            const scoreB = replyScoreById.get(b.id)?.vote ?? 0
-            if (scoreA !== scoreB) {
-              return scoreB - scoreA
-            }
-            return b.created_at - a.created_at
-          }),
-          zaps
-        )
-      case 'controversial':
-        return replyFeedZapsFirst(
-          [...nonZaps].sort((a, b) => {
-            const controversyA = replyScoreById.get(a.id)?.controversy ?? 0
-            const controversyB = replyScoreById.get(b.id)?.controversy ?? 0
-            if (controversyA !== controversyB) {
-              return controversyB - controversyA
-            }
-            return b.created_at - a.created_at
-          }),
-          zaps
-        )
-      case 'most-zapped':
-        return replyFeedZapsFirst(
-          [...nonZaps].sort((a, b) => {
-            const zapAmountA = replyScoreById.get(a.id)?.zapAmount ?? 0
-            const zapAmountB = replyScoreById.get(b.id)?.zapAmount ?? 0
-            if (zapAmountA !== zapAmountB) {
-              return zapAmountB - zapAmountA
-            }
-            return b.created_at - a.created_at
-          }),
-          zaps
-        )
-      default:
-        return replyFeedZapsFirst(
-          [...nonZaps].sort((a, b) => b.created_at - a.created_at),
-          zaps
-        )
-    }
-  }, [
-    event,
-    rootInfo,
-    repliesMap,
-    mutePubkeySet,
-    hideContentMentioningMutedUsers,
-    sort,
-    attestedPaymentIds,
-    isDiscussionRoot,
-    event.kind,
-    statsReplyIds,
-    noteStats?.replies,
-    noteStats?.updatedAt,
-    isEventDeleted,
-    tombstoneEpoch
-  ])
-
-  const replyIdSet = useMemo(() => new Set(replies.map((r) => r.id)), [replies])
-  /** Render with quote card chrome (tail stream + kind 1 #q-only of E/A root). */
-  const quoteUiIdSet = useMemo(() => {
-    const s = new Set<string>()
-    if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
-      for (const r of replies) {
-        if (isEaThreadTailBacklinkCandidate(r, rootInfo)) s.add(r.id)
-      }
-    }
-    if (rootInfo?.type === 'I') {
-      for (const r of replies) {
-        if (isRssUrlThreadAntwortenTailKind(r.kind)) s.add(r.id)
-      }
-    }
-    return s
-  }, [replies, rootInfo])
-  const bookmarkAuthorPubkeys = useMemo(
-    () => noteStats?.bookmarkPubkeySet,
-    [noteStats?.bookmarkPubkeySet, noteStats?.updatedAt]
-  )
-  const withMissingPlaceholders = useCallback(
-    (
-      events: readonly NEvent[],
-      statsSubset?: ReadonlyArray<{ id: string; pubkey: string; created_at: number }>
-    ) =>
-      insertMissingStatsReplyPlaceholders(events, statsSubset ?? noteStats?.replies, sort, {
-        isEventDeleted,
-        mutePubkeySet
-      }),
-    [noteStats?.replies, noteStats?.updatedAt, sort, isEventDeleted, mutePubkeySet, tombstoneEpoch]
-  )
-  const statsMissingPartition = useMemo(() => {
-    const resolvedIds = new Set(
-      replies.map((r) => normalizeHexEventId(r.id) ?? r.id)
-    )
-    return partitionStatsRepliesForMissingPlaceholders(
       noteStats?.replies,
-      resolvedIds,
-      rootInfo,
-      repliesMap,
-      { bookmarkAuthorPubkeys }
-    )
-  }, [
-    noteStats?.replies,
-    noteStats?.updatedAt,
-    replies,
-    rootInfo,
-    repliesMap,
-    bookmarkAuthorPubkeys
-  ])
-  const mergedFeed = useMemo((): TThreadFeedItem[] => {
-    /** Quotes + time-sorted feeds must not interleave zap receipts chronologically */
-    const zapsThenTimeSorted = (merged: NEvent[], direction: 'asc' | 'desc') => {
-      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(merged, attestedPaymentIds)
-      const sortedNon = [...nonZaps].sort((a, b) =>
-        direction === 'asc' ? a.created_at - b.created_at : b.created_at - a.created_at
-      )
-      return moveReportsToEndPreserveOrder(replyFeedSuperchatsFirst(sortedNon, superchats))
-    }
+      noteStats?.updatedAt,
+      noteStats?.bookmarkPubkeySet,
+      attestedPaymentIds,
+      sort,
+      showQuotes,
+      isEventDeleted,
+      tombstoneEpoch
+    ]
+  )
 
-    if (!showQuotes) return withMissingPlaceholders(replies, statsMissingPartition.replyThread)
+  const replies: NEvent[] = useMemo(
+    () => buildThreadPanelReplies(viewBuildBase),
+    [viewBuildBase]
+  )
 
-    // E/A: zaps (sats desc) → thread replies (1 / 1111 / 1244, excluding #q-only) → tail (quotes, highlights, long-form refs)
-    if (rootInfo?.type === 'E' || rootInfo?.type === 'A') {
-      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replies, attestedPaymentIds)
-      const middle = nonZaps.filter((e) => !isEaThreadTailBacklinkCandidate(e, rootInfo))
-      const tailFromReplies = nonZaps.filter((e) => isEaThreadTailBacklinkCandidate(e, rootInfo))
-      const tailSeen = new Set<string>()
-      const tail: NEvent[] = []
-      const pushTail = (e: NEvent) => {
-        if (tailSeen.has(e.id)) return
-        tailSeen.add(e.id)
-        tail.push(e)
-      }
-      for (const e of tailFromReplies) pushTail(e)
-      const tailSorted = partitionAndSortBacklinkTail(tail)
-      const orderedMiddle = replyFeedSuperchatsFirst(middle, superchats)
-      const tailMissing = withMissingPlaceholders([], statsMissingPartition.tail)
-      return [
-        ...withMissingPlaceholders(orderedMiddle, statsMissingPartition.replyThread),
-        ...eventsToThreadFeedItems(tailSorted),
-        ...tailMissing
-      ]
-    }
-
-    // Web article / URL thread (NIP-22): same zaps → middle → tail layout as E/A
-    if (rootInfo?.type === 'I') {
-      const { superchats, rest: nonZaps } = partitionAttestedSuperchats(replies, attestedPaymentIds)
-      const middle = nonZaps.filter((e) => !isRssUrlThreadAntwortenTailKind(e.kind))
-      const tailFromReplies = nonZaps.filter((e) => isRssUrlThreadAntwortenTailKind(e.kind))
-      const tailSeen = new Set<string>()
-      const tail: NEvent[] = []
-      const pushTail = (e: NEvent) => {
-        if (tailSeen.has(e.id)) return
-        tailSeen.add(e.id)
-        tail.push(e)
-      }
-      for (const e of tailFromReplies) pushTail(e)
-      const tailSorted = partitionAndSortBacklinkTail(tail)
-      const orderedMiddle = replyFeedSuperchatsFirst(middle, superchats)
-      const tailMissing = withMissingPlaceholders([], statsMissingPartition.tail)
-      return [
-        ...withMissingPlaceholders(orderedMiddle, statsMissingPartition.replyThread),
-        ...eventsToThreadFeedItems(tailSorted),
-        ...tailMissing
-      ]
-    }
-
-    const merged = [...replies]
-    if (sort === 'oldest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'asc'), statsMissingPartition.replyThread)
-    if (sort === 'newest') return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'), statsMissingPartition.replyThread)
-    if (sort === 'top' || sort === 'controversial' || sort === 'most-zapped') {
-      return withMissingPlaceholders(replies, statsMissingPartition.replyThread)
-    }
-    return withMissingPlaceholders(zapsThenTimeSorted(merged, 'desc'), statsMissingPartition.replyThread)
-  }, [replies, showQuotes, sort, replyIdSet, rootInfo, event.kind, attestedPaymentIds, withMissingPlaceholders, statsMissingPartition])
+  /** Render with quote card chrome (tail stream + kind 1 #q-only of E/A root). */
+  const quoteUiIdSet = useMemo(
+    () => buildThreadPanelQuoteUiIdSet(replies, rootInfo),
+    [replies, rootInfo]
+  )
+  const statsMissingPartition = useMemo(
+    () =>
+      buildThreadPanelStatsMissingPartition({
+        statsReplies: noteStats?.replies,
+        replies,
+        rootInfo,
+        repliesMap,
+        bookmarkAuthorPubkeys: noteStats?.bookmarkPubkeySet
+      }),
+    [noteStats?.replies, noteStats?.updatedAt, noteStats?.bookmarkPubkeySet, replies, rootInfo, repliesMap]
+  )
+  const mergedFeed = useMemo(
+    (): TThreadFeedItem[] =>
+      buildThreadPanelMergedFeed({
+        ...viewBuildBase,
+        replies,
+        statsMissingPartition
+      }),
+    [viewBuildBase, replies, statsMissingPartition]
+  )
 
   const parentNoteFeed = useNoteFeedProfileContext()
   const threadProfileLoadedRef = useRef<Set<string>>(new Set())
@@ -785,9 +542,9 @@ function ReplyNoteList({
       }
       addReplies([evt])
       if (rootInfo) {
-        const cachedReplies = discussionFeedCache.getCachedReplies(rootInfo) || []
+        const cachedReplies = threadPanelCache.getCachedReplies(rootInfo) || []
         const without = cachedReplies.filter((r) => r.id !== evt.id)
-        discussionFeedCache.setCachedReplies(rootInfo, [...without, evt])
+        threadPanelCache.setCachedReplies(rootInfo, [...without, evt])
       }
     },
     [addReplies, rootInfo, mutePubkeySet, hideContentMentioningMutedUsers, event]
@@ -810,21 +567,22 @@ function ReplyNoteList({
 
   useEffect(() => {
     if (!rootInfo) return
-    const fetchGeneration = ++replyFetchGenRef.current
+    const fetchGeneration = threadPanelEngineRef.current.bumpGeneration()
+    replyFetchGenRef.current = fetchGeneration
 
     const init = async () => {
       const cachedStatsReplies = noteStatsService.getNoteStats(event.id)?.replies
       const statsIdList = cachedStatsReplies?.map((r) => r.id) ?? []
 
-      // Check cache next — discussion cache merges with relay results
-      const cachedData = discussionFeedCache.getCachedReplies(rootInfo)
+      // Paint from in-memory thread cache (relay fetch ingests only new batches below).
+      const cachedData = threadPanelCache.getCachedReplies(rootInfo)
       const hasCache = cachedData !== null
       const existingReplyCount = [...repliesMap.values()].reduce((n, b) => n + b.events.length, 0)
       const showLoadingIndicator =
         existingReplyCount === 0 && !(hasCache && cachedData && cachedData.length > 0)
 
       if (hasCache && cachedData) {
-        addReplies(cachedData)
+        addReplies(cachedData, 'session')
       }
       if (showLoadingIndicator) {
         setLoading(true)
@@ -841,15 +599,22 @@ function ReplyNoteList({
           hideContentMentioningMutedUsers,
           { statsReplyIds: statsIdList }
         )
-        if (fetchGeneration !== replyFetchGenRef.current) return
+        if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
         if (localRows.length > 0) {
-          addReplies(localRows)
-          discussionFeedCache.setCachedReplies(rootInfo, localRows)
+          addReplies(localRows, 'idb')
+          threadPanelCache.setCachedReplies(rootInfo, localRows)
           setLoading(false)
         }
       } catch (e) {
-        logger.debug('[ReplyNoteList] Local thread load failed', e)
+        logger.debug('[ThreadPanel] Local thread load failed', e)
       }
+
+      void fetchArchivesNotePageBundle(event.id, THREAD_REPLY_LIMIT).then((bundle) => {
+        if (!bundle || !threadPanelEngineRef.current.isCurrent(fetchGeneration)) return
+        if (bundle.replies.length > 0) {
+          addReplies(bundle.replies, 'archives')
+        }
+      })
 
       // Always refetch soon so relays fill gaps; no artificial delay (was 2s and caused empty threads)
       void fetchFromRelays()
@@ -930,7 +695,7 @@ function ReplyNoteList({
           )
 
           const streamThreadReply = (evt: NEvent) => {
-            if (fetchGeneration !== replyFetchGenRef.current) return
+            if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
             if (isPollVoteKind(evt)) return
             if (rootInfo.type === 'I') {
               if (!isRssArticleUrlThreadInteraction(evt, rootInfo.id)) return
@@ -983,7 +748,7 @@ function ReplyNoteList({
             : Promise.resolve([] as NEvent[])
 
           void attestationTask.then((relayAttestations) => {
-            if (fetchGeneration !== replyFetchGenRef.current) return
+            if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
             void applyAttestedSuperchatWave(
               relayAttestations,
               relayUrlsForThreadReq,
@@ -1000,7 +765,7 @@ function ReplyNoteList({
             relayOpSource: 'ReplyNoteList.thread'
           })
 
-          if (fetchGeneration !== replyFetchGenRef.current) return
+          if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
 
           mergeFetchedKind7ReactionsIntoRootNoteStats(allReplies, rootInfo)
 
@@ -1036,30 +801,30 @@ function ReplyNoteList({
             )
           })
           
-          // Store in cache (this merges with existing cached replies)
-          // After this call, the cache contains ALL replies we've ever seen for this thread
-          discussionFeedCache.setCachedReplies(rootInfo, regularReplies)
-          
-          // Get the merged cache (which includes all replies we've ever seen, including new ones)
-          const mergedCachedReplies = discussionFeedCache.getCachedReplies(rootInfo)
+          // Store in cache (merges with session/local/archives rows already ingested above).
+          threadPanelCache.setCachedReplies(rootInfo, regularReplies)
 
-          let mergedForUi: NEvent[]
+          const mergedCachedReplies = threadPanelCache.getCachedReplies(rootInfo)
+          const mergedForUi =
+            mergedCachedReplies === null ? regularReplies : mergedCachedReplies
           if (mergedCachedReplies === null) {
-            logger.warn('[ReplyNoteList] Cache returned null after store, using fetched replies only')
-            mergedForUi = regularReplies
-          } else {
-            mergedForUi = mergedCachedReplies
+            logger.warn('[ThreadPanel] Cache returned null after store, using fetched replies only')
           }
-          const repliesForStatsPrime = mergedForUi
-          addReplies(mergedForUi)
 
-          const statsBatch = mergedCachedReplies !== null && mergedCachedReplies.length > 0 ? mergedCachedReplies : regularReplies
+          // Ingest only this relay batch — cached/session rows were already added at init.
+          addReplies(regularReplies, 'relay')
+
+          const statsBatch =
+            mergedCachedReplies !== null && mergedCachedReplies.length > 0
+              ? mergedCachedReplies
+              : regularReplies
           if (statsBatch.length > 0) {
             noteStatsService.updateNoteStatsByEvents(statsBatch, event.pubkey, {
               statsRootEvent: event
             })
           }
 
+          const repliesForStatsPrime = mergedForUi
           if (repliesForStatsPrime.length > 0) {
             for (const reply of repliesForStatsPrime) {
               const sessionEdge = eventService.getSessionEventsForNoteStatsTarget(reply)
@@ -1074,7 +839,7 @@ function ReplyNoteList({
                   ? rootInfo.eventId.toLowerCase()
                   : undefined
             window.setTimeout(() => {
-              if (fetchGeneration !== replyFetchGenRef.current) return
+              if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
               void noteStatsService.fetchThreadReplyNoteStatsBatch(
                 repliesForStatsPrime,
                 relayUrlsForThreadReq,
@@ -1096,7 +861,7 @@ function ReplyNoteList({
                 mutePubkeySet,
                 hideContentMentioningMutedUsers
               })
-              if (fetchGeneration === replyFetchGenRef.current && hydrated.length > 0) {
+              if (threadPanelEngineRef.current.isCurrent(fetchGeneration) && hydrated.length > 0) {
                 addReplies(hydrated)
               }
             }
@@ -1123,7 +888,7 @@ function ReplyNoteList({
                 ]
                 const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
                   onevent: (evt: NEvent) => {
-                    if (fetchGeneration !== replyFetchGenRef.current) return
+                    if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
                     if (isPollVoteKind(evt)) return
                     if (
                       shouldHideThreadResponseEvent(
@@ -1137,7 +902,7 @@ function ReplyNoteList({
                     addReplies([evt])
                   }
                 })
-                if (fetchGeneration !== replyFetchGenRef.current) return
+                if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
                 nestedAccum.push(...nestedReplies)
               }
               const validNested = nestedAccum.filter(
@@ -1151,9 +916,8 @@ function ReplyNoteList({
             )
               )
               if (validNested.length > 0) {
-                discussionFeedCache.setCachedReplies(rootInfo, validNested)
-                const merged = discussionFeedCache.getCachedReplies(rootInfo)
-                addReplies(merged ?? validNested)
+                threadPanelCache.setCachedReplies(rootInfo, validNested)
+                addReplies(validNested, 'nested')
               }
             }
           }
@@ -1207,7 +971,7 @@ function ReplyNoteList({
                 ]
                 const nestedReplies = await queryService.fetchEvents(relayUrlsForThreadReq, nestedFilters, {
                   onevent: (evt: NEvent) => {
-                    if (fetchGeneration !== replyFetchGenRef.current) return
+                    if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
                     if (isPollVoteKind(evt)) return
                     if (
                       shouldHideThreadResponseEvent(
@@ -1223,7 +987,7 @@ function ReplyNoteList({
                     addReplies([evt])
                   }
                 })
-                if (fetchGeneration !== replyFetchGenRef.current) return
+                if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
                 nestedAccum.push(...nestedReplies)
               }
               const nestedWalkMerged = new Map<string, NEvent>(streamWalkById)
@@ -1240,16 +1004,15 @@ function ReplyNoteList({
                   replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, nestedWalkMerged)
               )
               if (validNested.length > 0) {
-                discussionFeedCache.setCachedReplies(rootInfo, validNested)
-                const merged = discussionFeedCache.getCachedReplies(rootInfo)
-                addReplies(merged ?? validNested)
+                threadPanelCache.setCachedReplies(rootInfo, validNested)
+                addReplies(validNested, 'nested')
               }
             }
           }
         } catch (error) {
-          logger.error('[ReplyNoteList] Error fetching replies:', error)
+          logger.error('[ThreadPanel] Error fetching replies:', error)
         } finally {
-          if (fetchGeneration === replyFetchGenRef.current) {
+          if (threadPanelEngineRef.current.isCurrent(fetchGeneration)) {
             try {
               const statsIdList =
                 noteStatsService.getNoteStats(event.id)?.replies?.map((r) => r.id) ?? []
@@ -1261,12 +1024,12 @@ function ReplyNoteList({
                 hideContentMentioningMutedUsers,
                 { statsReplyIds: statsIdList }
               )
-              if (fetchGeneration === replyFetchGenRef.current && lateLocal.length > 0) {
+              if (threadPanelEngineRef.current.isCurrent(fetchGeneration) && lateLocal.length > 0) {
                 addReplies(lateLocal)
-                discussionFeedCache.setCachedReplies(rootInfo, lateLocal)
+                threadPanelCache.setCachedReplies(rootInfo, lateLocal)
               }
             } catch (e) {
-              logger.debug('[ReplyNoteList] Late local thread load failed', e)
+              logger.debug('[ThreadPanel] Late local thread load failed', e)
             }
             setLoading(false)
           }
@@ -1342,24 +1105,10 @@ function ReplyNoteList({
   }, [])
 
   /** Paginate replies only; always show the backlinks tail (quotes, highlights, bookmarks, …). */
-  const visibleFeed = useMemo(() => {
-    const backlinks: TThreadFeedItem[] = []
-    const main: TThreadFeedItem[] = []
-    for (const item of mergedFeed) {
-      if (item.type === 'missing') {
-        const peek = peekThreadStatsReplyEvent(item.id, repliesMap)
-        const tailMissing =
-          (rootInfo?.type === 'E' || rootInfo?.type === 'A') &&
-          (!peek || isEaThreadTailBacklinkCandidate(peek, rootInfo))
-        if (tailMissing) backlinks.push(item)
-        else main.push(item)
-        continue
-      }
-      if (quoteUiIdSet.has(item.event.id)) backlinks.push(item)
-      else main.push(item)
-    }
-    return [...main.slice(0, showCount), ...backlinks]
-  }, [mergedFeed, showCount, quoteUiIdSet, rootInfo, repliesMap])
+  const visibleFeed = useMemo(
+    () => buildThreadPanelVisibleFeed(mergedFeed, showCount, quoteUiIdSet, rootInfo, repliesMap),
+    [mergedFeed, showCount, quoteUiIdSet, rootInfo, repliesMap]
+  )
 
   const shouldShowFeedItem = useCallback(
     (item: NEvent) => {
@@ -1411,11 +1160,12 @@ function ReplyNoteList({
   )
 
   const displayRows = useMemo(
-    () => buildVisibleBacklinkRows(visibleForRender, quoteUiIdSet),
+    () => buildThreadPanelDisplayRows(visibleForRender, quoteUiIdSet),
     [visibleForRender, quoteUiIdSet]
   )
 
   return (
+    <ThreadPanelProvider value={panelIngress}>
     <NoteFeedProfileContext.Provider value={threadNoteFeedProfileValue}>
     <div className="pb-12">
       {loading && <LoadingBar />}
@@ -1576,7 +1326,8 @@ function ReplyNoteList({
       {loading && <ReplyNoteSkeleton />}
     </div>
     </NoteFeedProfileContext.Provider>
+    </ThreadPanelProvider>
   )
 }
 
-export default ReplyNoteList
+export default ThreadPanel

@@ -17,7 +17,6 @@ import {
   useFetchThreadContextEvent,
   useNip84HighlightTargetEvents
 } from '@/hooks'
-import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNostr } from '@/providers/NostrProvider'
 import noteStatsService from '@/services/note-stats.service'
@@ -60,8 +59,7 @@ import {
 import { getEventTypeName } from '@/lib/content/event-type-name'
 import NotFound from './NotFound'
 import { ThreadProfileBatchProvider } from '@/providers/ThreadProfileBatchProvider'
-import { ThreadReplyProvider } from '@/providers/ThreadReplyProvider'
-import { THREAD_REPLY_LIMIT } from '@/components/ReplyNoteList/types'
+import { THREAD_REPLY_LIMIT } from '@/features/thread-panel/constants'
 import { preloadPostEditorChunk } from '@/components/PostEditor/preload-post-editor-chunk'
 
 function eventPointerHexId(pointer: string | undefined): string | undefined {
@@ -86,13 +84,7 @@ function eventPointersReferenceSameNote(a: string | undefined, b: string | undef
 }
 
 const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: { id?: string; index?: number; hideTitlebar?: boolean; initialEvent?: Event }, ref) => {
-  const threadKey = useMemo(() => {
-    const sync = resolveNoteEventSync(id, initialEvent)
-    return sync?.id ?? id?.trim() ?? 'pending'
-  }, [id, initialEvent])
-
   return (
-    <ThreadReplyProvider threadKey={threadKey}>
       <NotePageBody
         ref={ref}
         id={id}
@@ -100,7 +92,6 @@ const NotePage = forwardRef(({ id, index, hideTitlebar = false, initialEvent }: 
         hideTitlebar={hideTitlebar}
         initialEvent={initialEvent}
       />
-    </ThreadReplyProvider>
   )
 })
 NotePage.displayName = 'NotePage'
@@ -229,7 +220,6 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
   // Fetch profile for author (for OpenGraph metadata)
   const { profile: authorProfile } = useFetchProfile(finalEvent?.pubkey)
 
-  const { addReplies } = useReplyIngress()
   const [archivesSeedProfiles, setArchivesSeedProfiles] = useState<TProfile[]>([])
 
   useEffect(() => {
@@ -239,17 +229,11 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
     prewarmArchivesNotePage(finalEvent.id, THREAD_REPLY_LIMIT, (bundle) => {
       if (cancelled) return
       setArchivesSeedProfiles(profilesFromArchivesNotePageBundle(bundle))
-      if (bundle.replies.length > 0) {
-        addReplies(bundle.replies)
-        noteStatsService.updateNoteStatsByEvents(bundle.replies, finalEvent.pubkey, {
-          statsRootEvent: finalEvent
-        })
-      }
     })
     return () => {
       cancelled = true
     }
-  }, [finalEvent?.id, addReplies])
+  }, [finalEvent?.id])
 
   /** Resolve nostr embeds after first paint — avoids competing with thread/profile batch on open. */
   useEffect(() => {

@@ -5,7 +5,7 @@ import {
   fetchMissingStatsReplyEvent,
   missingStatsReplyLookupPointers,
   normalizeHexEventId
-} from '@/components/ReplyNoteList/reply-list-utils'
+} from '@/features/thread-panel/thread-panel-utils'
 import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import client from '@/services/client.service'

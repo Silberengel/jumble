@@ -9,7 +9,7 @@ import {
   partitionStatsRepliesForMissingPlaceholders,
   shouldIncludeSuperchatInThreadReply,
   statsReplyHexIdsEqual
-} from './reply-list-utils'
+} from './thread-panel-utils'
 import type { TRootInfo } from './types'
 
 function note(id: string, created_at: number, kind = kinds.ShortTextNote, tags: string[][] = []): Event {

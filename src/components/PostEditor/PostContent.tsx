@@ -88,6 +88,7 @@ import { canPublishWithContent } from '@/lib/publish-content-required'
 import { successfulPublishRelayUrls, type TRelayPublishStatus } from '@/lib/publish-relay-urls'
 import client, { eventService } from '@/services/client.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
+import threadPanelCache from '@/features/thread-panel/thread-panel-cache'
 import noteStatsService from '@/services/note-stats.service'
 import {
   buildAllAvailableTopics,
@@ -284,9 +285,9 @@ export default function PostContent({
                 pubkey: parentEvent.pubkey,
                 relay: client.getEventHint(parentEvent.id)
               }
-      const cached = discussionFeedCache.getCachedReplies(rootInfo) ?? []
+      const cached = threadPanelCache.getCachedReplies(rootInfo) ?? []
       const next = cached.filter((r) => r.id !== clean.id).concat([clean])
-      discussionFeedCache.setCachedReplies(rootInfo, next)
+      threadPanelCache.setCachedReplies(rootInfo, next)
 
       const urls = successfulPublishRelayUrls(relayStatuses)
       if (!clean.id || urls.length === 0) return
@@ -296,8 +297,8 @@ export default function PostContent({
         void eventService.fetchEventWithExternalRelays(clean.id, urls).then((fresh) => {
           if (!fresh || fresh.id !== clean.id) return
           addReplies([fresh])
-          const merged = (discussionFeedCache.getCachedReplies(rootInfo) ?? []).filter((r) => r.id !== fresh.id)
-          discussionFeedCache.setCachedReplies(rootInfo, [...merged, fresh])
+          const merged = (threadPanelCache.getCachedReplies(rootInfo) ?? []).filter((r) => r.id !== fresh.id)
+          threadPanelCache.setCachedReplies(rootInfo, [...merged, fresh])
           client.addEventToCache(fresh)
         })
       }, delayMs)
