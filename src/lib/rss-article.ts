@@ -105,7 +105,7 @@ export function getWebBookmarkArticleUrl(event: Pick<Event, 'kind' | 'tags'>): s
 }
 
 /** HTTP(S) page URL from kind 9802 `r` tags. */
-export function getHighlightSourceHttpUrl(event: Pick<Event, 'tags'>): string | undefined {
+export function getHighlightSourceHttpUrl(event: { tags: readonly string[][] }): string | undefined {
   for (const t of event.tags) {
     if (!t[0] || String(t[0]).toLowerCase() !== 'r' || !t[1]) continue
     const u = t[1].trim()

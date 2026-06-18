@@ -1,4 +1,5 @@
-import { EMBEDDED_EVENT_REGEX, ExtendedKind, POLL_TYPE } from '@/constants'
+import { COMPOSE_ROOT_EVENT_RESOLVE_MS, EMBEDDED_EVENT_REGEX, ExtendedKind, POLL_TYPE } from '@/constants'
+import { promiseWithTimeout } from '@/lib/async-timeout'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
 import customEmojiService from '@/services/custom-emoji.service'
@@ -38,7 +39,7 @@ import { blossomSha256FromBlobUrl, cleanUrl, isBlossomBudBlobUrl } from '@/lib/u
 import { collectReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
-import { generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
+import { getImetaInfoFromImetaTag, tagNameEquals } from './tag'
 
 function canonicalizeHttpUrlForITags(url: string): string {
   if (!url.startsWith('http://') && !url.startsWith('https://')) return url
@@ -1286,6 +1287,16 @@ function generateImetaTags(imageUrls: string[]) {
     .filter(Boolean) as string[][]
 }
 
+/** Session / IndexedDB only — publish must not wait on wide relay REQ for the thread root. */
+async function peekRootEventForReplyDraft(canonicalRootHex: string): Promise<Event | undefined> {
+  const fromSession = client.peekSessionCachedEvent(canonicalRootHex)
+  if (fromSession) return fromSession
+  return promiseWithTimeout(
+    eventService.peekPublicationStoreEvent(canonicalRootHex),
+    COMPOSE_ROOT_EVENT_RESOLVE_MS
+  )
+}
+
 async function extractRelatedEventIds(content: string, parentEvent?: Event) {
   const quoteEventHexIds: string[] = []
   const quoteReplaceableCoordinates: string[] = []
@@ -1324,14 +1335,7 @@ async function extractRelatedEventIds(content: string, parentEvent?: Event) {
       const [, rootEventHexId, hint, , rootEventPubkeyFromTag] = _rootETag
       const canonicalRootHex = resolveDeclaredThreadRootEventHex(rootEventHexId)
 
-      let rootEvent = client.peekSessionCachedEvent(canonicalRootHex)
-      if (!rootEvent) {
-        rootEvent = await eventService.fetchEvent(canonicalRootHex)
-      }
-      if (!rootEvent) {
-        const rootEventId = generateBech32IdFromETag(_rootETag)
-        rootEvent = rootEventId ? await eventService.fetchEvent(rootEventId) : undefined
-      }
+      const rootEvent = await peekRootEventForReplyDraft(canonicalRootHex)
       if (rootEvent) {
         rootETag = buildETagWithMarker(rootEvent.id, rootEvent.pubkey, hint, 'root')
       } else {

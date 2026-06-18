@@ -1477,24 +1477,8 @@ export default function PostContent({
           relayStatusCount: (newEvent as { relayStatuses?: unknown[] })?.relayStatuses?.length
         })
         // console.log('Published event:', newEvent)
-        
-        
-        // Show publishing feedback
-        if ((newEvent as any).relayStatuses) {
-          showPublishingFeedback({
-            success: true,
-            relayStatuses: (newEvent as any).relayStatuses,
-            successCount: (newEvent as any).relayStatuses.filter((s: any) => s.success).length,
-            totalCount: (newEvent as any).relayStatuses.length
-          }, {
-            message: publishSuccessMessage,
-            duration: 6000
-          })
-        } else {
-          showSimplePublishSuccess(publishSuccessMessage)
-        }
-        
-        // Full success - clean up and close
+
+        // Full success - close the composer first so relay toasts / thread merge cannot leave it stuck open
         postEditorCache.clearPostCache({ kind: getDeterminedKind, defaultContent, parentEvent })
         if (isDiscussionThread && !parentEvent) {
           postEditorCache.clearPostCache(discussionThreadDraftKindParams())
@@ -1521,6 +1505,23 @@ export default function PostContent({
 
         onPublishSuccess?.()
         close()
+
+        if ((newEvent as any).relayStatuses) {
+          showPublishingFeedback(
+            {
+              success: true,
+              relayStatuses: (newEvent as any).relayStatuses,
+              successCount: (newEvent as any).relayStatuses.filter((s: any) => s.success).length,
+              totalCount: (newEvent as any).relayStatuses.length
+            },
+            {
+              message: publishSuccessMessage,
+              duration: 6000
+            }
+          )
+        } else {
+          showSimplePublishSuccess(publishSuccessMessage)
+        }
       } catch (error) {
         publishTrace.step('publish failed', {
           error: error instanceof Error ? error.message : String(error)
@@ -1554,19 +1555,6 @@ export default function PostContent({
           const successCount = relayStatuses.filter((s: any) => s.success).length
           const totalCount = relayStatuses.length
           
-          // Show proper relay status feedback
-          showPublishingFeedback({
-            success: successCount > 0,
-            relayStatuses,
-            successCount,
-            totalCount
-          }, {
-            message: successCount > 0 ? 
-              (parentEvent ? t('Reply published to some relays') : t('Post published to some relays')) :
-              (parentEvent ? t('Failed to publish reply') : t('Failed to publish post')),
-            duration: 6000
-          })
-          
           // Handle partial success: show reply immediately (event already emitted by NostrProvider)
           if (successCount > 0) {
             const partialEvent = (error as any).event ?? newEvent
@@ -1595,6 +1583,34 @@ export default function PostContent({
             if (draftEvent) deleteDraftEventCache(draftEvent)
             onPublishSuccess?.()
             close()
+
+            showPublishingFeedback(
+              {
+                success: true,
+                relayStatuses,
+                successCount,
+                totalCount
+              },
+              {
+                message: parentEvent
+                  ? t('Reply published to some relays')
+                  : t('Post published to some relays'),
+                duration: 6000
+              }
+            )
+          } else {
+            showPublishingFeedback(
+              {
+                success: false,
+                relayStatuses,
+                successCount,
+                totalCount
+              },
+              {
+                message: parentEvent ? t('Failed to publish reply') : t('Failed to publish post'),
+                duration: 6000
+              }
+            )
           }
         } else {
           // Use standard publishing error feedback for cases without relay statuses

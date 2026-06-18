@@ -104,6 +104,12 @@ export const PUBLISH_TOAST_MAX_WAIT_MS = 90_000
 export const PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS = 5_000
 
 /**
+ * When building a reply draft, resolve the thread root from session / IndexedDB only — never block on relay
+ * REQ ({@link SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS}). Parent `e` tags already carry root id + pubkey.
+ */
+export const COMPOSE_ROOT_EVENT_RESOLVE_MS = 2_000
+
+/**
  * How long {@link ClientService.fetchRelayLists} waits on the network before returning an IndexedDB + default
  * merge. Must allow {@link ReplaceableEventService.fetchReplaceableEventsFromProfileFetchRelays} (10002 + 10243)
  * plus kind-10432 discovery to finish on slow relays; otherwise we never persist others’ NIP-65 and the cache
