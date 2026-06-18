@@ -306,6 +306,10 @@ export default function PostContent({
     [addReplies, parentEvent]
   )
   const [text, setText] = useState('')
+  const [editorHasContent, setEditorHasContent] = useState(false)
+  const handleEditorNonemptyChange = useCallback((nonempty: boolean) => {
+    setEditorHasContent(nonempty)
+  }, [])
   const textareaRef = useRef<TPostTextareaHandle>(null)
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)
@@ -693,6 +697,7 @@ export default function PostContent({
       posting,
       uploadInProgress: uploadProgresses.length > 0,
       text,
+      hasUnsyncedEditorContent: editorHasContent && !text.trim(),
       determinedKind: getDeterminedKind,
       mediaNoteKind,
       mediaUrl,
@@ -719,7 +724,9 @@ export default function PostContent({
       hasParentEvent: !!parentEvent,
       threadTitle,
       threadTopicResolved: !!threadTopicResolved,
-      threadContentOk: !!text.trim() && text.length <= 5000,
+      threadContentOk:
+        (editorHasContent || !!text.trim()) &&
+        (text.length <= 5000 || (editorHasContent && text.length === 0)),
       additionalRelayCount: additionalRelayUrls.length,
       threadIsReadingGroup,
       threadReadingAuthor,
@@ -730,6 +737,7 @@ export default function PostContent({
       posting,
       uploadProgresses.length,
       text,
+      editorHasContent,
       getDeterminedKind,
       mediaNoteKind,
       mediaUrl,
@@ -2698,7 +2706,7 @@ export default function PostContent({
       posting,
       blockMessage: composerBlockMessage,
       publishLabel: publishLabelForShell,
-      hasDraft: text.trim().length > 0,
+      hasDraft: editorHasContent || text.trim().length > 0,
       relaySelectedTotal: relayCapPreview?.selectedTotal
     }
     const prev = composerUiStateRef.current
@@ -2721,6 +2729,7 @@ export default function PostContent({
     composerBlockMessage,
     publishLabelForShell,
     text,
+    editorHasContent,
     relayCapPreview?.selectedTotal
   ])
 
@@ -3754,6 +3763,7 @@ export default function PostContent({
           ref={textareaRef}
           text={text}
           setText={setText}
+          onEditorNonemptyChange={handleEditorNonemptyChange}
           defaultContent={defaultContent}
           parentEvent={isDiscussionThread && !parentEvent ? THREAD_POST_EDITOR_PARENT : parentEvent}
           onSubmit={() => post()}

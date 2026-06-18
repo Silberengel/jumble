@@ -22,6 +22,8 @@ export type ComposerBlockReasonInput = {
   posting: boolean
   uploadInProgress: boolean
   text: string
+  /** True when TipTap has content not yet reflected in `text` (debounced parent sync). */
+  hasUnsyncedEditorContent?: boolean
   determinedKind: number
   mediaNoteKind: number | null
   mediaUrl: string
@@ -80,7 +82,8 @@ export function computeComposerBlockReason(input: ComposerBlockReasonInput): Com
   }
 
   const requiresNonemptyContent = publishRequiresNonemptyContent(input.determinedKind)
-  const hasNonemptyContent = input.text.trim().length > 0
+  const hasNonemptyContent =
+    input.text.trim().length > 0 || !!input.hasUnsyncedEditorContent
   const contentOk = requiresNonemptyContent
     ? hasNonemptyContent
     : (input.mediaNoteKind !== null && !!input.mediaUrl) || hasNonemptyContent

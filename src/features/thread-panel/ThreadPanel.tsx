@@ -131,7 +131,7 @@ function ThreadPanel({
   const relayAuthoritativeRead =
     singleRelayAuthoritativeRead ?? browsingRelayUrls.length === 1
   const rootInfo = useThreadRootInfo(event)
-  const { repliesMap, addReplies, panelIngress } = useThreadPanelStore(event)
+  const { repliesMap, addReplies, ingest } = useThreadPanelStore(event)
   const isDiscussionRoot = isDiscussionThreadRoot(event)
   const threadRelayUrlsRef = useRef<string[]>([])
   const threadPanelEngineRef = useRef(new ThreadPanelEngine())
@@ -1165,7 +1165,7 @@ function ThreadPanel({
   )
 
   return (
-    <ThreadPanelProvider value={panelIngress}>
+    <ThreadPanelProvider ingest={ingest}>
     <NoteFeedProfileContext.Provider value={threadNoteFeedProfileValue}>
     <div className="pb-12">
       {loading && <LoadingBar />}

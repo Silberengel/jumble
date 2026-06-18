@@ -38,6 +38,9 @@ import { HighlightData } from '../HighlightEditor'
 import { getKindDescription } from '@/lib/kind-description'
 import type { TContentWarningDraftOptions } from '@/lib/content-warning'
 
+/** Debounce lifting plain text + draft cache to PostContent (avoids re-rendering the full composer each keystroke). */
+const EDITOR_PARENT_SYNC_DEBOUNCE_MS = 250
+
 export type TPostTextareaHandle = {
   appendText: (text: string, addNewline?: boolean) => void
   insertText: (text: string) => void
@@ -55,6 +58,8 @@ const PostTextarea = forwardRef<
   {
     text: string
     setText: Dispatch<SetStateAction<string>>
+    /** Fires only when editor empty/non-empty changes (cheap parent state for publish gating). */
+    onEditorNonemptyChange?: (nonempty: boolean) => void
     defaultContent?: string
     parentEvent?: Event
     onSubmit?: () => void
@@ -105,6 +110,7 @@ const PostTextarea = forwardRef<
     {
       text = '',
       setText,
+      onEditorNonemptyChange,
       defaultContent,
       parentEvent,
       onSubmit,
@@ -150,14 +156,62 @@ const PostTextarea = forwardRef<
     activeTabRef.current = activeTab
     const [previewContent, setPreviewContent] = useState('')
     const editorRef = useRef<Editor | null>(null)
+    const editorNonemptyRef = useRef(false)
+    const parentSyncTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const onEditorNonemptyChangeRef = useRef(onEditorNonemptyChange)
+    onEditorNonemptyChangeRef.current = onEditorNonemptyChange
+
+    const notifyEditorNonempty = useCallback((editor: Editor) => {
+      const nonempty = !editor.isEmpty
+      if (nonempty === editorNonemptyRef.current) return
+      editorNonemptyRef.current = nonempty
+      onEditorNonemptyChangeRef.current?.(nonempty)
+    }, [])
+
+    const flushEditorSyncToParent = useCallback(() => {
+      if (parentSyncTimeoutRef.current) {
+        clearTimeout(parentSyncTimeoutRef.current)
+        parentSyncTimeoutRef.current = null
+      }
+      const ed = editorRef.current
+      if (!ed) return
+      const json = ed.getJSON()
+      const live = parseEditorJsonToText(json)
+      setText(live)
+      postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, json)
+      notifyEditorNonempty(ed)
+    }, [defaultContent, kind, notifyEditorNonempty, parentEvent, setText])
+
+    const scheduleEditorSyncToParent = useCallback(() => {
+      if (parentSyncTimeoutRef.current) {
+        clearTimeout(parentSyncTimeoutRef.current)
+      }
+      parentSyncTimeoutRef.current = setTimeout(() => {
+        parentSyncTimeoutRef.current = null
+        flushEditorSyncToParent()
+      }, EDITOR_PARENT_SYNC_DEBOUNCE_MS)
+    }, [flushEditorSyncToParent])
+
+    useEffect(() => () => flushEditorSyncToParent(), [flushEditorSyncToParent])
 
     const syncPreviewFromEditor = useCallback(() => {
       const ed = editorRef.current
-      const live = ed ? parseEditorJsonToText(ed.getJSON()) : text
+      if (!ed) {
+        setPreviewContent(text)
+        return text
+      }
+      flushEditorSyncToParent()
+      const live = parseEditorJsonToText(ed.getJSON())
       setPreviewContent(live)
-      if (ed) setText(live)
       return live
-    }, [setText, text])
+    }, [flushEditorSyncToParent, text])
+
+    const flushEditorSyncToParentRef = useRef(flushEditorSyncToParent)
+    flushEditorSyncToParentRef.current = flushEditorSyncToParent
+    const scheduleEditorSyncToParentRef = useRef(scheduleEditorSyncToParent)
+    scheduleEditorSyncToParentRef.current = scheduleEditorSyncToParent
+    const notifyEditorNonemptyRef = useRef(notifyEditorNonempty)
+    notifyEditorNonemptyRef.current = notifyEditorNonempty
 
     const composerPaneHeightClass = useMemo(
       () =>
@@ -251,17 +305,21 @@ const PostTextarea = forwardRef<
       },
       content: postEditorCache.getPostContentCache({ kind, defaultContent, parentEvent }),
       onUpdate(props) {
-        const live = parseEditorJsonToText(props.editor.getJSON())
-        setText(live)
+        editorRef.current = props.editor
+        notifyEditorNonemptyRef.current(props.editor)
         if (activeTabRef.current === 'preview') {
+          const live = parseEditorJsonToText(props.editor.getJSON())
           setPreviewContent(live)
+          flushEditorSyncToParentRef.current()
+          return
         }
-        postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, props.editor.getJSON())
+        scheduleEditorSyncToParentRef.current()
       },
       onCreate(props) {
-        const live = parseEditorJsonToText(props.editor.getJSON())
-        setText(live)
-        setPreviewContent(live)
+        editorRef.current = props.editor
+        notifyEditorNonemptyRef.current(props.editor)
+        flushEditorSyncToParentRef.current()
+        setPreviewContent(parseEditorJsonToText(props.editor.getJSON()))
       }
     })
 
@@ -327,14 +385,18 @@ const PostTextarea = forwardRef<
       },
       clear: () => {
         const editor = editorRef.current
-        if (editor) {
-          // Clear the editor content and reset to empty document
-          editor.chain().clearContent().run()
-          // Also clear the cache
-          postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
-          setText('')
-          setPreviewContent('')
+        if (parentSyncTimeoutRef.current) {
+          clearTimeout(parentSyncTimeoutRef.current)
+          parentSyncTimeoutRef.current = null
         }
+        if (editor) {
+          editor.chain().clearContent().run()
+          postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
+        }
+        editorNonemptyRef.current = false
+        onEditorNonemptyChangeRef.current?.(false)
+        setText('')
+        setPreviewContent('')
       },
       syncFromPostCache: () => {
         const editor = editorRef.current
@@ -342,11 +404,8 @@ const PostTextarea = forwardRef<
         const next = postEditorCache.getPostContentCache({ kind, defaultContent, parentEvent })
         if (next === undefined) return
         editor.chain().setContent(next).run()
-        const json = editor.getJSON()
-        const live = parseEditorJsonToText(json)
-        setText(live)
-        setPreviewContent(live)
-        postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, json)
+        flushEditorSyncToParent()
+        setPreviewContent(parseEditorJsonToText(editor.getJSON()))
       },
       getText: () => {
         const editor = editorRef.current
@@ -363,12 +422,10 @@ const PostTextarea = forwardRef<
         if (!editor) return
         const json = plainTextToTipTapDoc(plain)
         editor.chain().setContent(json).run()
-        postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
-        const live = parseEditorJsonToText(editor.getJSON())
-        setText(live)
-        setPreviewContent(live)
+        flushEditorSyncToParent()
+        setPreviewContent(parseEditorJsonToText(editor.getJSON()))
       }
-    }))
+    }), [flushEditorSyncToParent, kind, defaultContent, parentEvent, setText])
 
     const editorShellClass = 'min-h-full p-3 text-muted-foreground'
 

@@ -49,6 +49,16 @@ describe('computeComposerBlockReason', () => {
     expect(computeComposerBlockReason({ ...baseInput, text: '   ' })).toBe('empty')
   })
 
+  it('allows publish when editor has unsynced content', () => {
+    expect(
+      computeComposerBlockReason({
+        ...baseInput,
+        text: '',
+        hasUnsyncedEditorContent: true
+      })
+    ).toBeNull()
+  })
+
   it('blocks while posting', () => {
     expect(computeComposerBlockReason({ ...baseInput, posting: true })).toBe('posting')
   })

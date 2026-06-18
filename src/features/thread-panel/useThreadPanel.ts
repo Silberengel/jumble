@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import type { Event } from 'nostr-tools'
 import { createThreadPanelStore, ingestThreadPanelEvents } from './ThreadPanelStore'
 import type { ThreadPanelSource, ThreadPanelStoreSnapshot } from './types'
-import type { ThreadPanelIngress } from './ThreadPanelContext'
 
 /** Per-open-note store + unified ingest for the thread panel. */
 export function useThreadPanelStore(event: Event): {
@@ -10,7 +9,6 @@ export function useThreadPanelStore(event: Event): {
   repliesMap: ThreadPanelStoreSnapshot['index']
   ingest: (events: Event[], source?: ThreadPanelSource) => void
   addReplies: (events: Event[], source?: ThreadPanelSource) => void
-  panelIngress: ThreadPanelIngress
 } {
   const [panelStore, setPanelStore] = useState<ThreadPanelStoreSnapshot>(() => createThreadPanelStore())
   const repliesMap = panelStore.index
@@ -39,10 +37,5 @@ export function useThreadPanelStore(event: Event): {
     [ingest]
   )
 
-  const panelIngress = useMemo(
-    () => ({ ingest, store: panelStore }),
-    [ingest, panelStore]
-  )
-
-  return { panelStore, repliesMap, ingest, addReplies, panelIngress }
+  return { panelStore, repliesMap, ingest, addReplies }
 }
