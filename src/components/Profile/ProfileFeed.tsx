@@ -5,6 +5,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { ExtendedKind, PROFILE_FEED_KINDS, PROFILE_TIMELINE_REQ_LIMIT } from '@/constants'
 import { useProfileAuthorFeedSubRequests } from '@/hooks/useProfileAuthorFeedSubRequests'
 import { useProfilePins } from '@/hooks/useProfilePins'
+import { feedSeenOnAllowlistFromSubRequests } from '@/lib/feed-seen-on-allowlist'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import client from '@/services/client.service'
@@ -51,6 +52,11 @@ const ProfileFeed = forwardRef<
       kinds: profileFeedKinds,
       limit: PROFILE_TIMELINE_REQ_LIMIT
     })
+
+  const seenOnAllowlist = useMemo(
+    () => feedSeenOnAllowlistFromSubRequests(subRequests, followingFeedDeltaSubRequests),
+    [subRequests, followingFeedDeltaSubRequests]
+  )
 
   const pinnedEventIds = useMemo(
     () =>
@@ -129,7 +135,14 @@ const ProfileFeed = forwardRef<
           {pinEvents
             .filter((e) => !isEventDeleted(e))
             .map((event) => (
-              <NoteCard key={event.id} className="w-full" event={event} filterMutedNotes={false} pinned />
+              <NoteCard
+                key={event.id}
+                className="w-full"
+                event={event}
+                filterMutedNotes={false}
+                pinned
+                seenOnAllowlist={seenOnAllowlist.length > 0 ? seenOnAllowlist : undefined}
+              />
             ))}
           <div className="border-t border-border/60 px-2 py-1 text-xs text-muted-foreground">{t('Feed')}</div>
         </div>
@@ -160,6 +173,7 @@ const ProfileFeed = forwardRef<
           feedClientFilterPanelHost={feedFilterPanelHost}
           timelinePublicReadFallback
           revealBatchSize={48}
+          seenOnAllowlist={seenOnAllowlist.length > 0 ? seenOnAllowlist : undefined}
         />
       </div>
     </div>

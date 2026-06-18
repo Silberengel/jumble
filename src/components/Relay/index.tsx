@@ -187,6 +187,7 @@ const Relay = forwardRef<
         extraShouldHideEvent={shouldHideEventNotFromThisRelay}
         extraShouldHideRepliesEvent={shouldHideEventNotFromThisRelay}
         relayAuthoritativeFeedOnly
+        seenOnAllowlist={normalizedUrl ? [normalizedUrl] : undefined}
         onSingleRelayBrowseEmpty={onSingleRelayBrowseEmpty}
         alexandriaEmptyUrl={alexandriaFeedEmptyUrl}
       />

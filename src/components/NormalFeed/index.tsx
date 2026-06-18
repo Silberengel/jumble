@@ -67,6 +67,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
    * Single-relay explore: only events from that relay's live REQ (no session/IDB prime, no prefetch to other relays).
    */
   relayAuthoritativeFeedOnly?: boolean
+  /** Optional override for stats + ⋯ “Seen on” relay allowlist. */
+  seenOnAllowlist?: readonly string[]
 }>(function NormalFeed(
   {
     subRequests,
@@ -93,7 +95,8 @@ const NormalFeed = forwardRef<TNoteListRef, {
     oneShotMergedCap,
     timelinePublicReadFallback = false,
     alexandriaEmptyUrl = null,
-    relayAuthoritativeFeedOnly = false
+    relayAuthoritativeFeedOnly = false,
+    seenOnAllowlist
   },
   ref
 ) {
@@ -181,6 +184,7 @@ const NormalFeed = forwardRef<TNoteListRef, {
           timelinePublicReadFallback={timelinePublicReadFallback}
           alexandriaEmptyUrl={alexandriaEmptyUrl}
           relayAuthoritativeFeedOnly={relayAuthoritativeFeedOnly}
+          seenOnAllowlist={seenOnAllowlist}
         />
       </div>
     </>

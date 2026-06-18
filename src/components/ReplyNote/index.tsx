@@ -49,7 +49,10 @@ export default function ReplyNote({
   onClickReply,
   highlight = false,
   duplicateWebPreviewCleanedUrlHints,
-  foregroundStats = false
+  foregroundStats = false,
+  seenOnAllowlist,
+  deferAuthorAvatar = false,
+  hideEngagementChrome = false
 }: {
   event: Event
   parentEventId?: string
@@ -58,6 +61,10 @@ export default function ReplyNote({
   highlight?: boolean
   duplicateWebPreviewCleanedUrlHints?: string[]
   foregroundStats?: boolean
+  /** Thread / feed relay allowlist for stats + ⋯ menu (matches home feed). */
+  seenOnAllowlist?: readonly string[]
+  deferAuthorAvatar?: boolean
+  hideEngagementChrome?: boolean
 }) {
   const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
@@ -160,7 +167,7 @@ export default function ReplyNote({
                 size="medium"
                 className="mt-0.5 shrink-0"
                 maxFileSizeKb={2048}
-                deferRemoteAvatar={false}
+                deferRemoteAvatar={deferAuthorAvatar}
               />
               <NoteAuthorMetaLine
                 userId={headerUserId}
@@ -174,6 +181,7 @@ export default function ReplyNote({
             <NoteOptions
               event={event}
               className="shrink-0 [&_svg]:size-5"
+              seenOnAllowlist={seenOnAllowlist}
               onOpenPublicMessage={openPublicMessage}
               onOpenCallInvite={openCallInvite}
             />
@@ -254,15 +262,16 @@ export default function ReplyNote({
           )}
         </div>
       </Collapsible>
-      {show && !isNip18RepostKind(event.kind) && (
+      {show && !isNip18RepostKind(event.kind) && !hideEngagementChrome ? (
         <NoteStats
           className="mt-2 px-4"
           event={event}
           fetchIfNotExisting
           foregroundStats={foregroundStats}
+          seenOnAllowlist={seenOnAllowlist}
           useIconOnlyLikeTrigger={isNip25ReactionKind(event.kind)}
         />
-      )}
+      ) : null}
       {postEditorMounted ? (
         <PostEditor
           open={postEditorOpen}

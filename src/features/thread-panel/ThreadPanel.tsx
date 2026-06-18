@@ -363,6 +363,11 @@ function ThreadPanel({
   const [loading, setLoading] = useState<boolean>(false)
   /** Bumped when thread relay URLs are known — re-runs stats id hydration with inbox relays. */
   const [threadRelaysRevision, setThreadRelaysRevision] = useState(0)
+  const threadSeenOnAllowlist = useMemo(
+    () =>
+      threadRelayUrlsRef.current.length > 0 ? [...threadRelayUrlsRef.current] : undefined,
+    [threadRelaysRevision]
+  )
   const [showCount, setShowCount] = useState(THREAD_REPLY_SHOW_COUNT)
   const [highlightReplyId, setHighlightReplyId] = useState<string | undefined>(undefined)
   const replyRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -1253,6 +1258,9 @@ function ThreadPanel({
                   parentEventId={event.id !== parentEventHexId ? parentEventId : undefined}
                   duplicateWebPreviewCleanedUrlHints={replyDuplicateWebPreviewHints}
                   foregroundStats={statsForeground}
+                  seenOnAllowlist={threadSeenOnAllowlist}
+                  deferAuthorAvatar
+                  hideEngagementChrome={!statsForeground}
                   onClickParent={() => {
                     if (!parentEventHexId) return
                     if (replies.every((r) => r.id !== parentEventHexId)) {

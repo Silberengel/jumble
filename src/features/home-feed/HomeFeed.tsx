@@ -2,6 +2,7 @@ import NoteCard, { NoteCardLoadingSkeleton } from '@/components/NoteCard'
 import FeedFilterToolbarRow, { feedFilterRowChromeClass } from '@/components/FeedFilterToolbarRow'
 import type { TNoteListRef } from '@/components/NoteList'
 import { Button } from '@/components/ui/button'
+import { useFeedProfileBatchFromEvents } from '@/hooks/useFeedProfileBatchFromEvents'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
 import { cn } from '@/lib/utils'
 import {
@@ -50,11 +51,15 @@ const HomeFeed = forwardRef<
     loadingMore,
     hasMore,
     pendingNewCount,
+    listMode,
     loadMore,
     refresh,
     flushPendingNew,
     setScrolledFromTop
   } = useHomeFeed()
+
+  const { contextValue: feedProfileContextValue, Provider: FeedProfileProvider } =
+    useFeedProfileBatchFromEvents(visibleEvents)
 
   useImperativeHandle(
     ref,
@@ -149,14 +154,16 @@ const HomeFeed = forwardRef<
     return () => observer.disconnect()
   }, [hasMore, loading, loadingMore, loadMore])
 
+  const hideReplies = listMode === 'posts'
   const seenOnAllowlist =
-    bundle?.relaySetFeedOnly === false
+    hideReplies || bundle?.relaySetFeedOnly
       ? bundle?.seenOnAllowlistOp
-      : bundle?.seenOnAllowlistOp
+      : bundle?.seenOnAllowlistReplies
 
   if (!bundle) return null
 
   return (
+    <FeedProfileProvider value={feedProfileContextValue}>
     <div ref={feedRootRef} className="min-w-0 pt-2">
       {pendingNewCount > 0 ? (
         <div className="sticky top-0 z-30 flex justify-center py-2">
@@ -194,6 +201,7 @@ const HomeFeed = forwardRef<
 
       <div ref={bottomRef} className={cn('h-4 w-full shrink-0', !hasMore && 'hidden')} aria-hidden />
     </div>
+    </FeedProfileProvider>
   )
 })
 

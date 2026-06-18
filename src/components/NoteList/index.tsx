@@ -30,6 +30,7 @@ import logger from '@/lib/logger'
 import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
+import { feedSeenOnAllowlistFromSubRequests } from '@/lib/feed-seen-on-allowlist'
 import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { collapseStaleAddressableRevisions } from '@/lib/replaceable-revision'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
@@ -856,7 +857,12 @@ const NoteList = forwardRef(
       /** Notifications feed: show attest-superchat bar on incoming payment cards. */
       showPaymentAttestationAction = false,
       /** Notifications feed: show unattested kind 9734 / 9735 / 9740 / 9736 / 1814 addressed to this pubkey. */
-      incomingPaymentRecipientPubkey = null
+      incomingPaymentRecipientPubkey = null,
+      /**
+       * When set, stats + ⋯ “Seen on” use this relay allowlist (home favorites pattern).
+       * Defaults to URLs from {@link subRequests} (+ {@link followingFeedDeltaSubRequests} when present).
+       */
+      seenOnAllowlist: seenOnAllowlistProp
     }: {
       subRequests: TFeedSubRequest[]
       showKinds: number[]
@@ -921,6 +927,7 @@ const NoteList = forwardRef(
       alexandriaEmptyUrl?: string | null
       showPaymentAttestationAction?: boolean
       incomingPaymentRecipientPubkey?: string | null
+      seenOnAllowlist?: readonly string[]
     },
     ref
   ) => {
@@ -1097,6 +1104,11 @@ const NoteList = forwardRef(
         legacyFeedSubscriptionKey(followingFeedDeltaSubRequests ?? []),
       [followingFeedDeltaSubRequests]
     )
+
+    const effectiveSeenOnAllowlist = useMemo(() => {
+      if (seenOnAllowlistProp?.length) return [...seenOnAllowlistProp]
+      return feedSeenOnAllowlistFromSubRequests(subRequests, followingFeedDeltaSubRequests)
+    }, [seenOnAllowlistProp, subRequestsKey, followingFeedDeltaSubRequestsKey, followingFeedDeltaSubRequests])
 
     const effectiveShowKinds = useMemo(() => {
       if (!progressiveDocumentKinds?.length) return showKinds
@@ -5007,6 +5019,9 @@ const NoteList = forwardRef(
               bottomNoteLabel={eventReasonLabelMap.get(event.id)}
               deferAuthorAvatar
               hideEngagementChrome
+              seenOnAllowlist={
+                effectiveSeenOnAllowlist.length > 0 ? effectiveSeenOnAllowlist : undefined
+              }
               showPaymentAttestationAction={showPaymentAttestationAction}
             />
           ))
