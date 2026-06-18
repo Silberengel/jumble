@@ -39,14 +39,17 @@ import {
   Volume2
 } from 'lucide-react'
 import type { MutableRefObject } from 'react'
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useCallback, useRef, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/lib/utils'
 import {
   labInsertRaw,
   labInsertRawWithOptionalBlockLeadNl,
   labInsertSnippet,
-  labWrapOrSnippet
+  labRestoreSelection,
+  labWithInsertAnchor,
+  labWrapOrSnippet,
+  type LabInsertAnchor
 } from './markup-insert'
 import CitationCreateDialog from '@/components/PostEditor/CitationCreateDialog'
 
@@ -115,6 +118,8 @@ export type AdvancedEventLabMarkupToolbarProps = {
   markupMode: 'markdown' | 'asciidoc'
   viewRef: MutableRefObject<EditorView | null>
   sliceRef: MutableRefObject<AdvancedEventLabSlice | null>
+  /** Portal markup dropdowns into the lab shell (avoids dialog outside-dismiss blocking taps). */
+  menuPortalContainer?: HTMLElement | null
   /** Horizontal bar (default) or vertical sidebar beside the editor. */
   orientation?: 'horizontal' | 'vertical'
 }
@@ -123,6 +128,7 @@ export function AdvancedEventLabMarkupToolbar({
   markupMode,
   viewRef,
   sliceRef,
+  menuPortalContainer = null,
   orientation = 'horizontal'
 }: AdvancedEventLabMarkupToolbarProps) {
   const { t } = useTranslation()
@@ -133,6 +139,14 @@ export function AdvancedEventLabMarkupToolbar({
   const [citationPickerOpen, setCitationPickerOpen] = useState(false)
   const [citationCreateOpen, setCitationCreateOpen] = useState(false)
   const [citationDisplayType, setCitationDisplayType] = useState<LabCitationDisplayType>('inline')
+  const savedSelectionRef = useRef<LabInsertAnchor | null>(null)
+
+  const captureSelection = useCallback(() => {
+    const v = viewRef.current
+    if (!v) return
+    const sel = v.state.selection.main
+    savedSelectionRef.current = { from: sel.from, to: sel.to }
+  }, [viewRef])
 
   const openCitationPicker = (displayType: LabCitationDisplayType) => {
     setCitationDisplayType(displayType)
@@ -148,7 +162,21 @@ export function AdvancedEventLabMarkupToolbar({
   const run = (fn: (v: EditorView) => void) => {
     const v = viewRef.current
     if (!v) return
-    fn(v)
+    const anchor =
+      savedSelectionRef.current ??
+      ({
+        from: v.state.selection.main.from,
+        to: v.state.selection.main.to
+      } satisfies LabInsertAnchor)
+    savedSelectionRef.current = null
+    labRestoreSelection(v, anchor)
+    labWithInsertAnchor(anchor, () => fn(v))
+  }
+
+  const menuPortalProps = menuPortalContainer ? { portalContainer: menuPortalContainer } : {}
+
+  const barPointerHandlers = {
+    onPointerDownCapture: captureSelection
   }
 
   const citationPicker = (
@@ -183,7 +211,7 @@ export function AdvancedEventLabMarkupToolbar({
   )
 
   const citationDropdown = (
-    <DropdownMenu>
+    <DropdownMenu modal={false}>
       <DropdownMenuTrigger asChild>
         <Button
           type="button"
@@ -198,7 +226,7 @@ export function AdvancedEventLabMarkupToolbar({
           <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="z-[280] w-[min(20rem,92vw)] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+      <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(20rem,92vw)] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
         <DropdownMenuLabel>{t('Advanced lab tb citationsHint')}</DropdownMenuLabel>
         <DropdownMenuItem onSelect={() => setCitationCreateOpen(true)}>
           {t('Create and insert citation')}
@@ -245,12 +273,12 @@ export function AdvancedEventLabMarkupToolbar({
   if (markupMode === 'markdown') {
     return (
       <Fragment>
-      <div className={barShellClass}>
+      <div className={barShellClass} {...barPointerHandlers}>
         <span className="mr-1 hidden shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:inline">
           {t('Advanced lab tb markup tools')}
         </span>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -265,7 +293,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto w-56">
+          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] max-h-[min(20rem,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto w-56">
             <DropdownMenuLabel>{t('Advanced lab tb headings hint')}</DropdownMenuLabel>
             {(
               [
@@ -325,7 +353,7 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -340,7 +368,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] w-56">
+          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
             <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '**', 'bold'))}>
               {t('Advanced lab tb bold')}
             </DropdownMenuItem>
@@ -423,7 +451,7 @@ export function AdvancedEventLabMarkupToolbar({
 
         {citationDropdown}
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -438,7 +466,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] w-56">
+          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
             <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n- item one\n- item two\n'))}>
               <List className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb bulletList')}
@@ -482,7 +510,7 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -497,7 +525,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] w-64">
+          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-64">
             <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n> quoted line\n'))}>
               <Quote className="h-3.5 w-3.5 mr-2 inline" />
               {t('Advanced lab tb blockquote')}
@@ -532,7 +560,7 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu
+        <DropdownMenu modal={false}
           open={codeLangMenuOpen}
           onOpenChange={(o) => {
             setCodeLangMenuOpen(o)
@@ -553,7 +581,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
+          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
             <p className="text-xs text-muted-foreground mb-2 px-1">{t('Advanced lab tb codeBlockHint')}</p>
             <Input
               value={codeFilter}
@@ -584,7 +612,7 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -599,7 +627,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
             <DropdownMenuLabel>{t('Advanced lab tb mathIntro')}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
@@ -703,7 +731,7 @@ export function AdvancedEventLabMarkupToolbar({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <Button
               type="button"
@@ -717,7 +745,7 @@ export function AdvancedEventLabMarkupToolbar({
               <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="z-[280] w-48">
+          <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-48">
             <DropdownMenuLabel>{t('Advanced lab tb horizontalRules')}</DropdownMenuLabel>
             <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n---\n'))}>
               {t('Advanced lab tb hrDashes')}
@@ -739,12 +767,12 @@ export function AdvancedEventLabMarkupToolbar({
   /* AsciiDoc */
   return (
     <Fragment>
-    <div className={barShellClass}>
+    <div className={barShellClass} {...barPointerHandlers}>
       <span className="mr-1 hidden shrink-0 text-[11px] font-medium uppercase tracking-wide text-muted-foreground sm:inline">
         {t('Advanced lab tb markup tools')}
       </span>
 
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -759,7 +787,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(32rem,80dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(32rem,80dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocTitlesHint')}</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() =>
@@ -804,7 +832,7 @@ export function AdvancedEventLabMarkupToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -819,7 +847,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-56">
+        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
           <DropdownMenuItem onSelect={() => run((v) => labWrapOrSnippet(v, sliceRef, '*', 'bold'))}>
             {t('Advanced lab tb adocBold')}
           </DropdownMenuItem>
@@ -877,7 +905,7 @@ export function AdvancedEventLabMarkupToolbar({
 
       {citationDropdown}
 
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -892,7 +920,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-56">
+        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-56">
           <DropdownMenuItem onSelect={() => run((v) => labInsertRaw(v, sliceRef, '\n* item one\n* item two\n'))}>
             {t('Advanced lab tb adocUnordered')}
           </DropdownMenuItem>
@@ -919,7 +947,7 @@ export function AdvancedEventLabMarkupToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -934,7 +962,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-64">
+        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-64">
           <DropdownMenuItem
             onSelect={() =>
               run((v) =>
@@ -1081,7 +1109,7 @@ export function AdvancedEventLabMarkupToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -1096,7 +1124,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocStructureHint')}</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() =>
@@ -1169,7 +1197,7 @@ export function AdvancedEventLabMarkupToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu
+      <DropdownMenu modal={false}
         open={codeLangMenuOpen}
         onOpenChange={(o) => {
           setCodeLangMenuOpen(o)
@@ -1190,7 +1218,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
+        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(22rem,92vw)] p-2">
           <p className="text-xs text-muted-foreground mb-2 px-1">{t('Advanced lab tb adocSourceHint')}</p>
           <Input
             value={langFilter}
@@ -1223,7 +1251,7 @@ export function AdvancedEventLabMarkupToolbar({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <DropdownMenu>
+      <DropdownMenu modal={false}>
         <DropdownMenuTrigger asChild>
           <Button
             type="button"
@@ -1238,7 +1266,7 @@ export function AdvancedEventLabMarkupToolbar({
             <ChevronDown className="hidden h-3 w-3 shrink-0 opacity-60 md:inline-block" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
+        <DropdownMenuContent {...menuPortalProps} align="start" className="z-[280] w-[min(24rem,92vw)] max-h-[min(28rem,70dvh,var(--radix-dropdown-menu-content-available-height,100dvh))] overflow-y-auto">
           <DropdownMenuLabel>{t('Advanced lab tb adocStemHint')}</DropdownMenuLabel>
           <DropdownMenuItem
             onSelect={() => run((v) => labInsertSnippet(v, sliceRef, 'stem:[', 'x^2 + y^2', ']'))}

@@ -1318,6 +1318,7 @@ export default {
       'Feed-Anfragen ohne Kind-Filter; alle Event-Arten werden angezeigt (Relay-Limits und andere Regeln gelten weiter). Zum Testen neuer Event-Kinds.',
     'Use filter hint': 'Nur unten ausgewählte Kinds werden angefragt und angezeigt.',
     'Advanced event lab': 'Erweiterter Editor',
+    'Advanced editor button': 'Editor </>',
     'Advanced lab applyError': 'Editor ist nicht bereit. Bitte erneut versuchen.',
     'Advanced lab cancel undo': 'Abbrechen und Änderungen verwerfen',
     'Advanced lab undo checkpoint': 'Checkpoint wiederherstellen',

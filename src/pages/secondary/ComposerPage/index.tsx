@@ -27,8 +27,9 @@ import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import client, { eventService } from '@/services/client.service'
 import postEditorService from '@/services/post-editor.service'
 import { useSecondaryPage } from '@/PageManager'
+import type { TPageRef } from '@/types'
 import { Event } from 'nostr-tools'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import AdvancedComposerOptionsPage from './AdvancedComposerOptionsPage'
 import {
@@ -295,13 +296,21 @@ function ComposerPageInner({
   )
 }
 
-export default function ComposerPage(props: ComposerPageProps) {
+const ComposerPage = forwardRef<TPageRef, ComposerPageProps>(function ComposerPage(props, ref) {
+  useImperativeHandle(ref, () => ({
+    scrollToTop: (behavior?: ScrollBehavior) => {
+      window.scrollTo({ top: 0, behavior: behavior ?? 'smooth' })
+    }
+  }))
+
   return (
     <ComposerSessionProvider>
       <ComposerPageInner {...props} />
     </ComposerSessionProvider>
   )
-}
+})
+ComposerPage.displayName = 'ComposerPage'
+export default ComposerPage
 
 /** Open composer on mobile via secondary navigation; no-op on desktop (use PostEditor dialog). */
 export function openComposerPage(

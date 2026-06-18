@@ -175,6 +175,26 @@ function cmAppendAtEnd(view: EditorView, text: string, addNewline = false) {
   view.focus()
 }
 
+function isLabNestedOverlayTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest(
+        '[role="menu"], [data-radix-menu-content], [data-radix-popper-content-wrapper], [data-radix-select-content], [data-nested-picker-portal], [data-advanced-lab-shell]'
+      )
+    )
+  )
+}
+
+function shouldBlockLabOutsideDismiss(
+  portalContainer: HTMLElement | null,
+  portalBackdrop: boolean,
+  target: EventTarget | null
+): boolean {
+  if (!portalContainer && !portalBackdrop) return false
+  return !isLabNestedOverlayTarget(target)
+}
+
 export type AdvancedEventLabDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -1148,14 +1168,19 @@ export default function AdvancedEventLabDialog({
         aria-describedby={undefined}
         onOpenAutoFocus={(e) => e.preventDefault()}
         onInteractOutside={(e) => {
-          if (portalContainer || portalBackdrop) e.preventDefault()
+          if (shouldBlockLabOutsideDismiss(portalContainer, portalBackdrop, e.target)) {
+            e.preventDefault()
+          }
         }}
         onPointerDownOutside={(e) => {
-          if (portalContainer || portalBackdrop) e.preventDefault()
+          if (shouldBlockLabOutsideDismiss(portalContainer, portalBackdrop, e.target)) {
+            e.preventDefault()
+          }
         }}
         onFocusOutside={(e) => {
-          // Lab blocks auto-focus; focus can remain on the composer trigger and Radix would dismiss immediately.
-          if (portalContainer || portalBackdrop) e.preventDefault()
+          if (shouldBlockLabOutsideDismiss(portalContainer, portalBackdrop, e.target)) {
+            e.preventDefault()
+          }
         }}
         onCloseAutoFocus={(e) => {
           if (portalBackdrop) e.preventDefault()
@@ -1223,6 +1248,7 @@ export default function AdvancedEventLabDialog({
                     markupMode={markupMode}
                     viewRef={markupView}
                     sliceRef={sliceRef}
+                    menuPortalContainer={portalContainer}
                   />
                   <div
                     ref={markupHost}

@@ -2,6 +2,34 @@ import { EditorSelection } from '@codemirror/state'
 import type { EditorView } from '@codemirror/view'
 import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 
+export type LabInsertAnchor = { from: number; to: number }
+
+let pendingInsertAnchor: LabInsertAnchor | null = null
+
+/** Run insert helpers with an explicit selection (toolbar menus steal focus on mobile). */
+export function labWithInsertAnchor(anchor: LabInsertAnchor, fn: () => void) {
+  pendingInsertAnchor = anchor
+  try {
+    fn()
+  } finally {
+    pendingInsertAnchor = null
+  }
+}
+
+function mainSelection(view: EditorView, anchor?: LabInsertAnchor | null): LabInsertAnchor {
+  if (anchor) return anchor
+  if (pendingInsertAnchor) return pendingInsertAnchor
+  const sel = view.state.selection.main
+  return { from: sel.from, to: sel.to }
+}
+
+/** Restore a saved range before insert (toolbar menus steal focus on mobile). */
+export function labRestoreSelection(view: EditorView, anchor: LabInsertAnchor) {
+  const sel = view.state.selection.main
+  if (sel.from === anchor.from && sel.to === anchor.to) return
+  view.dispatch({ selection: EditorSelection.range(anchor.from, anchor.to) })
+}
+
 export function labSyncSliceFromView(
   view: EditorView,
   sliceRef: { current: AdvancedEventLabSlice | null }
@@ -15,9 +43,10 @@ export function labInsertSnippet(
   sliceRef: { current: AdvancedEventLabSlice | null },
   before: string,
   placeholder: string,
-  after: string
+  after: string,
+  anchor?: LabInsertAnchor | null
 ) {
-  const sel = view.state.selection.main
+  const sel = mainSelection(view, anchor)
   const insert = before + placeholder + after
   const innerFrom = sel.from + before.length
   const innerTo = innerFrom + placeholder.length
@@ -32,9 +61,10 @@ export function labInsertSnippet(
 export function labInsertRaw(
   view: EditorView,
   sliceRef: { current: AdvancedEventLabSlice | null },
-  text: string
+  text: string,
+  anchor?: LabInsertAnchor | null
 ) {
-  const sel = view.state.selection.main
+  const sel = mainSelection(view, anchor)
   view.dispatch({
     changes: { from: sel.from, to: sel.to, insert: text },
     selection: EditorSelection.cursor(sel.from + text.length)
@@ -47,9 +77,10 @@ export function labInsertRaw(
 export function labInsertRawWithOptionalBlockLeadNl(
   view: EditorView,
   sliceRef: { current: AdvancedEventLabSlice | null },
-  body: string
+  body: string,
+  anchor?: LabInsertAnchor | null
 ) {
-  const sel = view.state.selection.main
+  const sel = mainSelection(view, anchor)
   const needsLeadNl = sel.from > 0
   const insert = needsLeadNl ? `\n${body}` : body
   view.dispatch({
@@ -65,9 +96,10 @@ export function labWrapOrSnippet(
   view: EditorView,
   sliceRef: { current: AdvancedEventLabSlice | null },
   wrap: string,
-  placeholder: string
+  placeholder: string,
+  anchor?: LabInsertAnchor | null
 ) {
-  const sel = view.state.selection.main
+  const sel = mainSelection(view, anchor)
   const selected = view.state.sliceDoc(sel.from, sel.to)
   if (selected.length > 0) {
     const insert = `${wrap}${selected}${wrap}`
@@ -78,6 +110,6 @@ export function labWrapOrSnippet(
     view.focus()
     labSyncSliceFromView(view, sliceRef)
   } else {
-    labInsertSnippet(view, sliceRef, wrap, placeholder, wrap)
+    labInsertSnippet(view, sliceRef, wrap, placeholder, wrap, sel)
   }
 }

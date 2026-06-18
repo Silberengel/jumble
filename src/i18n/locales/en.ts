@@ -1398,6 +1398,7 @@ export default {
       'Feed requests omit kind filters and every kind is shown (still subject to relay limits and other feed rules). For testing new event kinds.',
     'Use filter hint': 'Only the kinds you select below are requested and shown.',
     'Advanced event lab': 'Advanced editor',
+    'Advanced editor button': 'Editor </>',
     'Advanced lab applyError': 'Editor is not ready. Try again.',
     'Advanced lab cancel undo': 'Cancel and Undo Changes',
     'Advanced lab undo checkpoint': 'Restore checkpoint',

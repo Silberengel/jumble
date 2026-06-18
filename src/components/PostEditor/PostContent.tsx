@@ -75,8 +75,7 @@ import {
   StickyNote,
   Upload,
   Music,
-  Video,
-  Code2
+  Video
 } from 'lucide-react'
 import { fileLooksLikeUploadableMedia } from '@/lib/compress-upload-media'
 import { nip94PairsToImetaTag } from '@/lib/upload-nip94-imeta'
@@ -527,15 +526,38 @@ export default function PostContent({
   ])
 
   const handleRelayPublishCapChange = useCallback((preview: TPrePublishRelayCapPreview) => {
-    setRelayCapPreview(preview)
+    setRelayCapPreview((prev) => {
+      if (
+        prev &&
+        prev.outboxSlotsInPublish === preview.outboxSlotsInPublish &&
+        prev.selectedContacted === preview.selectedContacted &&
+        prev.selectedTotal === preview.selectedTotal &&
+        prev.showCapHint === preview.showCapHint &&
+        prev.blocksPublish === preview.blocksPublish
+      ) {
+        return prev
+      }
+      return preview
+    })
     if (preview.blocksPublish) {
-      setRelayCapBlockInfo({
-        outboxSlotsInPublish: preview.outboxSlotsInPublish,
-        selectedContacted: preview.selectedContacted,
-        selectedTotal: preview.selectedTotal
+      setRelayCapBlockInfo((prev) => {
+        const next = {
+          outboxSlotsInPublish: preview.outboxSlotsInPublish,
+          selectedContacted: preview.selectedContacted,
+          selectedTotal: preview.selectedTotal
+        }
+        if (
+          prev &&
+          prev.outboxSlotsInPublish === next.outboxSlotsInPublish &&
+          prev.selectedContacted === next.selectedContacted &&
+          prev.selectedTotal === next.selectedTotal
+        ) {
+          return prev
+        }
+        return next
       })
     } else {
-      setRelayCapBlockInfo(null)
+      setRelayCapBlockInfo((prev) => (prev == null ? prev : null))
     }
   }, [])
 
@@ -779,7 +801,7 @@ export default function PostContent({
     t
   )
 
-  const { isPageLayout, isReplyFastPath, showInlineAdvancedPanel, showDialogFooter } =
+  const { isPageLayout, showInlineAdvancedPanel, showDialogFooter } =
     getComposerModeFlags({
       layoutMode,
       composerMode,
@@ -3787,7 +3809,6 @@ export default function PostContent({
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
           headerActions={(() => {
-              if (isReplyFastPath) return null
               const ActiveIcon =
                 isLongFormArticle ? FileText :
                 isWikiArticle ? FileText :
@@ -3823,17 +3844,14 @@ export default function PostContent({
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 shrink-0 gap-1 px-2 text-xs font-normal sm:text-sm"
+                    className="h-7 shrink-0 px-2 text-xs font-normal sm:h-8 sm:text-sm"
                     onClick={(e) => {
                       e.stopPropagation()
                       void handleOpenAdvancedLab()
                     }}
                     title={t('Advanced event lab')}
                   >
-                    <Code2 className="h-3.5 w-3.5 shrink-0" />
-                    <span className="max-w-[5.25rem] truncate sm:max-w-[8.5rem]">
-                      {t('Advanced event lab')}
-                    </span>
+                    {t('Advanced editor button')}
                   </Button>
                   {!parentEvent ? (
                     <>
@@ -4148,6 +4166,11 @@ export default function PostContent({
             pageFooterSlot
           )
         : null}
+      {!advancedLabOpen && isPageLayout ? (
+        <div className="sr-only" aria-hidden>
+          {composerAdvancedPanel}
+        </div>
+      ) : null}
       {showDialogFooter ? (
       <div
         className={cn(

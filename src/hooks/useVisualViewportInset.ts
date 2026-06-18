@@ -35,7 +35,19 @@ export function useVisualViewportInset(): VisualViewportInset {
   const [inset, setInset] = useState(readVisualViewportInset)
 
   useEffect(() => {
-    const sync = () => setInset(readVisualViewportInset())
+    const sync = () => {
+      setInset((prev) => {
+        const next = readVisualViewportInset()
+        if (
+          prev.height === next.height &&
+          prev.bottomInset === next.bottomInset &&
+          prev.offsetTop === next.offsetTop
+        ) {
+          return prev
+        }
+        return next
+      })
+    }
     sync()
     window.addEventListener('resize', sync)
     window.addEventListener('orientationchange', sync)

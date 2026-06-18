@@ -445,17 +445,17 @@ const PostTextarea = forwardRef<
           composerFillsShell && 'min-h-[14rem] flex-1'
         )}
       >
-        <div className="flex min-w-0 shrink-0 flex-col gap-2">
-          <TabsList className="w-auto shrink-0 justify-start">
-            <TabsTrigger value="edit" title={t('Edit')}>
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <TabsList className="h-8 w-auto shrink-0 justify-start">
+            <TabsTrigger value="edit" className="h-7 px-2.5 text-xs sm:text-sm" title={t('Edit')}>
               {t('Edit')}
             </TabsTrigger>
-            <TabsTrigger value="preview" title={t('Preview')}>
+            <TabsTrigger value="preview" className="h-7 px-2.5 text-xs sm:text-sm" title={t('Preview')}>
               {t('Preview')}
             </TabsTrigger>
           </TabsList>
           {headerActions ? (
-            <div className="flex min-w-0 flex-nowrap items-center justify-end gap-1 overflow-x-auto overscroll-x-contain">
+            <div className="ml-auto flex min-w-0 flex-nowrap items-center justify-end gap-1 overflow-x-auto overscroll-x-contain">
               {headerActions}
             </div>
           ) : null}
