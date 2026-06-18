@@ -10,6 +10,7 @@ services:
         VITE_READ_ALOUD_TTS_URL: ${JUMBLE_READ_ALOUD_TTS_URL:-/api/piper-tts}
         VITE_LANGUAGE_TOOL_URL: ${JUMBLE_LANGUAGE_TOOL_URL:-/api/languagetool}
         VITE_TRANSLATE_URL: ${JUMBLE_TRANSLATE_URL:-/api/translate}
+        VITE_ASCIIDOCTOR_SERVER_URL: ${JUMBLE_ASCIIDOCTOR_SERVER_URL:-/api/asciidoctor}
     ports:
       - "8089:80"
     restart: unless-stopped
