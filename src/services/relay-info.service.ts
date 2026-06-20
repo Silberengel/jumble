@@ -75,8 +75,7 @@ class RelayInfoService {
     if (urls.length === 0) {
       return []
     }
-    const results = await Promise.allSettled(urls.map((url) => this._getRelayInfo(url)))
-    return results.map((res) => (res.status === 'fulfilled' ? res.value : undefined))
+    return Promise.all(urls.map((url) => this.fetchDataloader.load(url)))
   }
 
   async getRelayInfo(url: string) {
