@@ -70,6 +70,7 @@ import ContentPreview from '../ContentPreview'
 import IValue from './IValue'
 import LiveEvent from './LiveEvent'
 import PublicationCard from './PublicationCard'
+import PublicationContentCard from './PublicationContentCard'
 import PublicationIndexMetadata from './PublicationIndexMetadata'
 import NostrSpecCard from './NostrSpecCard'
 import WikiCard from './WikiCard'
@@ -558,10 +559,13 @@ export default function Note({
       content = <PublicationCard className="mt-2" event={displayEvent} />
     }
   } else if (event.kind === ExtendedKind.PUBLICATION_CONTENT) {
-    content = showFull ? (
-      renderEventContent()
-    ) : (
-      <PublicationCard className="mt-2" event={displayEvent} />
+    content = (
+      <PublicationContentCard
+        className="mt-2"
+        event={displayEvent}
+        variant={showFull ? 'full' : 'embed'}
+        interactive={!showFull}
+      />
     )
   } else if (event.kind === kinds.LongFormArticle) {
     content = showFull ? (

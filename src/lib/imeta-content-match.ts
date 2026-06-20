@@ -124,7 +124,7 @@ export function getSuppressedImetaMedia(event: Event, content?: string): TImetaI
     if (!cleaned || seen.has(cleaned)) continue
     if (!suppressedUrls.has(cleaned)) continue
     // Inline content already renders this URL — accordion is for mirror/orphan hosts only.
-    if (!hideOrphaned && contentUrls.has(cleaned)) continue
+    if (contentUrls.has(cleaned)) continue
     if (!isEmbeddableImeta(info, cleaned)) continue
     seen.add(cleaned)
     out.push({ ...info, url: cleaned })

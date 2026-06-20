@@ -184,4 +184,31 @@ describe('imeta-content-match', () => {
     expect(getOrphanedImetaMedia(event)).toHaveLength(0)
     expect(getSuppressedImetaMedia(event)).toHaveLength(0)
   })
+
+  it('getSuppressedImetaMedia is empty when kind-20 imeta URLs match content exactly', () => {
+    const url1 = 'https://i.nostr.build/fJUBsT5ztYNoEgF0.webp'
+    const url2 = 'https://i.nostr.build/LdvIvWAy3ev4LHnZ.webp'
+    const content = `Harvest time\n${url1}\n${url2}`
+    const event = fakeEvent({
+      kind: ExtendedKind.PICTURE,
+      content,
+      tags: [
+        [
+          'imeta',
+          `url ${url1}`,
+          'm image/webp',
+          'x 47d36cd307fb34a642ea88fc1cb24ccf0e52ef6403149cc6b54bdfb415767fff'
+        ],
+        [
+          'imeta',
+          `url ${url2}`,
+          'm image/webp',
+          'x 1d772a2dc9348ae63c39cf7ccdb6c5407a16c97cf40a5bd1ab249f15fa47d5d0'
+        ]
+      ]
+    })
+    expect(shouldHideOrphanedImetaInAccordion(ExtendedKind.PICTURE, content)).toBe(true)
+    expect(getOrphanedImetaMedia(event)).toHaveLength(0)
+    expect(getSuppressedImetaMedia(event)).toHaveLength(0)
+  })
 })
