@@ -137,10 +137,7 @@ import {
   isIndexRelayTransportFailure,
   publishEventToHttpRelay
 } from '@/lib/index-relay-http'
-import {
-  relayFiltersUseCapitalLetterTagKeys,
-  relayUrlsStripExtendedTagReqBlocked
-} from '@/lib/relay-extended-tag-req-blocks'
+import { applyCapitalLetterTagRelayFallback } from '@/lib/relay-fetch-relay-stack'
 import {
   stripLocalNetworkRelaysFromRelayList,
   stripMailboxLocalUrlsForRemoteViewers,
@@ -2398,12 +2395,7 @@ class ClientService extends EventTarget {
       if (!navigator.onLine) {
         relays = relays.filter((url) => isLocalNetworkUrl(url))
       }
-      if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
-        relays = relayUrlsStripExtendedTagReqBlocked(relays)
-        if (relays.length === 0 && navigator.onLine) {
-          relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
-        }
-      }
+      relays = applyCapitalLetterTagRelayFallback(relays, filter as Filter, navigator.onLine)
       const key = this.generateTimelineKey(relays, filter as Filter)
       try {
         const st = await indexedDb.getTimelinePersistedState(key)
@@ -2937,12 +2929,7 @@ class ClientService extends EventTarget {
       const stripped = relays.filter((url) => !socialKindBlockedSet.has(normalizeUrl(url) || url))
       relays = relaysAfterSocialKindBlockedStrip(originalDedupedRelays, stripped)
     }
-    if (relayFiltersUseCapitalLetterTagKeys(filters)) {
-      relays = relayUrlsStripExtendedTagReqBlocked(relays)
-      if (relays.length === 0) {
-        relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
-      }
-    }
+    relays = applyCapitalLetterTagRelayFallback(relays, filters, navigator.onLine)
     relays = Array.from(new Set(relays))
 
     const wsRelayCountBeforeStrikes = relays.length
@@ -3334,12 +3321,11 @@ class ClientService extends EventTarget {
       // capital-letter-tag fallback below cannot re-introduce internet relays.
       wsRelayUrls = originalDedupedRelays.filter((url) => isLocalNetworkUrl(url))
     }
-    if (relayFiltersUseCapitalLetterTagKeys(filter as Filter)) {
-      wsRelayUrls = relayUrlsStripExtendedTagReqBlocked(wsRelayUrls)
-      if (wsRelayUrls.length === 0 && navigator.onLine && !relayAuthoritativeTimeline) {
-        wsRelayUrls = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
-      }
-    }
+    wsRelayUrls = applyCapitalLetterTagRelayFallback(
+      wsRelayUrls,
+      filter as Filter,
+      navigator.onLine && !relayAuthoritativeTimeline
+    )
     const timelineUrls = originalDedupedRelays
     const key = this.generateTimelineKey(timelineUrls, filter)
     let timeline = this.timelines[key]

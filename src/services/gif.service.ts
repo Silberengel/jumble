@@ -11,7 +11,7 @@ import {
 } from '@/constants'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { grantRelayConnectionOperationScope } from '@/lib/read-only-relay-personal'
-import { normalizeUrl } from '@/lib/url'
+import { chunkPubkeys, dedupeMediaPickerRelayUrls } from '@/lib/media-picker-relay-utils'
 import { kinds, type Event as NEvent, type Filter } from 'nostr-tools'
 import { queryService } from './client.service'
 import indexedDb from './indexed-db.service'
@@ -354,28 +354,7 @@ let gifOutboxPreloadInFlight: Promise<void> | null = null
 
 /** Kind 1063 read/write targets — {@link GIF_RELAY_URLS} only. */
 export function getGif1063RelayUrls(): string[] {
-  return dedupeRelayUrls(GIF_RELAY_URLS)
-}
-
-function dedupeRelayUrls(urls: readonly string[]): string[] {
-  const seen = new Set<string>()
-  return urls
-    .map((u) => normalizeUrl(u) || u)
-    .filter(Boolean)
-    .filter((u) => {
-      const n = u.toLowerCase()
-      if (seen.has(n)) return false
-      seen.add(n)
-      return true
-    })
-}
-
-function chunkPubkeys(pubkeys: readonly string[], size: number): string[][] {
-  const chunks: string[][] = []
-  for (let i = 0; i < pubkeys.length; i += size) {
-    chunks.push(pubkeys.slice(i, i + size))
-  }
-  return chunks
+  return dedupeMediaPickerRelayUrls(GIF_RELAY_URLS)
 }
 
 function normalizeCachedGif(g: GifMetadata & { sourceKind?: number }): GifMetadata {
@@ -437,7 +416,7 @@ async function fetch1063Paginated(
 }
 
 function gifNoteFallbackRelays(extraReadRelayUrls: readonly string[]): string[] {
-  return dedupeRelayUrls([...GIF_RELAY_URLS, ...FAST_READ_RELAY_URLS, ...extraReadRelayUrls])
+  return dedupeMediaPickerRelayUrls([...GIF_RELAY_URLS, ...FAST_READ_RELAY_URLS, ...extraReadRelayUrls])
 }
 
 export type LoadGifPoolOptions = {
@@ -469,7 +448,7 @@ export async function loadGifPoolFromRelays(options: LoadGifPoolOptions): Promis
     for (const pk of followAuthors) knownAuthors.add(pk.toLowerCase())
 
     /** Own + follows' 1063 may live on inbox relays, not only GIF hubs. */
-    const personal1063Relays = dedupeRelayUrls([...relays1063, ...noteFallbackRelays])
+    const personal1063Relays = dedupeMediaPickerRelayUrls([...relays1063, ...noteFallbackRelays])
 
     if (userPubkey) {
       const ownEvents = await fetch1063Paginated(personal1063Relays, fetchOpts, {

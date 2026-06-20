@@ -251,22 +251,24 @@ export function useProfilePins(pubkey: string | undefined) {
 
         const eventPromises: Promise<Event[]>[] = []
         if (aTags.length > 0) {
-          const aTagFetches = aTags.map(async (aTagRaw) => {
-            const parts = aTagRaw.trim().split(':')
-            if (parts.length < 2) return null
-            const kind = parseInt(parts[0], 10)
-            const author = parts[1]?.trim().toLowerCase()
-            if (!Number.isFinite(kind) || !author || !/^[0-9a-f]{64}$/.test(author)) return null
-            const d = parts.slice(2).join(':')
-            const filter = d
-              ? { authors: [author], kinds: [kind], limit: 1, '#d': [d] as [string] }
-              : { authors: [author], kinds: [kind], limit: 1 }
-            const events = await queryService.fetchEvents(pinsResolveRelays, filter)
-            return events[0] ?? null
-          })
-          eventPromises.push(
-            Promise.all(aTagFetches).then((events) => events.filter((e): e is Event => e !== null))
-          )
+          const aTagFilters = aTags
+            .map((aTagRaw) => {
+              const parts = aTagRaw.trim().split(':')
+              if (parts.length < 2) return null
+              const kind = parseInt(parts[0], 10)
+              const author = parts[1]?.trim().toLowerCase()
+              if (!Number.isFinite(kind) || !author || !/^[0-9a-f]{64}$/.test(author)) return null
+              const d = parts.slice(2).join(':')
+              return d
+                ? { authors: [author], kinds: [kind], limit: 1, '#d': [d] as [string] }
+                : { authors: [author], kinds: [kind], limit: 1 }
+            })
+            .filter((f): f is NonNullable<typeof f> => f != null)
+          if (aTagFilters.length > 0) {
+            eventPromises.push(
+              queryService.fetchEvents(pinsResolveRelays, aTagFilters).then((events) => events)
+            )
+          }
         }
 
         const eventArrays = await Promise.all(eventPromises)

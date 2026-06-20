@@ -24,6 +24,7 @@
 
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
 import WebSocket from 'ws'
+import { DEFAULT_RELAYS_TO_MONITOR } from './default-relays.mjs'
 
 const RELAY_DISCOVERY_KIND = 30166
 const RELAY_MONITOR_ANNOUNCEMENT_KIND = 10166
@@ -32,45 +33,9 @@ const RELAY_MONITOR_ANNOUNCEMENT_KIND = 10166
 const MONITOR_BOT_TAG = ['bot', 'true']
 
 /**
- * Default URLs to run NIP-11 checks against (30166); always merged with the monitor’s kind 10002 unless overridden.
- * Union of relay presets in src/constants.ts: DEFAULT_FAVORITE_RELAYS, FAST_READ_RELAY_URLS,
- * NIP66_DISCOVERY_RELAY_URLS, READ_ONLY_RELAY_URLS, SOCIAL_KIND_BLOCKED_RELAY_URLS,
- * FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS, GIF_RELAY_URLS, SEARCHABLE_RELAY_URLS,
- * PROFILE_RELAY_URLS, DEFAULT_NOSTRCONNECT_RELAY — deduped, sorted.
+ * Default URLs to run NIP-11 checks against (30166); merged with monitor kind 10002 unless overridden.
+ * Generated from relay presets in src/constants.ts — run `node scripts/sync-nip66-default-relays.mjs`.
  */
-// Deduplicated list of default relays to monitor (normalized URLs, first occurrence preserved)
-const DEFAULT_RELAYS_TO_MONITOR = [
-  'wss://theforest.nostr1.com',
-  'wss://nostr.land',
-  'wss://thecitadel.nostr1.com',
-  'wss://relay.nostr.watch',
-  'wss://relaypag.es',
-  'wss://hist.nostr.land',
-  'wss://profiles.nostr1.com',
-  'wss://purplepag.es',
-  'wss://nostr.wine',
-  'wss://nostr21.com',
-  'wss://aggr.nostr.land',
-  'wss://relay.primal.net',
-  'wss://nos.lol',
-  'wss://relay.gifbuddy.lol',
-  'wss://freelay.sovbit.host',
-  'wss://relay.sovbit.host',
-  'wss://search.nos.today',
-  'wss://relay.snort.social',
-  'wss://nostr.mom',
-  'wss://relay.noswhere.com',
-  'wss://relay.wikifreedia.xyz',
-  'wss://nostr.einundzwanzig.space',
-  'wss://nostrelites.org',
-  'wss://relay.nsec.app',
-  'wss://bucket.coracle.social',
-  'wss://spatia-arcana.com',
-  'wss://nostr-pub.wellorder.net',
-  'wss://pyramid.fiatjaf.com/',
-  'wss://nostr.lopp.social/',
-  'wss://relay.dergigi.com/'
-]
 
 /** Relays to publish 30166/10166 and to REQ kind 10002 from; broad enough for Imwald + NIP-66 discovery. */
 const DEFAULT_PUBLISH_RELAYS = [
@@ -210,13 +175,16 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
       ws.send(JSON.stringify(['REQ', subId, filter]))
       const events = await new Promise((resolve) => {
         const acc = []
+        let settled = false
         const t = setTimeout(() => {
-          cleanup()
-          resolve(acc)
+          finish(acc)
         }, 20000)
-        function cleanup () {
+        function finish (result) {
+          if (settled) return
+          settled = true
           clearTimeout(t)
           ws.removeListener('message', onMessage)
+          resolve(result)
         }
         function onMessage (data) {
           let msg
@@ -227,15 +195,11 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
           }
           if (msg[0] === 'EVENT' && msg[1] === subId && msg[2]) acc.push(msg[2])
           if (msg[0] === 'EOSE' && msg[1] === subId) {
-            cleanup()
-            resolve(acc)
+            finish(acc)
           }
         }
         ws.on('message', onMessage)
       })
-      try {
-        ws.close()
-      } catch (_) {}
 
       if (!events.length) continue
 
@@ -252,6 +216,7 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
       return list
     } catch (err) {
       log('Kind 10002 fetch relay error', { relay: relayUrl, err: err.message })
+    } finally {
       try {
         ws?.close()
       } catch (_) {}
@@ -322,67 +287,79 @@ async function resolveRelaysToMonitor (sk, publishRelays) {
   return merged.slice(0, MAX_RELAYS_TO_MONITOR)
 }
 
+async function publishToOneRelay (url, msg, eventId) {
+  let ws
+  try {
+    ws = new WebSocket(url, { handshakeTimeout: 8000 })
+    await new Promise((resolve, reject) => {
+      let timeoutId
+      let resolved = false
+      const cleanup = () => {
+        if (resolved) return
+        resolved = true
+        clearTimeout(timeoutId)
+        ws.removeListener('open', onOpen)
+        ws.removeListener('error', onError)
+      }
+      const onOpen = () => {
+        cleanup()
+        resolve()
+      }
+      const onError = (err) => {
+        cleanup()
+        reject(err)
+      }
+      timeoutId = setTimeout(() => {
+        cleanup()
+        reject(new Error('open timeout'))
+      }, 10000)
+      ws.once('open', onOpen)
+      ws.on('error', onError)
+    })
+    ws.send(msg)
+    let accepted = false
+    await new Promise((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        resolve()
+      }
+      const t = setTimeout(finish, 3000)
+      ws.once('message', (data) => {
+        try {
+          const j = JSON.parse(data.toString())
+          if (j[0] === 'OK' && j[1] === eventId) {
+            if (j[2] === true) {
+              accepted = true
+            } else {
+              log('Relay rejected event', { url, reason: j[3] })
+            }
+            clearTimeout(t)
+            finish()
+          }
+        } catch {
+          /* ignore malformed frames */
+        }
+      })
+    })
+    return accepted ? 1 : 0
+  } catch (err) {
+    log('Publish relay error', { url, err: err.message })
+    return 0
+  } finally {
+    try {
+      ws?.close()
+    } catch (_) {}
+  }
+}
+
 async function publishEvent (relayUrls, event) {
   const msg = JSON.stringify(['EVENT', event])
-  let ok = 0
-  const conns = []
-  for (const url of relayUrls) {
-    let ws
-    try {
-      ws = new WebSocket(url, { handshakeTimeout: 8000 })
-      await new Promise((resolve, reject) => {
-        let timeoutId
-        let resolved = false
-        const cleanup = () => {
-          if (resolved) return
-          resolved = true
-          clearTimeout(timeoutId)
-          ws.removeListener('open', onOpen)
-          ws.removeListener('error', onError)
-        }
-        const onOpen = () => {
-          cleanup()
-          resolve()
-        }
-        const onError = (err) => {
-          cleanup()
-          reject(err)
-        }
-        timeoutId = setTimeout(() => {
-          cleanup()
-          reject(new Error('open timeout'))
-        }, 10000)
-        ws.once('open', onOpen)
-        ws.on('error', onError)
-      })
-      conns.push(ws)
-      ws.send(msg)
-      await new Promise((resolve) => {
-        const onResp = (data) => {
-          try {
-            const j = JSON.parse(data.toString())
-            if (j[0] === 'OK' && j[1] === event.id) {
-              ok++
-              if (j[2] === true) { /* accepted */ } else { log('Relay rejected event', { url, reason: j[2] }) }
-            }
-          } finally {
-            resolve()
-          }
-        }
-        ws.once('message', onResp)
-        setTimeout(resolve, 3000)
-      })
-    } catch (err) {
-      log('Publish relay error', { url, err: err.message })
-      if (ws) {
-        try { ws.close() } catch (_) {}
-      }
-    }
-  }
-  for (const ws of conns) {
-    try { ws.close() } catch (_) {}
-  }
-  return ok
+  const results = await Promise.all(
+    relayUrls.map((url) => publishToOneRelay(url, msg, event.id))
+  )
+  return results.reduce((sum, n) => sum + n, 0)
 }
 
 async function run10166 (sk, publishRelays) {
@@ -392,17 +369,24 @@ async function run10166 (sk, publishRelays) {
   log('Published 10166', { successCount: count })
 }
 
+const MONITOR_ROUND_CONCURRENCY = 8
+
 async function run30166Round (sk, relaysToMonitor, publishRelays) {
   log('30166 round start', { relayCount: relaysToMonitor.length })
-  for (const relayUrl of relaysToMonitor) {
-    const nip11 = await fetchNip11(relayUrl)
-    if (!nip11) {
-      log('Skipping relay (no NIP-11)', { url: relayUrl })
-      continue
-    }
-    const event = build30166(relayUrl, nip11, sk)
-    const count = await publishEvent(publishRelays, event)
-    log('Published 30166', { url: relayUrl, successCount: count })
+  for (let i = 0; i < relaysToMonitor.length; i += MONITOR_ROUND_CONCURRENCY) {
+    const chunk = relaysToMonitor.slice(i, i + MONITOR_ROUND_CONCURRENCY)
+    await Promise.all(
+      chunk.map(async (relayUrl) => {
+        const nip11 = await fetchNip11(relayUrl)
+        if (!nip11) {
+          log('Skipping relay (no NIP-11)', { url: relayUrl })
+          return
+        }
+        const event = build30166(relayUrl, nip11, sk)
+        const count = await publishEvent(publishRelays, event)
+        log('Published 30166', { url: relayUrl, successCount: count })
+      })
+    )
   }
 }
 

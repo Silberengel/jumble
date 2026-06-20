@@ -171,17 +171,6 @@ export function hardReloadPreservingFeedSnapshots(): void {
   persistFeedSnapshotsToSessionStorage()
   window.location.reload()
 }
-
-/** @deprecated Use {@link persistFeedSnapshotsToSessionStorage} — kept for callers. */
-export function persistSessionFeedSnapshotsForHardRefresh(): void {
-  persistFeedSnapshotsToSessionStorage()
-}
-
-/** @deprecated Use {@link restorePersistedFeedSnapshots}. */
-export function restoreSessionFeedSnapshotsAfterHardRefresh(): void {
-  restorePersistedFeedSnapshots()
-}
-
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', () => {
     if (persistDebounceId != null) {

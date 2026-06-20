@@ -49,16 +49,15 @@ export async function resolveLocalEventsByHexIds(ids: readonly string[]): Promis
   }
 
   const missingPublication = wanted.filter((id) => !byId.has(id))
-  await Promise.all(
-    missingPublication.map(async (id) => {
-      try {
-        const ev = await indexedDb.getEventFromPublicationStore(id)
-        if (ev) byId.set(id, ev)
-      } catch {
-        /* optional */
+  if (missingPublication.length > 0) {
+    try {
+      for (const ev of await indexedDb.getEventsFromPublicationStoreByIds(missingPublication)) {
+        byId.set(ev.id.toLowerCase(), ev)
       }
-    })
-  )
+    } catch {
+      /* optional */
+    }
+  }
 
   const missingReplaceable = wanted.filter((id) => !byId.has(id))
   if (missingReplaceable.length > 0) {

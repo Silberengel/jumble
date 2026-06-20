@@ -6,7 +6,7 @@ import { ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
 import { getRelayUrlsWithFavoritesFastReadAndInbox } from '@/lib/favorites-feed-relays'
 import { tagNameEquals } from '@/lib/tag'
 import logger from '@/lib/logger'
-import { normalizeUrl } from '@/lib/url'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import type { Event } from 'nostr-tools'
 import type { Filter } from 'nostr-tools'
 
@@ -50,7 +50,7 @@ export type SpellExecutionContext = {
 
 /** When the spell has no `relays` tag and NIP-65 write list is empty: known-good read mirrors for REQ. */
 function defaultSpellRelayFallbackRelays(): string[] {
-  return dedupeRelayUrls([...FAST_READ_RELAY_URLS])
+  return dedupeNormalizeRelayUrlsOrdered([...FAST_READ_RELAY_URLS])
 }
 
 /** Max kind-777 events to pull when syncing spell definitions from relays (you only). */
@@ -98,18 +98,6 @@ export function getRelaysForSpellCatalogSync(
   })
 }
 
-function dedupeRelayUrls(urls: string[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const u of urls) {
-    const key = normalizeUrl(u) || u
-    if (!key || seen.has(key)) continue
-    seen.add(key)
-    out.push(key)
-  }
-  return out
-}
-
 export type GetRelaysForSpellOptions = {
   /**
  * When true (default): merge {@link FAST_READ_RELAY_URLS} after the primary list (REQ) for resilience.
@@ -143,9 +131,9 @@ export function getRelaysForSpell(
     return defaultSpellRelayFallbackRelays()
   }
   if (mergeDefaults) {
-    return dedupeRelayUrls([...primary, ...FAST_READ_RELAY_URLS])
+    return dedupeNormalizeRelayUrlsOrdered([...primary, ...FAST_READ_RELAY_URLS])
   }
-  return dedupeRelayUrls(primary)
+  return dedupeNormalizeRelayUrlsOrdered(primary)
 }
 
 /**

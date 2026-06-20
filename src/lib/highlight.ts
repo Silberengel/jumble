@@ -43,6 +43,3 @@ export async function getHighlightJs(): Promise<HLJSApi> {
   }
   return hljsPromise
 }
-
-/** @deprecated Use {@link getHighlightJs} — kept for any legacy dynamic default import. */
-export default getHighlightJs

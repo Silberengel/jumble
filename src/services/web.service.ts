@@ -36,7 +36,7 @@ class WebService {
         })
       )
     },
-    { maxBatchSize: 1, batchScheduleFn: (callback) => setTimeout(callback, 100) }
+    { maxBatchSize: 16, batchScheduleFn: (callback) => setTimeout(callback, 50) }
   )
 
   constructor() {

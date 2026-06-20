@@ -1589,21 +1589,6 @@ function libraryEntriesFromRoots(
   return roots.map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
 }
 
-/** @deprecated Engagement maps are no longer fetched — returns empty maps and re-slices the feed. */
-export async function refreshLibraryEngagement(
-  _indexRelayUrls: string[],
-  indexEvents: Event[],
-  _viewerPubkey?: string | null
-): Promise<{ engagement: PublicationEngagementMaps; engaged: LibraryPublicationEntry[] }> {
-  const indexByAddress = buildIndexByAddress(indexEvents)
-  const engagement = emptyPublicationEngagementMaps()
-  const topLevel = getTopLevelIndexEvents(indexEvents)
-  return {
-    engagement,
-    engaged: pickLibraryPublicationEntries(topLevel, indexByAddress, engagement)
-  }
-}
-
 const LIBRARY_SEARCH_BATCH_SIZE = 80
 
 function collectLibraryPublicationIndexSearchRoots(

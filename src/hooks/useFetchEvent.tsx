@@ -1,5 +1,8 @@
+import {
+  noteEventNeedsRelayFetch,
+  resolveNoteEventBeforeRelayFetch
+} from '@/lib/fetch-note-event-layers'
 import { resolveNoteEventSync } from '@/lib/resolve-note-event-sync'
-import { resolveThreadContextEventFromLocalStores } from '@/lib/thread-context-local'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { eventService } from '@/services/client.service'
@@ -17,10 +20,7 @@ export function useFetchEvent(
   const [event, setEvent] = useState<Event | undefined>(() =>
     eventId ? resolveNoteEventSync(eventId, initialEvent) : initialEvent
   )
-  const [isFetching, setIsFetching] = useState(() => {
-    if (!eventId) return false
-    return !resolveNoteEventSync(eventId, initialEvent)
-  })
+  const [isFetching, setIsFetching] = useState(() => noteEventNeedsRelayFetch(eventId, initialEvent))
   const [refetchToken, setRefetchToken] = useState(0)
 
   const refetch = useCallback(() => {
@@ -67,12 +67,13 @@ export function useFetchEvent(
     const fetchEvent = async () => {
       try {
         if (!skipShortcuts) {
-          const fromLocal = await resolveThreadContextEventFromLocalStores(
+          const fromLocal = await resolveNoteEventBeforeRelayFetch(
             eventId,
-            resolveNoteEventSync(eventId, initialEvent)
+            initialEvent,
+            isEventDeleted
           )
           if (cancelled) return
-          if (fromLocal && !isEventDeleted(fromLocal)) {
+          if (fromLocal) {
             setEvent(fromLocal)
             addReplies([fromLocal])
             setIsFetching(false)

@@ -978,8 +978,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!account || followListEvent !== null || isAccountSessionHydrating) return
     let cancelled = false
-    client
-      .fetchRelayList(account.pubkey)
+    const resolveRelays = async () => {
+      if (relayList) return relayList
+      return client.fetchRelayList(account.pubkey)
+    }
+    resolveRelays()
       .then((rl) => {
         const writes = rl.write.map((u) => normalizeUrl(u) || u).filter(Boolean)
         const relays = Array.from(new Set([...writes, ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u)])).filter(Boolean)
@@ -992,14 +995,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [account, followListEvent, isAccountSessionHydrating])
+  }, [account, followListEvent, isAccountSessionHydrating, relayList])
 
   /** Recovery: if hydrate finished but mute list is still null, query outboxes + search + profile relays (same gap as follow-list recovery). */
   useEffect(() => {
     if (!account || muteListEvent !== null || isAccountSessionHydrating) return
     let cancelled = false
-    client
-      .fetchRelayList(account.pubkey)
+    const resolveRelays = async () => {
+      if (relayList) return relayList
+      return client.fetchRelayList(account.pubkey)
+    }
+    resolveRelays()
       .then((rl) => {
         const relays = Array.from(
           new Set([
@@ -1045,7 +1051,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [account, muteListEvent, isAccountSessionHydrating])
+  }, [account, muteListEvent, isAccountSessionHydrating, relayList])
 
   useEffect(() => {
     const EVENT = ReplaceableEventService.AUTHOR_REPLACEABLES_REFRESHED_EVENT

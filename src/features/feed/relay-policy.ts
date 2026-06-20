@@ -5,10 +5,6 @@ import {
 import { relayAllowsPublishKind } from '@/lib/relay-publish-filter'
 import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
 import { getViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
-import {
-  relayFiltersUseCapitalLetterTagKeys,
-  relayUrlsStripExtendedTagReqBlocked
-} from '@/lib/relay-extended-tag-req-blocks'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { isSocialKindBlockedRelayUrl } from '@/lib/social-kind-blocked-relays'
 import { isLocalNetworkUrl, normalizeHttpRelayUrl, normalizeRelayUrlByScheme } from '@/lib/url'
@@ -23,7 +19,6 @@ export type FeedRelayDropReason =
   | 'read-only-for-write'
   | 'profile-index-for-write'
   | 'social-kind-blocked'
-  | 'extended-tag-blocked'
   | 'third-party-local'
   | 'over-cap'
   | 'favorites-feed-aggr'
@@ -81,7 +76,6 @@ export type FeedRelayPolicyContext = {
    */
   nostrLandAggrEligible?: boolean
   applySocialKindBlockedFilter?: boolean
-  applyExtendedTagBlockedFilter?: boolean
   preserveSingleExplicitRelay?: boolean
   socialKindBlockedExemptRelays?: readonly string[]
   allowThirdPartyLocalRelays?: boolean
@@ -111,11 +105,6 @@ function shouldApplySocialFilter(ctx: FeedRelayPolicyContext): boolean {
   return (ctx.filters ?? []).some((filter) => relayFilterIncludesSocialKindBlockedKind(filter))
 }
 
-function shouldApplyExtendedTagFilter(ctx: FeedRelayPolicyContext): boolean {
-  if (ctx.applyExtendedTagBlockedFilter !== undefined) return ctx.applyExtendedTagBlockedFilter
-  return (ctx.filters ?? []).some((filter) => relayFiltersUseCapitalLetterTagKeys([filter]))
-}
-
 function nostrLandAggrEligibleEffective(ctx: FeedRelayPolicyContext): boolean {
   if (ctx.nostrLandAggrEligible !== undefined) return ctx.nostrLandAggrEligible
   return getViewerRelayStackNostrLandAggrEligible()
@@ -135,11 +124,6 @@ function isReadOnlyRelay(norm: string): boolean {
 
 function isSocialKindBlockedRelay(norm: string): boolean {
   return isSocialKindBlockedRelayUrl(norm)
-}
-
-function isExtendedTagBlockedRelay(norm: string): boolean {
-  const stripped = relayUrlsStripExtendedTagReqBlocked([norm])
-  return stripped.length === 0
 }
 
 function addDrop(
@@ -162,7 +146,6 @@ export function applyFeedRelayPolicy(
 ): FeedRelayPolicyResult {
   const socialExempt = normalizedSet(context.socialKindBlockedExemptRelays)
   const socialFilter = shouldApplySocialFilter(context)
-  const extendedFilter = shouldApplyExtendedTagFilter(context)
   const max = context.maxRelays ?? Number.POSITIVE_INFINITY
   const layers: FeedRelayLayer[] = shouldEnsureAggr(context)
     ? [{ source: 'read-only', urls: [AGGR_NOSTR_LAND_WSS] }, ...inputLayers]
@@ -213,10 +196,6 @@ export function applyFeedRelayPolicy(
         !(context.preserveSingleExplicitRelay && layer.explicit && layer.urls.length === 1)
       ) {
         addDrop(dropped, normalized, layer.source, 'social-kind-blocked')
-        continue
-      }
-      if (extendedFilter && isExtendedTagBlockedRelay(normalized)) {
-        addDrop(dropped, normalized, layer.source, 'extended-tag-blocked')
         continue
       }
       if (!context.allowThirdPartyLocalRelays && isLocalNetworkUrl(normalized) && !layer.explicit) {

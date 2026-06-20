@@ -19,10 +19,3 @@ export function relayFiltersUseCapitalLetterTagKeys(filter: Filter | Filter[]): 
   return filters.some(filterUsesCapitalLetterTagKey)
 }
 
-/**
- * Legacy hook after {@link E_TAG_FILTER_BLOCKED_RELAY_URLS} was removed. Call sites that still
- * run when filters use `#E`-style keys are unchanged; no relays are stripped here anymore.
- */
-export function relayUrlsStripExtendedTagReqBlocked(urls: string[]): string[] {
-  return urls
-}

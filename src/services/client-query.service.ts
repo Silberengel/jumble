@@ -12,10 +12,7 @@ import {
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
-import {
-  relayFiltersUseCapitalLetterTagKeys,
-  relayUrlsStripExtendedTagReqBlocked
-} from '@/lib/relay-extended-tag-req-blocks'
+import { applyCapitalLetterTagRelayFallback } from '@/lib/relay-fetch-relay-stack'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
@@ -905,12 +902,7 @@ export class QueryService {
       const stripped = relays.filter((url) => !socialKindBlockedSet.has(normalizeUrl(url) || url))
       relays = relaysAfterSocialKindBlockedStrip(originalDedupedRelays, stripped)
     }
-    if (relayFiltersUseCapitalLetterTagKeys(filters)) {
-      relays = relayUrlsStripExtendedTagReqBlocked(relays)
-      if (relays.length === 0) {
-        relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
-      }
-    }
+    relays = applyCapitalLetterTagRelayFallback(relays, filters, navigator.onLine)
     // WebSocket REQ only — drop https URLs (index relays use HTTP polling elsewhere).
     relays = relays.filter((url) => !/^https?:\/\//i.test(url.trim()))
 
@@ -1211,12 +1203,7 @@ export class QueryService {
         relays = fallback.length > 0 ? fallback : [...publicReadRelayFallbackUrls()]
       }
     }
-    if (relayFiltersUseCapitalLetterTagKeys(filters)) {
-      relays = relayUrlsStripExtendedTagReqBlocked(relays)
-      if (relays.length === 0) {
-        relays = relayUrlsStripExtendedTagReqBlocked([...publicReadRelayFallbackUrls()])
-      }
-    }
+    relays = applyCapitalLetterTagRelayFallback(relays, filters, navigator.onLine)
     const { onevent, ...queryOpts } = options ?? {}
     return this.query(relays, filter, onevent, queryOpts)
   }

@@ -1518,6 +1518,52 @@ class IndexedDbService {
     return undefined
   }
 
+  async getEventsFromPublicationStoreByIds(eventIds: readonly string[]): Promise<Event[]> {
+    await this.initPromise
+    const ids = [
+      ...new Set(
+        eventIds
+          .map((id) => id.trim().toLowerCase())
+          .filter((id) => /^[0-9a-f]{64}$/.test(id))
+      )
+    ]
+    if (ids.length === 0) return []
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        return resolve([])
+      }
+      if (!this.db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
+        return resolve([])
+      }
+      const transaction = this.db.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+      const out: Event[] = []
+      let pending = ids.length
+
+      const finishOne = () => {
+        pending--
+        if (pending === 0) {
+          transaction.commit()
+          resolve(out)
+        }
+      }
+
+      for (const id of ids) {
+        const request = store.get(id)
+        request.onsuccess = () => {
+          const result = request.result as TValue<Event> | undefined
+          if (result?.value) out.push(result.value)
+          finishOne()
+        }
+        request.onerror = (event) => {
+          finishOne()
+          if (pending === 0) reject(event)
+        }
+      }
+    })
+  }
+
   async getEventFromPublicationStore(eventId: string): Promise<Event | undefined> {
     // Get event from PUBLICATION_EVENTS store by event ID
     // This is used for non-replaceable events stored as part of publications

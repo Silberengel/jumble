@@ -10,6 +10,7 @@ import {
   type ShouldDropEventOnIngestOptions
 } from '@/lib/event-ingest-filter'
 import { normalizeUrl } from '@/lib/url'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { cn } from '@/lib/utils'
 import client, { eventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -388,7 +389,7 @@ function EmbeddedNoteFetched({
       const extra = await loadAsyncEmbedRelayHints(noteKey, containingEventRef.current)
       if (cancelled || eventRef.current) return
       const wide0 = embedFetchCtxRef.current.wideRelaysStatic
-      const alreadyTried = new Set(dedupeRelayUrls([...wide0, ...parentHints]))
+      const alreadyTried = new Set(dedupeNormalizeRelayUrlsOrdered([...wide0, ...parentHints]))
       const novel = extra.filter((r) => !alreadyTried.has(normalizeUrl(r) || r))
       if (novel.length === 0) return
       const ev = await runWidePass(
@@ -567,10 +568,6 @@ function EmbeddedNoteContent({
   )
 }
 
-function dedupeRelayUrls(urls: readonly string[]): string[] {
-  return [...new Set(urls.map((u) => (normalizeUrl(u?.trim()) || '') as string).filter(Boolean))]
-}
-
 /** Prefer relays that usually hold / index replaceables so REQ opens useful targets first. */
 function preferPublicIndexRelaysFirst(urls: readonly string[]): string[] {
   const score = (u: string) => {
@@ -591,7 +588,7 @@ function buildEmbedWideRelayUrlsStatic(
   viewerInboxRelayUrls: string[]
 ): string[] {
   const rest = preferPublicIndexRelaysFirst(
-    dedupeRelayUrls([
+    dedupeNormalizeRelayUrlsOrdered([
       ...getAggrAwareSearchRelayUrls(),
       ...viewerInboxRelayUrls,
       ...nip66Service.getSearchableRelayUrls(),
@@ -677,7 +674,7 @@ async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event)
   if (resolvedHexId) {
     hintRelays.push(...client.getSeenEventRelayUrls(resolvedHexId))
   }
-  return dedupeRelayUrls(hintRelays)
+  return dedupeNormalizeRelayUrlsOrdered(hintRelays)
 }
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {

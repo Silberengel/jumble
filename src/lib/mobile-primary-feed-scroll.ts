@@ -28,8 +28,3 @@ export function captureMobilePrimaryFeedScroll(page: TPrimaryPageName): void {
   const top = registeredScrollElement?.scrollTop ?? window.scrollY
   saveMobilePrimaryFeedScroll(page, top)
 }
-
-/** @deprecated Use captureMobilePrimaryFeedScroll */
-export function captureMobilePrimaryFeedScrollFromWindow(page: TPrimaryPageName): void {
-  captureMobilePrimaryFeedScroll(page)
-}

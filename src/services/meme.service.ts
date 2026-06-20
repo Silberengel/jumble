@@ -8,6 +8,7 @@
  */
 
 import { ExtendedKind, FAST_READ_RELAY_URLS, GIF_RELAY_URLS } from '@/constants'
+import { dedupeMediaPickerRelayUrls } from '@/lib/media-picker-relay-utils'
 import { normalizeUrl } from '@/lib/url'
 import type { Event as NEvent } from 'nostr-tools'
 import { queryService } from './client.service'
@@ -287,21 +288,11 @@ export async function fetchMemes(
     }
   }
 
-  const readUrls = [
+  const dedupedUrls = dedupeMediaPickerRelayUrls([
     ...GIF_RELAY_URLS,
     ...FAST_READ_RELAY_URLS,
-    ...extraReadRelayUrls.map((u) => normalizeUrl(u)).filter((u): u is string => !!u)
-  ]
-  const seen = new Set<string>()
-  const dedupedUrls = readUrls
-    .map((u) => normalizeUrl(u) || u)
-    .filter(Boolean)
-    .filter((u) => {
-      const n = u.toLowerCase()
-      if (seen.has(n)) return false
-      seen.add(n)
-      return true
-    })
+    ...extraReadRelayUrls
+  ])
 
   const fetchOpts = { eoseTimeout: 20000, globalTimeout: 28000 }
   const limit1063 = Math.max(limit * 15, 400)

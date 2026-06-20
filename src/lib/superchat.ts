@@ -238,15 +238,6 @@ export function isIncomingNotificationsPaymentEvent(
   return false
 }
 
-/** @deprecated Use {@link isIncomingNotificationsPaymentEvent}. */
-export function isIncomingPaymentNotificationOrZapReceipt(
-  event: Event,
-  userPubkey: string,
-  attestationRecipientPubkey?: string | null
-): boolean {
-  return isIncomingNotificationsPaymentEvent(event, userPubkey, attestationRecipientPubkey)
-}
-
 /** Target `k` tag value for a kind 9741 attestation pointing at this event. */
 export function getSuperchatAttestationTargetKindValue(event: Event): string | null {
   if (event.kind === ExtendedKind.PAYMENT_NOTIFICATION) {

@@ -13,7 +13,8 @@ import {
 } from '@/lib/rss-article'
 import { expandWebBookmarkDTagQueryValues } from '@/lib/web-bookmark-nip'
 import logger from '@/lib/logger'
-import { isImage, isLocalNetworkUrl, isMedia, isVideo, normalizeUrl } from '@/lib/url'
+import { isImage, isLocalNetworkUrl, isMedia, isVideo } from '@/lib/url'
+import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { eventService, queryService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import type { RssFeedItem } from '@/services/rss-feed.service'
@@ -436,18 +437,6 @@ function highlightSourceUrl(evt: Event): string | undefined {
   return u && isHttpArticleUrl(u) ? u : undefined
 }
 
-function dedupeRelayUrlsForRssWeb(urls: string[]): string[] {
-  const seen = new Set<string>()
-  const out: string[] = []
-  for (const u of urls) {
-    const n = normalizeUrl(u) || u
-    if (!n || seen.has(n)) continue
-    seen.add(n)
-    out.push(n)
-  }
-  return out
-}
-
 /**
  * Inbox + favorites + fast read: one normalized list for RSS+Web relay queries.
  * Logged-out users get favorites tier + fast read only.
@@ -465,7 +454,7 @@ export async function buildRssWebNostrQueryRelayUrls(options: {
         blockedRelays
       })
     : getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays)
-  return dedupeRelayUrlsForRssWeb([...inboxAndFavorites, ...FAST_READ_RELAY_URLS])
+  return dedupeNormalizeRelayUrlsOrdered([...inboxAndFavorites, ...FAST_READ_RELAY_URLS])
 }
 
 /** One REQ per kind in {@link fetchDiscoveredWebUrlsFromRelays} (includes kind 7 with page `r` tags). */

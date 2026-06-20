@@ -1,11 +1,9 @@
 import { THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
 import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
+import { resolveNoteEventBeforeRelayFetch } from '@/lib/fetch-note-event-layers'
+import { eventMatchesPointer } from '@/lib/thread-context-local'
 import { resolveNoteEventSync } from '@/lib/resolve-note-event-sync'
-import {
-  eventMatchesPointer,
-  resolveThreadContextEventFromLocalStores
-} from '@/lib/thread-context-local'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -108,9 +106,9 @@ export function useFetchThreadContextEvent(
 
     void (async () => {
       if (!skipShortcuts) {
-        const local = await resolveThreadContextEventFromLocalStores(eventId, initialEvent)
+        const local = await resolveNoteEventBeforeRelayFetch(eventId, initialEvent, isEventDeleted)
         if (cancelled) return
-        if (local && !isEventDeleted(local)) {
+        if (local) {
           setEvent(local)
           addReplies([local])
           setIsFetching(false)
