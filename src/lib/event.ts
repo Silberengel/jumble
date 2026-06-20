@@ -162,6 +162,15 @@ export function isReplaceableEvent(kind: number) {
   )
 }
 
+/** Event kinds the author can revise via {@link EditOrCloneEventDialog} (edit mode). */
+export function canAuthorEditEventViaDialog(event: Pick<Event, 'kind'>): boolean {
+  if (event.kind === kinds.ShortTextNote) return true
+  if (event.kind === kinds.Highlights) return true
+  if (event.kind === kinds.LongFormArticle) return true
+  if (isReplaceableEvent(event.kind)) return true
+  return false
+}
+
 export function isProtectedEvent(event: Event) {
   return event.tags.some(([tagName]) => tagName === '-')
 }

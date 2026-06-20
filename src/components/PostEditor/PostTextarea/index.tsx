@@ -105,6 +105,8 @@ const PostTextarea = forwardRef<
     extraPreviewTags?: string[][]
     addClientTag?: boolean
     contentWarning?: TContentWarningDraftOptions
+    /** When set, Write tab preview shows this kind (e.g. 1010 edit) while `kind` drives the editor. */
+    previewKind?: number
     /** When false (mobile page composer), editor uses a fixed height instead of flex-grow. */
     fillAvailableHeight?: boolean
   }
@@ -135,6 +137,7 @@ const PostTextarea = forwardRef<
       extraPreviewTags,
       addClientTag = true,
       contentWarning,
+      previewKind,
       fillAvailableHeight = true
     },
     ref
@@ -262,7 +265,11 @@ const PostTextarea = forwardRef<
 
     const previewSurfaceClass = 'min-h-0'
 
-    const kindDescription = useMemo(() => getKindDescription(kind), [kind])
+    const effectivePreviewKind = previewKind ?? kind
+    const previewKindDescription = useMemo(
+      () => getKindDescription(effectivePreviewKind),
+      [effectivePreviewKind]
+    )
 
     const placeholderText = useMemo(
       () => t('Write something...') + ' (' + t('Paste or drop media files to upload') + ')',
@@ -502,13 +509,13 @@ const PostTextarea = forwardRef<
         >
           <div className={cn('flex min-h-0 flex-1 flex-col gap-2')}>
             <div className="shrink-0 text-xs text-muted-foreground">
-              kind {kindDescription.number}: {kindDescription.description}
+              kind {previewKindDescription.number}: {previewKindDescription.description}
             </div>
             <div className={previewBodyScrollClass}>
               <Preview
                 content={previewContent}
                 className={previewSurfaceClass}
-                kind={kind}
+                kind={effectivePreviewKind}
                 highlightData={highlightData}
                 pollCreateData={pollCreateData}
                 mediaImetaTags={mediaImetaTags}

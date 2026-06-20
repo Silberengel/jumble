@@ -316,7 +316,12 @@ export default function Preview({
 
   // For kind 1 notes, use MarkdownArticle to match actual rendering
   // This ensures preview matches the final result (no Links section, correct image placement, proper line breaks)
-  if (kind === kinds.ShortTextNote || kind === ExtendedKind.COMMENT || kind === ExtendedKind.VOICE_COMMENT) {
+  if (
+    kind === kinds.ShortTextNote ||
+    kind === ExtendedKind.SHORT_NOTE_EDIT ||
+    kind === ExtendedKind.COMMENT ||
+    kind === ExtendedKind.VOICE_COMMENT
+  ) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
         <MarkdownArticle event={fakeEvent} hideMetadata={true} lazyMedia={false} />

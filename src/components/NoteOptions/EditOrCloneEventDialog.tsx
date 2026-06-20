@@ -38,9 +38,11 @@ import {
 import {
   applyImwaldAttributionTags,
   collectUploadImetaTagsForContentUrls,
+  createShortNoteEditDraftEvent,
   mergeUploadImetaTagsInto
 } from '@/lib/draft-event'
-import { createFakeEvent } from '@/lib/event'
+import { createFakeEvent, isNsfwEvent } from '@/lib/event'
+import { getContentWarningLabel } from '@/lib/content-warning'
 import logger from '@/lib/logger'
 import {
   showPublishingError,
@@ -49,6 +51,7 @@ import {
 } from '@/lib/publishing-feedback'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
+import shortNoteEditsService from '@/services/short-note-edits.service'
 import type { TDraftEvent } from '@/types'
 import dayjs from 'dayjs'
 import { AlertTriangle, Code2, Plus, Trash2 } from 'lucide-react'
@@ -100,6 +103,7 @@ function StaticEventPreview({ event, className }: { event: Event; className?: st
   }
   if (
     k === kinds.ShortTextNote ||
+    k === ExtendedKind.SHORT_NOTE_EDIT ||
     k === ExtendedKind.COMMENT ||
     k === ExtendedKind.VOICE_COMMENT
   ) {
@@ -139,6 +143,8 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   const { open, onOpenChange, mode } = props
   const isCreate = mode === 'create'
   const sourceEvent = !isCreate ? props.sourceEvent : null
+  const isShortNoteAuthorEdit =
+    !isCreate && mode === 'edit' && sourceEvent?.kind === kinds.ShortTextNote
 
   const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin } = useNostr()
@@ -253,12 +259,19 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
 
   const previewEvent = useMemo(() => {
     if (isCreate && parsedCreateKind === null) return null
-    const k = isCreate ? parsedCreateKind! : sourceEvent!.kind
+    const k = isCreate
+      ? parsedCreateKind!
+      : isShortNoteAuthorEdit
+        ? ExtendedKind.SHORT_NOTE_EDIT
+        : sourceEvent!.kind
     const now = Math.floor(Date.now() / 1000)
+    const previewTags = isShortNoteAuthorEdit
+      ? [...tagsWithContentUploadImeta, ['e', sourceEvent!.id, '', sourceEvent!.pubkey]]
+      : tagsWithContentUploadImeta
     const base: TDraftEvent = {
       kind: k,
       content,
-      tags: tagsWithContentUploadImeta,
+      tags: previewTags,
       created_at: now
     }
     const withAttribution = applyImwaldAttributionTags(base, {
@@ -271,7 +284,15 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       pubkey: pubkey ?? '',
       created_at: now
     })
-  }, [isCreate, parsedCreateKind, sourceEvent, content, tagsWithContentUploadImeta, pubkey])
+  }, [
+    isCreate,
+    parsedCreateKind,
+    isShortNoteAuthorEdit,
+    sourceEvent,
+    content,
+    tagsWithContentUploadImeta,
+    pubkey
+  ])
 
   const buildDraftJson = useCallback(() => {
     if (isCreate && parsedCreateKind === null) {
@@ -284,11 +305,18 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         }
       )
     }
-    const k = isCreate ? parsedCreateKind! : sourceEvent!.kind
+    const k = isCreate
+      ? parsedCreateKind!
+      : isShortNoteAuthorEdit
+        ? ExtendedKind.SHORT_NOTE_EDIT
+        : sourceEvent!.kind
+    const draftTags = isShortNoteAuthorEdit
+      ? [...tagsWithContentUploadImeta, ['e', sourceEvent!.id, '', sourceEvent!.pubkey]]
+      : tagsWithContentUploadImeta
     const base: TDraftEvent = {
       kind: k,
       content,
-      tags: tagsWithContentUploadImeta,
+      tags: draftTags,
       created_at: dayjs().unix()
     }
     const withAttribution = applyImwaldAttributionTags(base, {
@@ -308,7 +336,16 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       _note: unsignedNote
     }
     return JSON.stringify(draft, null, 2)
-  }, [isCreate, parsedCreateKind, sourceEvent, pubkey, content, tagsWithContentUploadImeta, t])
+  }, [
+    isCreate,
+    parsedCreateKind,
+    isShortNoteAuthorEdit,
+    sourceEvent,
+    pubkey,
+    content,
+    tagsWithContentUploadImeta,
+    t
+  ])
 
   const draftJson = activeTab === 'json' ? buildDraftJson() : ''
 
@@ -368,16 +405,29 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       }
       setPublishing(true)
       try {
-        const publishKind = isCreate ? parseEventKindInput(createKindInput)! : sourceEvent!.kind
-        const draft = {
-          kind: publishKind,
-          content,
-          tags: tagsWithContentUploadImeta,
-          created_at: dayjs().unix()
+        let newEvent: Event
+        if (isShortNoteAuthorEdit && sourceEvent) {
+          const draft = await createShortNoteEditDraftEvent(content, sourceEvent, {
+            addClientTag: storage.getAddClientTag(),
+            isNsfw: isNsfwEvent(sourceEvent),
+            contentWarningLabel: getContentWarningLabel(sourceEvent) ?? undefined
+          })
+          newEvent = (await publish(draft, {
+            addClientTag: storage.getAddClientTag()
+          })) as Event
+          shortNoteEditsService.ingestEdit(sourceEvent, newEvent)
+        } else {
+          const publishKind = isCreate ? parseEventKindInput(createKindInput)! : sourceEvent!.kind
+          const draft = {
+            kind: publishKind,
+            content,
+            tags: tagsWithContentUploadImeta,
+            created_at: dayjs().unix()
+          }
+          newEvent = (await publish(draft, {
+            addClientTag: storage.getAddClientTag()
+          })) as Event
         }
-        const newEvent = await publish(draft, {
-          addClientTag: storage.getAddClientTag()
-        })
         if ((newEvent as any)?.relayStatuses) {
           const rs = (newEvent as any).relayStatuses
           showPublishingFeedback(
@@ -387,10 +437,15 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
               successCount: rs.filter((s: any) => s.success).length,
               totalCount: rs.length
             },
-            { message: t('Post published'), duration: 6000 }
+            {
+              message: isShortNoteAuthorEdit ? t('Edit published') : t('Post published'),
+              duration: 6000
+            }
           )
         } else {
-          showSimplePublishSuccess(t('Post published'))
+          showSimplePublishSuccess(
+            isShortNoteAuthorEdit ? t('Edit published') : t('Post published')
+          )
         }
         onOpenChange(false)
       } catch (e) {
@@ -422,10 +477,13 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     })
   }
 
-  const title =
-    mode === 'edit' || mode === 'clone'
-      ? t('Edit or fork this event')
-      : t('Create custom event')
+  const title = isCreate
+    ? t('Create custom event')
+    : isShortNoteAuthorEdit
+      ? t('Edit note')
+      : mode === 'edit'
+        ? t('Edit this event')
+        : t('Fork this event')
 
   const openAdvancedLab = useCallback(() => {
     if (isCreate && parsedCreateKind === null) return
@@ -470,7 +528,9 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
           <DialogDescription className="sr-only">
             {isCreate
               ? t('Set kind, content, and tags, then publish.')
-              : t('Edit content and tags, then publish a new signed event.')}
+              : isShortNoteAuthorEdit
+                ? t('Revise your note; publishes a NIP-41 edit without replacing the original.')
+                : t('Edit content and tags, then publish a new signed event.')}
           </DialogDescription>
         </DialogHeader>
 
@@ -540,14 +600,21 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
                         ) : null}
                       </>
                     ) : (
-                      <Input
-                        type="number"
-                        value={kind}
-                        disabled
-                        readOnly
-                        className="font-mono text-sm"
-                        aria-readonly
-                      />
+                      <>
+                        <Input
+                          type="number"
+                          value={isShortNoteAuthorEdit ? ExtendedKind.SHORT_NOTE_EDIT : kind}
+                          disabled
+                          readOnly
+                          className="font-mono text-sm"
+                          aria-readonly
+                        />
+                        {isShortNoteAuthorEdit ? (
+                          <p className="text-xs text-muted-foreground">
+                            {t('NIP-41 author edit (kind 1010); your original note stays on relays.')}
+                          </p>
+                        ) : null}
+                      </>
                     )}
                   </div>
                   <div className="space-y-1.5">
@@ -560,6 +627,14 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
                           setText={setContent}
                           defaultContent={richDefaultContent}
                           kind={kind}
+                          previewKind={
+                            isShortNoteAuthorEdit ? ExtendedKind.SHORT_NOTE_EDIT : undefined
+                          }
+                          extraPreviewTags={
+                            isShortNoteAuthorEdit && sourceEvent
+                              ? [['e', sourceEvent.id, '', sourceEvent.pubkey]]
+                              : undefined
+                          }
                           addClientTag={storage.getAddClientTag()}
                           className="min-h-[160px]"
                         />
@@ -586,6 +661,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
                       />
                     )}
                   </div>
+                  {!isShortNoteAuthorEdit ? (
                   <div className="space-y-3 rounded-lg border border-border/80 bg-muted/15 p-3 sm:p-4">
                     <div className="text-sm font-medium">{t('Tags')}</div>
                     <div className="space-y-3">
@@ -659,6 +735,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
                       {t('Add tag')}
                     </Button>
                   </div>
+                  ) : null}
                 </div>
               </ScrollArea>
             </TabsContent>

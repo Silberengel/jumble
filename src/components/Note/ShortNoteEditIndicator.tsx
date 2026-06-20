@@ -1,5 +1,6 @@
 import { FormattedTimestamp } from '@/components/FormattedTimestamp'
 import Collapsible from '@/components/Collapsible'
+import ShortNoteEditDiffContent from '@/components/Note/ShortNoteEditDiffContent'
 import type { ShortNoteEditState } from '@/lib/short-note-edits'
 import { cn } from '@/lib/utils'
 import { useTranslation } from 'react-i18next'
@@ -38,31 +39,35 @@ export default function ShortNoteEditIndicator({
           className="text-xs text-muted-foreground [&_button]:text-xs [&_button]:font-normal"
         >
           <ul className="mt-1 space-y-2 pl-1">
-            {history.map((edit, idx) => (
-              <li key={edit.id} className="border-l-2 border-amber-500/40 pl-2">
-                <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
-                  <span>
-                    {idx === 0
-                      ? t('Original')
-                      : t('Revision {{n}}', { n: idx })}
-                  </span>
-                  <FormattedTimestamp timestamp={edit.created_at} short />
-                </div>
-                <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground/90">
-                  {edit.content}
-                </p>
-              </li>
-            ))}
+            <li className="border-l-2 border-muted pl-2">
+              <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                <span>{t('Original')}</span>
+                <FormattedTimestamp timestamp={originalEvent.created_at} short />
+              </div>
+              <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground/90">
+                {originalEvent.content}
+              </p>
+            </li>
+            {history.map((edit, idx) => {
+              const prevContent =
+                idx === 0 ? originalEvent.content : (history[idx - 1]?.content ?? originalEvent.content)
+              return (
+                <li key={edit.id} className="border-l-2 border-amber-500/40 pl-2">
+                  <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                    <span>{t('Revision {{n}}', { n: idx + 1 })}</span>
+                    <FormattedTimestamp timestamp={edit.created_at} short />
+                  </div>
+                  <ShortNoteEditDiffContent
+                    original={prevContent}
+                    revised={edit.content}
+                    className="mt-0.5 text-sm border-l-0 pl-0 ml-0"
+                  />
+                </li>
+              )
+            })}
           </ul>
         </Collapsible>
       )}
     </span>
   )
-}
-
-/** Left accent on note body when the displayed text differs from the signed kind-1 content. */
-export function shortNoteEditedContentClassName(edited: boolean): string | undefined {
-  return edited
-    ? 'border-l-2 border-amber-500/50 pl-3 -ml-0.5 rounded-sm bg-amber-500/[0.04]'
-    : undefined
 }

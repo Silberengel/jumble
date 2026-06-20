@@ -7,6 +7,7 @@ import {
   getUsingClient,
   isProtectedEvent,
   isReplaceableEvent,
+  canAuthorEditEventViaDialog,
   getRootEventHexId
 } from '@/lib/event'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
@@ -63,6 +64,7 @@ import {
   Bookmark,
   Download,
   MessageCircle,
+  Pencil,
   Pin,
   Settings,
   Share2,
@@ -1155,11 +1157,11 @@ export function useMenuActions({
 
     if (canSignEvents && pubkey && onOpenEditOrClone) {
       advancedSubMenu.push({
-        label: t('Edit or fork this event'),
+        label: t('Fork this event'),
         separator: advancedSubMenu.length > 2,
         onClick: () => {
           closeDrawer()
-          onOpenEditOrClone(event.pubkey === pubkey ? 'edit' : 'clone')
+          onOpenEditOrClone('clone')
         }
       })
     }
@@ -1377,6 +1379,24 @@ export function useMenuActions({
             }
           })
         }
+      })
+    }
+
+    if (
+      canSignEvents &&
+      pubkey &&
+      event.pubkey === pubkey &&
+      onOpenEditOrClone &&
+      canAuthorEditEventViaDialog(event)
+    ) {
+      actions.push({
+        icon: Pencil,
+        label: event.kind === kinds.ShortTextNote ? t('Edit note') : t('Edit this event'),
+        onClick: () => {
+          closeDrawer()
+          onOpenEditOrClone('edit')
+        },
+        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
       })
     }
 

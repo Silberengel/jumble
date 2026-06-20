@@ -53,9 +53,8 @@ import AudioPlayer from '../AudioPlayer'
 import { EmbeddedNote } from '../Embedded'
 import { HttpUrlOpenGraphOrLink } from '../Embedded'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
-import ShortNoteEditIndicator, {
-  shortNoteEditedContentClassName
-} from './ShortNoteEditIndicator'
+import ShortNoteEditIndicator from './ShortNoteEditIndicator'
+import ShortNoteEditedContent from './ShortNoteEditedContent'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import NoteOptions from '../NoteOptions'
 import EventPowLabel from '../EventPowLabel'
@@ -443,9 +442,26 @@ export default function Note({
           )
         }
       }
+      if (
+        event.kind === kinds.ShortTextNote &&
+        isShortNoteEdited &&
+        shortNoteEditState?.latestAuthorEdit
+      ) {
+        return (
+          <ShortNoteEditedContent
+            original={event.content}
+            revised={shortNoteEditState.latestAuthorEdit.content}
+            displayEvent={displayEvent}
+            className={className}
+            hideMetadata={hideMetadata}
+            lazyMedia={!autoLoadMedia}
+            fullCalendarInvite={fullCalendarInvite}
+          />
+        )
+      }
       return (
         <MarkdownArticle
-          className={cn(className, shortNoteEditedContentClassName(isShortNoteEdited))}
+          className={className}
           event={
             isNip18RepostKind(displayEvent.kind)
               ? { ...displayEvent, content: '' }
@@ -459,11 +475,13 @@ export default function Note({
     },
     [
       displayEvent,
+      event,
       fullCalendarInvite,
       autoLoadMedia,
       nip84HighlightEvents,
       deferAuthorAvatar,
-      isShortNoteEdited
+      isShortNoteEdited,
+      shortNoteEditState?.latestAuthorEdit
     ]
   )
 
