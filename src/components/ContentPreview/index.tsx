@@ -21,9 +21,6 @@ import { muteSetHas } from '@/lib/mute-set'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
 import { mergeEditedShortNote } from '@/lib/short-note-edits'
 import { useShortNoteEdits } from '@/hooks/useShortNoteEdits'
-import ShortNoteEditIndicator, {
-  shortNoteEditedContentClassName
-} from '@/components/Note/ShortNoteEditIndicator'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -95,6 +92,9 @@ export default function ContentPreview({
 }) {
   const { t } = useTranslation()
   const noteTr = useNoteTranslation(event?.id ?? '')
+  const shortNoteEditState = useShortNoteEdits(
+    event?.kind === kinds.ShortTextNote ? event : undefined
+  )
   const reactionDisplay = useNotificationReactionDisplay(event ?? CONTENT_PREVIEW_HOOK_PLACEHOLDER)
   const muteList = useMuteListOptional()
   const mutePubkeySet = muteList?.mutePubkeySet ?? new Set<string>()
@@ -130,7 +130,13 @@ export default function ContentPreview({
     )
   }
 
-  const previewEvent = mergeTranslatedNote(event, noteTr)
+  const previewEvent = useMemo(() => {
+    let base = event
+    if (event.kind === kinds.ShortTextNote && shortNoteEditState?.latestAuthorEdit) {
+      base = mergeEditedShortNote(event, shortNoteEditState.latestAuthorEdit)
+    }
+    return mergeTranslatedNote(base, noteTr)
+  }, [event, noteTr, shortNoteEditState?.latestAuthorEdit])
 
   const { outer: previewOuter, body: previewBody } = splitPreviewLayoutClasses(className)
 

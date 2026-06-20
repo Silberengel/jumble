@@ -1562,7 +1562,7 @@ function buildETagWithMarker(
   eventHexId: string,
   pubkey: string = '',
   hint: string = '',
-  marker: 'root' | 'reply' | '' = ''
+  marker: 'root' | 'reply' | 'edit' | '' = ''
 ) {
   if (!hint) {
     hint = client.getEventHint(eventHexId)
