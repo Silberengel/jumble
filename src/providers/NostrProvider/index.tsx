@@ -1595,15 +1595,22 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
     if (storedAccount.signerType === 'nsec' || storedAccount.signerType === 'browser-nsec') {
       if (storedAccount.nsec) {
-        const browserNsecSigner = new NsecSigner()
-        browserNsecSigner.login(storedAccount.nsec)
-        // Migrate to nsec
-        if (storedAccount.signerType === 'browser-nsec') {
-          storage.removeAccount(storedAccount)
-          storedAccount = { ...storedAccount, signerType: 'nsec' }
-          storage.addAccount(storedAccount)
+        try {
+          const browserNsecSigner = new NsecSigner()
+          browserNsecSigner.login(storedAccount.nsec)
+          // Migrate to nsec
+          if (storedAccount.signerType === 'browser-nsec') {
+            storage.removeAccount(storedAccount)
+            storedAccount = { ...storedAccount, signerType: 'nsec' }
+            storage.addAccount(storedAccount)
+          }
+          return login(browserNsecSigner, storedAccount)
+        } catch (err) {
+          const pk = accountPubkeyToHex(storedAccount.pubkey)
+          if (pk) {
+            return fallbackToReadOnlyNpub(pk, err)
+          }
         }
-        return login(browserNsecSigner, storedAccount)
       }
     } else if (storedAccount.signerType === 'ncryptsec') {
       if (storedAccount.ncryptsec) {
@@ -1706,7 +1713,17 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
       return login(npubSigner, storedAccount)
     }
-    storage.removeAccount(storedAccount)
+    const missingCredentialsPk = accountPubkeyToHex(storedAccount.pubkey)
+    if (missingCredentialsPk) {
+      logger.warn('[NostrProvider] Stored account missing signer credentials; using read-only session', {
+        pubkeySlice: missingCredentialsPk.slice(0, 12),
+        signerType: storedAccount.signerType
+      })
+      return fallbackToReadOnlyNpub(
+        missingCredentialsPk,
+        new Error('missing signer credentials in storage')
+      )
+    }
     return null
   }
 

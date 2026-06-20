@@ -7,6 +7,11 @@ import {
 } from '@/constants'
 import { kinds } from 'nostr-tools'
 import { isSameAccount } from '@/lib/account'
+import {
+  mergeAccountSecrets,
+  mergeAccountsSettingsJson,
+  mergeCurrentAccountSettingsJson
+} from '@/lib/account-secrets'
 import { DEFAULT_ZAP_SATS } from '@/lib/lightning'
 import { isPaytoCategory } from '@/lib/payto-category-display'
 import type { PaytoCategory } from '@/lib/payto-registry'
@@ -68,6 +73,9 @@ const SETTINGS_KEYS = [
   StorageKey.CACHE_RELAYS_ENABLED,
   StorageKey.HOME_FEED_RELAY_SOURCE
 ] as const
+
+/** Auth keys stay mirrored in localStorage so slow/failed IDB writes cannot drop login on mobile PWA. */
+const AUTH_SETTINGS_KEYS = new Set<string>([StorageKey.ACCOUNTS, StorageKey.CURRENT_ACCOUNT])
 
 class LocalStorageService {
   static instance: LocalStorageService
@@ -436,6 +444,13 @@ class LocalStorageService {
   /** Persist a setting. Keys in SETTINGS_KEYS go only to IndexedDB; others use localStorage. */
   private persistSetting(key: string, value: string): void {
     if ((SETTINGS_KEYS as readonly string[]).includes(key)) {
+      if (AUTH_SETTINGS_KEYS.has(key)) {
+        try {
+          window.localStorage.setItem(key, value)
+        } catch {
+          // Quota or private browsing — IndexedDB remains primary.
+        }
+      }
       void this.persistSettingToIndexedDb(key, value)
       return
     }
@@ -475,6 +490,7 @@ class LocalStorageService {
       const merged = this.mergeSettingsRecordWithLocalStorage(idbBefore)
       this.applySettings(merged)
       await this.persistSettingsKeysDiffToIdb(idbBefore, merged)
+      this.syncAuthSettingsToLocalStorage(merged)
       this.clearSettingsFromLocalStorage()
     })()
     return this.initPromise
@@ -484,8 +500,18 @@ class LocalStorageService {
   private mergeSettingsRecordWithLocalStorage(idb: Record<string, string>): Record<string, string> {
     const out: Record<string, string> = { ...idb }
     for (const key of SETTINGS_KEYS) {
-      if (out[key] != null) continue
       const fromLs = window.localStorage.getItem(key)
+      if (key === StorageKey.ACCOUNTS) {
+        const merged = mergeAccountsSettingsJson(out[key], fromLs ?? undefined)
+        if (merged != null) out[key] = merged
+        continue
+      }
+      if (key === StorageKey.CURRENT_ACCOUNT) {
+        const merged = mergeCurrentAccountSettingsJson(out[key], fromLs ?? undefined)
+        if (merged != null) out[key] = merged
+        continue
+      }
+      if (out[key] != null) continue
       if (fromLs != null) {
         out[key] = fromLs
       }
@@ -511,7 +537,21 @@ class LocalStorageService {
   /** Remove SETTINGS_KEYS from localStorage so we don't duplicate; source of truth is IndexedDB. */
   private clearSettingsFromLocalStorage(): void {
     for (const key of SETTINGS_KEYS) {
+      if (AUTH_SETTINGS_KEYS.has(key)) continue
       window.localStorage.removeItem(key)
+    }
+  }
+
+  /** Keep auth rows in localStorage aligned with the merged settings record after initAsync. */
+  private syncAuthSettingsToLocalStorage(record: Record<string, string>): void {
+    for (const key of AUTH_SETTINGS_KEYS) {
+      const value = record[key]
+      if (value == null) continue
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        // Quota or private browsing
+      }
     }
   }
 
@@ -710,7 +750,7 @@ class LocalStorageService {
   addAccount(account: TAccount) {
     const index = this.accounts.findIndex((act) => isSameAccount(act, account))
     if (index !== -1) {
-      this.accounts[index] = account
+      this.accounts[index] = mergeAccountSecrets(account, this.accounts[index])
     } else {
       this.accounts.push(account)
     }
