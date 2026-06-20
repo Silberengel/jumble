@@ -651,6 +651,8 @@ export default {
     'Suggested an edit to your note': 'Hat eine Bearbeitung deiner Notiz vorgeschlagen',
     'View suggested edits': 'Vorgeschlagene Bearbeitungen ansehen',
     'View suggested edits ({{count}})': 'Vorgeschlagene Bearbeitungen ansehen ({{count}})',
+    'Edit suggestions': 'Bearbeitungsvorschläge',
+    'Loading edit suggestions…': 'Bearbeitungsvorschläge werden geladen…',
     'Collaborative edit proposals (NIP-41) from other users.':
       'Kollaborative Bearbeitungsvorschläge (NIP-41) von anderen Nutzern.',
     'Imwald synthetic event': 'Imwald – synthetisches Ereignis',

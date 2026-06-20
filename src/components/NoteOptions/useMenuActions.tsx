@@ -1286,6 +1286,44 @@ export function useMenuActions({
       })
     }
 
+    const isShortNoteAuthor = Boolean(pubkey && hexPubkeysEqual(pubkey, event.pubkey))
+
+    if (event.kind === kinds.ShortTextNote && onOpenReviewEditProposals) {
+      actions.push({
+        icon: Eye,
+        label:
+          isShortNoteAuthor && editProposalCount === 0
+            ? t('Edit suggestions')
+            : editProposalCount === 0
+              ? t('View suggested edits')
+              : editProposalCount === 1
+                ? t('View suggested edits')
+                : t('View suggested edits ({{count}})', { count: editProposalCount }),
+        separator: actions.length > 0,
+        onClick: () => {
+          closeDrawer()
+          onOpenReviewEditProposals()
+        }
+      })
+    }
+
+    if (
+      canSignEvents &&
+      pubkey &&
+      event.pubkey !== pubkey &&
+      event.kind === kinds.ShortTextNote &&
+      onOpenSuggestEdit
+    ) {
+      actions.push({
+        icon: PenLine,
+        label: t('Suggest edit'),
+        onClick: () => {
+          closeDrawer()
+          onOpenSuggestEdit()
+        }
+      })
+    }
+
     pushSubMenuParent(actions, Share2, t('Connections'), connectionsSubMenu, {
       separator: actions.length > 0
     })
@@ -1408,43 +1446,6 @@ export function useMenuActions({
         onClick: () => {
           closeDrawer()
           onOpenEditOrClone('edit')
-        },
-        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
-      })
-    }
-
-    if (
-      event.kind === kinds.ShortTextNote &&
-      onOpenReviewEditProposals &&
-      editProposalCount > 0
-    ) {
-      actions.push({
-        icon: Eye,
-        label:
-          editProposalCount === 1
-            ? t('View suggested edits')
-            : t('View suggested edits ({{count}})', { count: editProposalCount }),
-        onClick: () => {
-          closeDrawer()
-          onOpenReviewEditProposals()
-        },
-        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
-      })
-    }
-
-    if (
-      canSignEvents &&
-      pubkey &&
-      event.pubkey !== pubkey &&
-      event.kind === kinds.ShortTextNote &&
-      onOpenSuggestEdit
-    ) {
-      actions.push({
-        icon: PenLine,
-        label: t('Suggest edit'),
-        onClick: () => {
-          closeDrawer()
-          onOpenSuggestEdit()
         },
         separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
       })

@@ -117,12 +117,14 @@ export default function NoteOptions({
     () => (
       <button
         className="flex items-center text-muted-foreground hover:text-foreground pl-2 h-full"
-        onClick={() => setIsDrawerOpen(true)}
+        onClick={() => {
+          if (isSmallScreen) setIsDrawerOpen(true)
+        }}
       >
         <Ellipsis />
       </button>
     ),
-    []
+    [isSmallScreen]
   )
 
   const menuHeader =

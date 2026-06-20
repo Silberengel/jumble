@@ -1,6 +1,6 @@
 {
   "name": "imwald",
-  "version": "24.2.1",
+  "version": "24.2.2",
   "description": "Imwald — a user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery",
   "private": true,
   "type": "module",

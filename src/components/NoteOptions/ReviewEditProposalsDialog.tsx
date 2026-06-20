@@ -28,8 +28,10 @@ import { useShortNoteEdits } from '@/hooks/useShortNoteEdits'
 import { useNostr } from '@/providers/NostrProvider'
 import shortNoteEditsService from '@/services/short-note-edits.service'
 import storage from '@/services/local-storage.service'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
+import client from '@/services/client.service'
 import { Event, kinds } from 'nostr-tools'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 export default function ReviewEditProposalsDialog({
@@ -48,6 +50,17 @@ export default function ReviewEditProposalsDialog({
   const baseline = baselineShortNoteContentForProposal(sourceEvent, editState)
   const isAuthor = Boolean(pubkey && hexPubkeysEqual(pubkey, sourceEvent.pubkey))
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
+  const [loadingProposals, setLoadingProposals] = useState(false)
+
+  useEffect(() => {
+    if (!open || sourceEvent.kind !== kinds.ShortTextNote) return
+    const hints = relayHintsFromEventTags(sourceEvent)
+    const relays = hints.length ? hints : client.getEventHints(sourceEvent.id)
+    setLoadingProposals(true)
+    void shortNoteEditsService
+      .fetchEdits(sourceEvent.id, sourceEvent.pubkey, relays)
+      .finally(() => setLoadingProposals(false))
+  }, [open, sourceEvent])
 
   const handleAccept = async (proposal: Event) => {
     await checkLogin(async () => {
@@ -104,7 +117,9 @@ export default function ReviewEditProposalsDialog({
         </DialogHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 pb-4 space-y-3">
-          {proposals.length === 0 ? (
+          {loadingProposals && proposals.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4">{t('Loading edit suggestions…')}</p>
+          ) : proposals.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">{t('No edit suggestions yet.')}</p>
           ) : (
             proposals.map((proposal) => {
