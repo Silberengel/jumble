@@ -1,7 +1,8 @@
+import { mediaBlobIdentityKey } from '@/lib/imeta-content-match'
+import { canUseNostrBuildThumb, toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { cleanUrl, isImage, resolvePrimalBlossomPlayableUrl } from '@/lib/url'
 import type { TImetaInfo } from '@/types'
 import type { CSSProperties } from 'react'
-import { mediaBlobIdentityKey } from '@/lib/imeta-content-match'
 
 export type ImetaDim = { width: number; height: number }
 
@@ -16,6 +17,7 @@ export function aspectRatioStyleFromDim(dim?: ImetaDim | null): CSSProperties | 
 /**
  * Low-res image suitable for placeholder layers (`thumb`, then video poster `image`).
  * Skips non-images and URLs identical to the main media URL (e.g. thumb wrongly set to .mp4).
+ * When no imeta preview is declared, i.nostr.build images use `/thumb/…` (same as profile avatars).
  */
 export function imetaPreviewImageUrl(
   info: Pick<TImetaInfo, 'url' | 'thumb' | 'image'>
@@ -26,6 +28,9 @@ export function imetaPreviewImageUrl(
     if (!c || !isImage(c)) continue
     if (main && c === main) continue
     return resolvePrimalBlossomPlayableUrl(c)
+  }
+  if (main && isImage(main) && canUseNostrBuildThumb(main)) {
+    return toNostrBuildThumbUrl(main)
   }
   return undefined
 }

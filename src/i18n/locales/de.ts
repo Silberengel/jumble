@@ -649,6 +649,10 @@ export default {
     'Notification poll vote summary': 'Hat an der Umfrage darüber teilgenommen.',
     'Notification poll vote options count': '{{count}} Option(en) gewählt',
     'Suggested an edit to your note': 'Hat eine Bearbeitung deiner Notiz vorgeschlagen',
+    'View suggested edits': 'Vorgeschlagene Bearbeitungen ansehen',
+    'View suggested edits ({{count}})': 'Vorgeschlagene Bearbeitungen ansehen ({{count}})',
+    'Collaborative edit proposals (NIP-41) from other users.':
+      'Kollaborative Bearbeitungsvorschläge (NIP-41) von anderen Nutzern.',
     'Imwald synthetic event': 'Imwald – synthetisches Ereignis',
     '+ Add a URL to this list': 'URL zur Liste hinzufügen',
     'Add a web URL': 'Web-URL hinzufügen',

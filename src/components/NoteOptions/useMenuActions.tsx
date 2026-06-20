@@ -64,7 +64,7 @@ import {
   BellOff,
   Bookmark,
   Download,
-  Inbox,
+  Eye,
   MessageCircle,
   PenLine,
   Pencil,
@@ -143,7 +143,7 @@ interface UseMenuActionsProps {
   onOpenEditOrClone?: (mode: TEditOrCloneMode) => void
   /** Opens NIP-41 collaborative edit proposal dialog for someone else's kind-1 note. */
   onOpenSuggestEdit?: () => void
-  /** Opens list of pending edit proposals for the author's kind-1 note. */
+  /** Opens list of pending edit proposals on a kind-1 note (view for everyone; accept for author). */
   onOpenReviewEditProposals?: () => void
   /** When the feed already marks this note pinned (e.g. profile pin section). */
   pinned?: boolean
@@ -1414,16 +1414,16 @@ export function useMenuActions({
     }
 
     if (
-      canSignEvents &&
-      pubkey &&
-      event.pubkey === pubkey &&
       event.kind === kinds.ShortTextNote &&
       onOpenReviewEditProposals &&
       editProposalCount > 0
     ) {
       actions.push({
-        icon: Inbox,
-        label: t('Edit suggestions ({{count}})', { count: editProposalCount }),
+        icon: Eye,
+        label:
+          editProposalCount === 1
+            ? t('View suggested edits')
+            : t('View suggested edits ({{count}})', { count: editProposalCount }),
         onClick: () => {
           closeDrawer()
           onOpenReviewEditProposals()

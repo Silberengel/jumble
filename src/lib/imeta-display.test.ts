@@ -43,6 +43,14 @@ describe('imetaPreviewImageUrl', () => {
       })
     ).toBe('https://example.com/poster.jpg')
   })
+
+  it('uses i.nostr.build /thumb/ when no imeta preview is declared', () => {
+    expect(
+      imetaPreviewImageUrl({
+        url: 'https://i.nostr.build/I5ksbpVYqw7N10fm.png'
+      })
+    ).toBe('https://i.nostr.build/thumb/I5ksbpVYqw7N10fm.png')
+  })
 })
 
 describe('buildImetaDimMap', () => {

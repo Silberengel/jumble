@@ -19,6 +19,7 @@ import {
   showPublishingFeedback,
   showSimplePublishSuccess
 } from '@/lib/publishing-feedback'
+import { hexPubkeysEqual } from '@/lib/pubkey'
 import {
   baselineShortNoteContentForProposal,
   getEditProposalSummary
@@ -41,10 +42,11 @@ export default function ReviewEditProposalsDialog({
   sourceEvent: Event
 }) {
   const { t } = useTranslation()
-  const { publish, checkLogin } = useNostr()
+  const { publish, checkLogin, pubkey } = useNostr()
   const editState = useShortNoteEdits(sourceEvent)
   const proposals = editState?.editProposals ?? []
   const baseline = baselineShortNoteContentForProposal(sourceEvent, editState)
+  const isAuthor = Boolean(pubkey && hexPubkeysEqual(pubkey, sourceEvent.pubkey))
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
 
   const handleAccept = async (proposal: Event) => {
@@ -89,11 +91,15 @@ export default function ReviewEditProposalsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] w-[95vw] max-w-3xl flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="shrink-0 px-6 pt-6 pb-2 pr-14">
-          <DialogTitle>{t('Edit suggestions')}</DialogTitle>
+          <DialogTitle>
+            {isAuthor ? t('Edit suggestions') : t('View suggested edits')}
+          </DialogTitle>
           <DialogDescription className="text-sm text-muted-foreground">
-            {t(
-              'Collaborative edit proposals (NIP-41). Accepting publishes your signed edit with the proposer’s text.'
-            )}
+            {isAuthor
+              ? t(
+                  'Collaborative edit proposals (NIP-41). Accepting publishes your signed edit with the proposer’s text.'
+                )
+              : t('Collaborative edit proposals (NIP-41) from other users.')}
           </DialogDescription>
         </DialogHeader>
 
@@ -116,16 +122,18 @@ export default function ReviewEditProposalsDialog({
                     </p>
                   ) : null}
                   <ShortNoteEditDiffContent original={baseline} revised={proposal.content} />
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={!!acceptingId}
-                      onClick={() => void handleAccept(proposal)}
-                    >
-                      {busy ? t('Publishing…') : t('Accept suggestion')}
-                    </Button>
-                  </div>
+                  {isAuthor ? (
+                    <div className="flex justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={!!acceptingId}
+                        onClick={() => void handleAccept(proposal)}
+                      >
+                        {busy ? t('Publishing…') : t('Accept suggestion')}
+                      </Button>
+                    </div>
+                  ) : null}
                 </Card>
               )
             })
