@@ -592,6 +592,8 @@ export const ExtendedKind = {
   /** NIP-B9 zap poll (paid votes via zaps). */
   ZAP_POLL: 6969,
   POLL_RESPONSE: 1018,
+  /** NIP-41: editable short note (kind 1) revision; `e` tag points at the original note. */
+  SHORT_NOTE_EDIT: 1010,
   COMMENT: 1111,
   /** NIP-32 label events. */
   LABEL: 1985,

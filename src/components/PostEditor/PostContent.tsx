@@ -51,6 +51,7 @@ import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { getParentReplyBlurbDisplayText } from '@/lib/parent-reply-blurb'
+import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
 import { cleanUrl, isBlossomBudBlobUrl, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
@@ -89,6 +90,7 @@ import client, { eventService } from '@/services/client.service'
 import discussionFeedCache from '@/services/discussion-feed-cache.service'
 import threadPanelCache from '@/features/thread-panel/thread-panel-cache'
 import noteStatsService from '@/services/note-stats.service'
+import shortNoteEditsService from '@/services/short-note-edits.service'
 import {
   buildAllAvailableTopics,
   collectDiscussionThreadTags,
@@ -693,7 +695,7 @@ export default function PostContent({
       return kinds.Highlights
     } else if (isPoll) {
       return ExtendedKind.POLL
-    } else if (parentEvent && parentEvent.kind !== kinds.ShortTextNote) {
+    } else if (parentEvent) {
       return ExtendedKind.COMMENT
     } else {
       return kinds.ShortTextNote
@@ -1338,14 +1340,22 @@ export default function PostContent({
     }
 
 
-    // Comments and replies
-    if (parentEvent && parentEvent.kind !== kinds.ShortTextNote) {
+    // Comments and replies (kind 1111, including replies to kind 1)
+    if (parentEvent) {
+      const replyRelays = Array.from(
+        new Set([...relayHintsFromEventTags(parentEvent), ...additionalRelayUrls])
+      )
+      const shortNoteEdit = await shortNoteEditsService.resolveLatestEditForReplyParent(
+        parentEvent,
+        replyRelays
+      )
       return await createCommentDraftEvent(cleanedText, parentEvent, mentions, {
         addClientTag,
         ...contentWarningOpts,
         addExpirationTag: addExpirationTag && isChattingKind(ExtendedKind.COMMENT),
         expirationMonths,
-        mediaImetaTags: uploadImetaTagsOpt
+        mediaImetaTags: uploadImetaTagsOpt,
+        shortNoteEdit
       })
     }
 
@@ -1371,6 +1381,7 @@ export default function PostContent({
     })
   }, [
     parentEvent,
+    additionalRelayUrls,
     mediaNoteKind,
     mediaUrl,
     mediaImetaTags,

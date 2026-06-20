@@ -33,6 +33,8 @@ import type { HighlightData } from '@/components/PostEditor/HighlightEditor'
 import { Event, kinds } from 'nostr-tools'
 import { isCalendarEventKind } from '@/lib/calendar-event'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
+import { mergeEditedShortNote } from '@/lib/short-note-edits'
+import { useShortNoteEdits } from '@/hooks/useShortNoteEdits'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
@@ -51,6 +53,9 @@ import AudioPlayer from '../AudioPlayer'
 import { EmbeddedNote } from '../Embedded'
 import { HttpUrlOpenGraphOrLink } from '../Embedded'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
+import ShortNoteEditIndicator, {
+  shortNoteEditedContentClassName
+} from './ShortNoteEditIndicator'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import NoteOptions from '../NoteOptions'
 import EventPowLabel from '../EventPowLabel'
@@ -298,7 +303,18 @@ export default function Note({
   const [publicMessageTo, setPublicMessageTo] = useState<string | null>(null)
   const [callInviteContent, setCallInviteContent] = useState<string | null>(null)
   const noteTranslation = useNoteTranslation(event.id)
-  const displayEvent = useMemo(() => mergeTranslatedNote(event, noteTranslation), [event, noteTranslation])
+  const shortNoteEditState = useShortNoteEdits(event.kind === kinds.ShortTextNote ? event : undefined)
+  const displayEvent = useMemo(() => {
+    let base = event
+    if (event.kind === kinds.ShortTextNote && shortNoteEditState?.latestAuthorEdit) {
+      base = mergeEditedShortNote(event, shortNoteEditState.latestAuthorEdit)
+    }
+    return mergeTranslatedNote(base, noteTranslation)
+  }, [event, noteTranslation, shortNoteEditState?.latestAuthorEdit])
+  const isShortNoteEdited =
+    event.kind === kinds.ShortTextNote &&
+    !!shortNoteEditState?.latestAuthorEdit &&
+    shortNoteEditState.latestAuthorEdit.content !== event.content
 
   useLayoutEffect(() => {
     if (skipEmbedPrefetch) return
@@ -429,7 +445,7 @@ export default function Note({
       }
       return (
         <MarkdownArticle
-          className={className}
+          className={cn(className, shortNoteEditedContentClassName(isShortNoteEdited))}
           event={
             isNip18RepostKind(displayEvent.kind)
               ? { ...displayEvent, content: '' }
@@ -441,7 +457,14 @@ export default function Note({
         />
       )
     },
-    [displayEvent, fullCalendarInvite, autoLoadMedia, nip84HighlightEvents, deferAuthorAvatar]
+    [
+      displayEvent,
+      fullCalendarInvite,
+      autoLoadMedia,
+      nip84HighlightEvents,
+      deferAuthorAvatar,
+      isShortNoteEdited
+    ]
   )
 
   let content: React.ReactNode
@@ -763,6 +786,13 @@ export default function Note({
                   skeletonClassName={size === 'small' ? 'h-3' : 'h-4'}
                   timestampShort={isSmallScreen}
                 />
+                {event.kind === kinds.ShortTextNote ? (
+                  <ShortNoteEditIndicator
+                    originalEvent={event}
+                    editState={shortNoteEditState}
+                    timestampShort={isSmallScreen}
+                  />
+                ) : null}
               </>
             )}
           </div>

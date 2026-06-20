@@ -92,7 +92,7 @@ function getParentETagCommentOrDiscussion(event: Event): string[] | undefined {
     return id.toLowerCase() !== self
   })
   if (byMarker) return byMarker
-  const etags = listThreadLinkETagsExcludingSelf(event)
+  const etags = listThreadLinkETagsExcludingSelf(event).filter(([, , , marker]) => marker !== 'edit')
   if (etags.length >= 2) return etags[etags.length - 1]
   return etags[0]
 }
@@ -114,7 +114,7 @@ function getRootETagCommentOrDiscussion(event: Event): string[] | undefined {
     (t) => t[0] === 'E' && typeof t[1] === 'string' && /^[0-9a-f]{64}$/i.test(t[1]) && t[1].toLowerCase() !== self
   )
   if (upperE) return upperE
-  const etags = listThreadLinkETagsExcludingSelf(event)
+  const etags = listThreadLinkETagsExcludingSelf(event).filter(([, , , marker]) => marker !== 'edit')
   if (etags.length >= 2) return etags[0]
   return etags[0]
 }
@@ -242,6 +242,7 @@ export function getParentETag(event?: Event) {
         isETag(tagName) &&
         !!tagValue &&
         marker !== 'mention' &&
+        marker !== 'edit' &&
         !embeddedEventIds.includes(tagValue)
     )
   }

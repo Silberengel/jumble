@@ -104,6 +104,8 @@ export function getKindDescription(
       return { number: 31925, description: 'Calendar RSVP' }
     case ExtendedKind.POLL_RESPONSE:
       return { number: 1018, description: 'Poll vote' }
+    case ExtendedKind.SHORT_NOTE_EDIT:
+      return { number: 1010, description: 'Short note edit' }
     case ExtendedKind.FOLLOW_PACK:
       return { number: 39089, description: 'Follow pack' }
     case ExtendedKind.GROUP_METADATA:

@@ -285,6 +285,49 @@ export async function createShortTextNoteDraftEvent(
   return setDraftEventCache(baseDraft)
 }
 
+/** NIP-41: publish a kind-1010 revision of a kind-1 short note. */
+export async function createShortNoteEditDraftEvent(
+  content: string,
+  originalNote: Event,
+  options: {
+    addClientTag?: boolean
+    isNsfw?: boolean
+    contentWarningLabel?: string
+    mediaImetaTags?: string[][]
+  } = {}
+): Promise<TDraftEvent> {
+  const contentWithPrefixedAddresses = prefixNostrAddresses(content)
+  const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(contentWithPrefixedAddresses)
+  const { quoteEventHexIds, quoteReplaceableCoordinates } = await extractRelatedEventIds(
+    transformedEmojisContent,
+    undefined
+  )
+  const hashtags = extractHashtags(transformedEmojisContent)
+
+  const tags = emojiTags
+    .concat(hashtags.map((hashtag) => buildTTag(hashtag)))
+    .concat(quoteEventHexIds.map((eventId) => buildQTag(eventId)))
+    .concat(quoteReplaceableCoordinates.map((coordinate) => buildReplaceableQTag(coordinate)))
+
+  const images = extractImagesFromContent(transformedEmojisContent)
+  if (images?.length) {
+    tags.push(...generateImetaTags(images))
+  }
+
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
+
+  tags.push(buildETag(originalNote.id, originalNote.pubkey))
+
+  appendContentWarningTagIfNeeded(tags, options)
+
+  const baseDraft = {
+    kind: ExtendedKind.SHORT_NOTE_EDIT,
+    content: transformedEmojisContent,
+    tags
+  }
+  return setDraftEventCache(baseDraft)
+}
+
 // https://github.com/nostr-protocol/nips/blob/master/51.md
 export function createRelaySetDraftEvent(relaySet: Omit<TRelaySet, 'aTag'>): TDraftEvent {
   return {
@@ -311,6 +354,8 @@ export async function createCommentDraftEvent(
     addExpirationTag?: boolean
     expirationMonths?: number
     mediaImetaTags?: string[][]
+    /** NIP-41: active kind-1010 revision when replying on a kind-1 thread. */
+    shortNoteEdit?: Event
   } = {}
 ): Promise<TDraftEvent> {
   // Process content to prefix nostr addresses before other transformations
@@ -379,6 +424,12 @@ export async function createCommentDraftEvent(
         buildKTag(parentEvent.kind),
         buildPTag(parentEvent.pubkey)
       ]
+    )
+  }
+
+  if (options.shortNoteEdit?.kind === ExtendedKind.SHORT_NOTE_EDIT) {
+    tags.push(
+      buildETagWithMarker(options.shortNoteEdit.id, options.shortNoteEdit.pubkey, '', 'edit')
     )
   }
 

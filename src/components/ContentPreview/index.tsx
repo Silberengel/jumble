@@ -19,6 +19,11 @@ import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useMuteListOptional } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
+import { mergeEditedShortNote } from '@/lib/short-note-edits'
+import { useShortNoteEdits } from '@/hooks/useShortNoteEdits'
+import ShortNoteEditIndicator, {
+  shortNoteEditedContentClassName
+} from '@/components/Note/ShortNoteEditIndicator'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
