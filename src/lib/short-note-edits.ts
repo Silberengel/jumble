@@ -53,10 +53,47 @@ export function buildShortNoteEditState(
   }
 }
 
+/** Dedupe by edit id and rebuild author edit state for a kind-1 note. */
+export function mergeShortNoteEditEvents(
+  existing: readonly Event[],
+  incoming: readonly Event[],
+  kind1: Pick<Event, 'id' | 'pubkey'>
+): ShortNoteEditState {
+  const byId = new Map<string, Event>()
+  for (const edit of [...existing, ...incoming]) {
+    byId.set(edit.id.toLowerCase(), edit)
+  }
+  return buildShortNoteEditState([...byId.values()], kind1)
+}
+
 /** Apply the latest author edit content to a kind-1 note for display. */
 export function mergeEditedShortNote(kind1: Event, edit?: Event | null): Event {
   if (!edit || edit.content === kind1.content) return kind1
   return { ...kind1, content: edit.content }
+}
+
+/**
+ * Kind-1 parent text for a reply-to blurb: original note unless the reply tags a kind-1010
+ * revision (`e` + `edit` marker). Does not apply the latest edit when no revision is tagged.
+ */
+export function resolveShortNoteParentForReplyBlurb(
+  parent: Event,
+  reply: Event,
+  pinnedEdit?: Event | null
+): Event {
+  if (parent.kind !== kinds.ShortTextNote) return parent
+
+  let edit = pinnedEdit ?? undefined
+  if (!edit) {
+    const editId = getReplyShortNoteEditId(reply)
+    if (editId) {
+      edit = client.peekSessionCachedEvent(editId)
+    }
+  }
+  if (edit && isAuthorShortNoteEdit(edit, parent)) {
+    return mergeEditedShortNote(parent, edit)
+  }
+  return parent
 }
 
 /** Kind-1111 reply: `e` tag with marker `edit` referencing a kind-1010 revision. */

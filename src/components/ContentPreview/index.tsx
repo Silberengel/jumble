@@ -19,8 +19,9 @@ import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useMuteListOptional } from '@/contexts/mute-list-context'
 import { muteSetHas } from '@/lib/mute-set'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
-import { mergeEditedShortNote } from '@/lib/short-note-edits'
+import { mergeEditedShortNote, getReplyShortNoteEditId, resolveShortNoteParentForReplyBlurb } from '@/lib/short-note-edits'
 import { useShortNoteEdits } from '@/hooks/useShortNoteEdits'
+import { useFetchEvent } from '@/hooks'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -81,6 +82,8 @@ export default function ContentPreview({
   previewDensity,
   /** Reply-to-parent strip: one-line text snippet instead of full note UI. */
   forParentReplyBlurb = false,
+  /** When set with {@link forParentReplyBlurb}, pins parent blurb to the revision the reply tagged. */
+  replyContext,
   /** Thread context above a reply: poll question only, no option rows. */
   hidePollOptions = false
 }: {
@@ -88,12 +91,16 @@ export default function ContentPreview({
   className?: string
   previewDensity?: 'default' | 'compact'
   forParentReplyBlurb?: boolean
+  replyContext?: Event
   hidePollOptions?: boolean
 }) {
   const { t } = useTranslation()
   const noteTr = useNoteTranslation(event?.id ?? '')
+  const replyEditId =
+    forParentReplyBlurb && replyContext ? getReplyShortNoteEditId(replyContext) : undefined
+  const { event: pinnedReplyEdit } = useFetchEvent(replyEditId)
   const shortNoteEditState = useShortNoteEdits(
-    event?.kind === kinds.ShortTextNote ? event : undefined
+    !forParentReplyBlurb && event?.kind === kinds.ShortTextNote ? event : undefined
   )
   const reactionDisplay = useNotificationReactionDisplay(event ?? CONTENT_PREVIEW_HOOK_PLACEHOLDER)
   const muteList = useMuteListOptional()
@@ -132,11 +139,24 @@ export default function ContentPreview({
 
   const previewEvent = useMemo(() => {
     let base = event
-    if (event.kind === kinds.ShortTextNote && shortNoteEditState?.latestAuthorEdit) {
-      base = mergeEditedShortNote(event, shortNoteEditState.latestAuthorEdit)
+    if (event.kind === kinds.ShortTextNote) {
+      if (forParentReplyBlurb) {
+        if (replyContext) {
+          base = resolveShortNoteParentForReplyBlurb(event, replyContext, pinnedReplyEdit)
+        }
+      } else if (shortNoteEditState?.latestAuthorEdit) {
+        base = mergeEditedShortNote(event, shortNoteEditState.latestAuthorEdit)
+      }
     }
     return mergeTranslatedNote(base, noteTr)
-  }, [event, noteTr, shortNoteEditState?.latestAuthorEdit])
+  }, [
+    event,
+    noteTr,
+    forParentReplyBlurb,
+    replyContext,
+    pinnedReplyEdit,
+    shortNoteEditState?.latestAuthorEdit
+  ])
 
   const { outer: previewOuter, body: previewBody } = splitPreviewLayoutClasses(className)
 

@@ -15,6 +15,8 @@ import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { getMoneroTipInfo } from '@/lib/monero-tip'
 import { isMentioningMutedUsers, isNip18RepostKind, isNip25ReactionKind } from '@/lib/event'
 import { getWebExternalReactionTargetUrl } from '@/lib/rss-article'
+import { mergeEditedShortNote } from '@/lib/short-note-edits'
+import { useShortNoteEdits } from '@/hooks/useShortNoteEdits'
 import { mergeTranslatedNote, useNoteTranslation } from '@/lib/note-translation-display'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { toNote } from '@/lib/link'
@@ -32,6 +34,8 @@ import { openComposerAfterOverlay } from '../PostEditor/open-composer-after-over
 import Collapsible from '../Collapsible'
 import MarkdownArticle from '../Note/LazyMarkdownArticle'
 import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
+import ShortNoteEditIndicator from '../Note/ShortNoteEditIndicator'
+import ShortNoteEditedContent from '../Note/ShortNoteEditedContent'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import NoteOptions from '../NoteOptions'
 import NoteStats from '../NoteStats'
@@ -110,10 +114,18 @@ export default function ReplyNote({
   }, [showMuted, mutePubkeySet, event, hideContentMentioningMutedUsers])
 
   const noteTranslation = useNoteTranslation(event.id)
-  const displayEvent = useMemo(
-    () => mergeTranslatedNote(event, noteTranslation),
-    [event, noteTranslation]
-  )
+  const shortNoteEditState = useShortNoteEdits(event.kind === kinds.ShortTextNote ? event : undefined)
+  const displayEvent = useMemo(() => {
+    let base = event
+    if (event.kind === kinds.ShortTextNote && shortNoteEditState?.latestAuthorEdit) {
+      base = mergeEditedShortNote(event, shortNoteEditState.latestAuthorEdit)
+    }
+    return mergeTranslatedNote(base, noteTranslation)
+  }, [event, noteTranslation, shortNoteEditState?.latestAuthorEdit])
+  const isShortNoteEdited =
+    event.kind === kinds.ShortTextNote &&
+    !!shortNoteEditState?.latestAuthorEdit &&
+    shortNoteEditState.latestAuthorEdit.content !== event.content
 
   const [postEditorOpen, setPostEditorOpen] = useState(false)
   const [postEditorMounted, setPostEditorMounted] = useState(false)
@@ -169,14 +181,24 @@ export default function ReplyNote({
                 maxFileSizeKb={2048}
                 deferRemoteAvatar={deferAuthorAvatar}
               />
-              <NoteAuthorMetaLine
-                userId={headerUserId}
-                timestamp={event.created_at}
-                powEvent={event}
-                usernameClassName="max-w-[min(12rem,40vw)] text-sm text-muted-foreground hover:text-foreground"
-                skeletonClassName="h-3"
-                timestampShort={isSmallScreen}
-              />
+              <div className="min-w-0 flex-1">
+                <NoteAuthorMetaLine
+                  userId={headerUserId}
+                  timestamp={event.created_at}
+                  powEvent={event}
+                  usernameClassName="max-w-[min(12rem,40vw)] text-sm text-muted-foreground hover:text-foreground"
+                  skeletonClassName="h-3"
+                  timestampShort={isSmallScreen}
+                />
+                {event.kind === kinds.ShortTextNote ? (
+                  <ShortNoteEditIndicator
+                    originalEvent={event}
+                    editState={shortNoteEditState}
+                    className="mt-0.5"
+                    timestampShort={isSmallScreen}
+                  />
+                ) : null}
+              </div>
             </div>
             <NoteOptions
               event={event}
@@ -200,6 +222,7 @@ export default function ReplyNote({
               appearance="subtle"
               className="mt-1.5"
               eventId={parentEventId}
+              replyContext={event}
               relayHints={parentFetchRelayHints}
               onClick={(e) => {
                 e.stopPropagation()
@@ -239,7 +262,17 @@ export default function ReplyNote({
               <MoneroTip className="mt-1.5" event={event} variant="thread" />
             ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
               <Superchat className="mt-1.5" event={event} variant="thread" />
-            ) : isNip18RepostKind(event.kind) ? null : (
+            ) : isNip18RepostKind(event.kind) ? null : isShortNoteEdited &&
+              shortNoteEditState?.latestAuthorEdit ? (
+              <ShortNoteEditedContent
+                original={event.content}
+                revised={shortNoteEditState.latestAuthorEdit.content}
+                displayEvent={displayEvent}
+                className="mt-2"
+                hideMetadata={true}
+                lazyMedia={false}
+              />
+            ) : (
               <MarkdownArticle
                 className="mt-2"
                 event={displayEvent}

@@ -852,6 +852,7 @@ export default function Note({
         ) : parentEventId ? (
           <ParentNotePreview
             eventId={parentEventId}
+            replyContext={event}
             relayHints={parentFetchRelayHints}
             className="mt-2"
             onClick={(e) => {

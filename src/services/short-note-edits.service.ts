@@ -1,11 +1,14 @@
 import { ExtendedKind } from '@/constants'
 import {
   buildShortNoteEditState,
+  getShortNoteEditTargetId,
+  mergeShortNoteEditEvents,
   peekKind1ThreadRootFromParent,
   type ShortNoteEditState
 } from '@/lib/short-note-edits'
 import client from '@/services/client.service'
 import { queryService } from '@/services/client.service'
+import indexedDb from '@/services/indexed-db.service'
 import DataLoader from 'dataloader'
 import type { Event, Filter } from 'nostr-tools'
 
@@ -15,11 +18,19 @@ type FetchKey = {
   relays: string[]
 }
 
+/** Max kind-1010 rows indexed from the hot event archive per tab session. */
+const ARCHIVE_EDIT_INDEX_MAX_MATCHES = 500
+const ARCHIVE_EDIT_INDEX_MAX_SCAN = 40_000
+
 class ShortNoteEditsService {
   static instance: ShortNoteEditsService
 
   private stateMap = new Map<string, ShortNoteEditState>()
   private subscribers = new Map<string, Set<() => void>>()
+  /** Kind-1010 rows from IndexedDB, keyed by target kind-1 note id. */
+  private archiveEditsByTarget = new Map<string, Event[]>()
+  private archiveIndexPromise: Promise<void> | null = null
+  private targetedArchiveFetches = new Map<string, Promise<void>>()
 
   private loader = new DataLoader<FetchKey, ShortNoteEditState | undefined>(
     async (keys) => {
@@ -57,6 +68,99 @@ class ShortNoteEditsService {
     return noteId.toLowerCase()
   }
 
+  private editsFilter(noteId: string): Filter {
+    return {
+      kinds: [ExtendedKind.SHORT_NOTE_EDIT],
+      '#e': [noteId.toLowerCase()],
+      limit: 50
+    }
+  }
+
+  private kind1Stub(noteId: string, authorPubkey: string): Pick<Event, 'id' | 'pubkey'> {
+    return { id: noteId, pubkey: authorPubkey }
+  }
+
+  /** Track a kind-1010 row by the kind-1 note id in its `e` tag. */
+  private indexArchiveEdit(edit: Event): void {
+    const target = getShortNoteEditTargetId(edit)
+    if (!target) return
+    const key = this.cacheKey(target)
+    const prev = this.archiveEditsByTarget.get(key) ?? []
+    const byId = new Map(prev.map((e) => [e.id.toLowerCase(), e]))
+    byId.set(edit.id.toLowerCase(), edit)
+    this.archiveEditsByTarget.set(key, [...byId.values()])
+  }
+
+  private getIndexedArchiveEdits(noteId: string): Event[] {
+    return this.archiveEditsByTarget.get(this.cacheKey(noteId)) ?? []
+  }
+
+  /** One scan of hot archive per tab — feeds resolve many kind-1 notes without N archive walks. */
+  private async ensureArchiveEditsIndexed(): Promise<void> {
+    if (this.archiveIndexPromise) return this.archiveIndexPromise
+    this.archiveIndexPromise = (async () => {
+      try {
+        const edits = await indexedDb.scanEventArchiveByKinds({
+          kinds: [ExtendedKind.SHORT_NOTE_EDIT],
+          maxRowsScanned: ARCHIVE_EDIT_INDEX_MAX_SCAN,
+          maxMatches: ARCHIVE_EDIT_INDEX_MAX_MATCHES
+        })
+        for (const edit of edits) {
+          this.indexArchiveEdit(edit)
+          client.addEventToCache(edit)
+        }
+      } catch {
+        /* archive optional */
+      }
+    })()
+    return this.archiveIndexPromise
+  }
+
+  /** Targeted `#e` scan when bulk kind-1010 indexing missed a note (large archives). */
+  private async ensureTargetedArchiveEdits(noteId: string): Promise<void> {
+    if (this.getIndexedArchiveEdits(noteId).length > 0) return
+    const key = this.cacheKey(noteId)
+    const pending = this.targetedArchiveFetches.get(key)
+    if (pending) return pending
+
+    const promise = (async () => {
+      try {
+        const edits = await indexedDb.scanEventArchiveByFilters([this.editsFilter(noteId)], {
+          maxRowsScanned: 50_000,
+          maxMatches: 50
+        })
+        for (const edit of edits) {
+          this.indexArchiveEdit(edit)
+          client.addEventToCache(edit)
+        }
+      } catch {
+        /* archive optional */
+      } finally {
+        this.targetedArchiveFetches.delete(key)
+      }
+    })()
+    this.targetedArchiveFetches.set(key, promise)
+    return promise
+  }
+
+  private mergeIntoState(
+    noteId: string,
+    authorPubkey: string,
+    incomingEdits: readonly Event[]
+  ): ShortNoteEditState {
+    const prev = this.stateMap.get(this.cacheKey(noteId))
+    return mergeShortNoteEditEvents(prev?.authorEdits ?? [], incomingEdits, this.kind1Stub(noteId, authorPubkey))
+  }
+
+  private commitState(noteId: string, state: ShortNoteEditState): ShortNoteEditState | undefined {
+    if (state.authorEdits.length === 0) {
+      return this.stateMap.get(this.cacheKey(noteId))
+    }
+    this.stateMap.set(this.cacheKey(noteId), state)
+    this.notify(noteId)
+    return state
+  }
+
   private notify(noteId: string): void {
     const set = this.subscribers.get(this.cacheKey(noteId))
     set?.forEach((cb) => cb())
@@ -82,14 +186,10 @@ class ShortNoteEditsService {
 
   /** Merge a freshly published or live edit into cached state. */
   ingestEdit(kind1: Pick<Event, 'id' | 'pubkey'>, edit: Event): void {
-    const key = this.cacheKey(kind1.id)
-    const prev = this.stateMap.get(key)
-    const merged = prev
-      ? buildShortNoteEditState([...prev.authorEdits, edit], kind1)
-      : buildShortNoteEditState([edit], kind1)
-    this.stateMap.set(key, merged)
+    this.indexArchiveEdit(edit)
+    const merged = this.mergeIntoState(kind1.id, kind1.pubkey, [edit])
     client.addEventToCache(edit)
-    this.notify(kind1.id)
+    this.commitState(kind1.id, merged)
   }
 
   async fetchEdits(
@@ -102,16 +202,26 @@ class ShortNoteEditsService {
       const hints = client.getEventHints(noteId)
       relayList.push(...hints)
     }
-    const result = await this.loader.load({
+
+    await this.ensureArchiveEditsIndexed()
+    await this.ensureTargetedArchiveEdits(noteId)
+
+    const sessionEdits = client.eventService.getSessionEventsMatchingFilters(
+      [this.editsFilter(noteId)],
+      50
+    )
+    const archivedEdits = this.getIndexedArchiveEdits(noteId)
+    const localMerged = this.mergeIntoState(noteId, authorPubkey, [...sessionEdits, ...archivedEdits])
+    this.commitState(noteId, localMerged)
+
+    const fetched = await this.loader.load({
       noteId: noteId.toLowerCase(),
       authorPubkey,
       relays: relayList
     })
-    if (result) {
-      this.stateMap.set(this.cacheKey(noteId), result)
-      this.notify(noteId)
-    }
-    return result
+
+    const merged = this.mergeIntoState(noteId, authorPubkey, fetched?.authorEdits ?? [])
+    return this.commitState(noteId, merged)
   }
 
   private async fetchFromRelays(
@@ -121,17 +231,15 @@ class ShortNoteEditsService {
   ): Promise<ShortNoteEditState | undefined> {
     if (relays.length === 0) return undefined
 
-    const filter: Filter = {
-      kinds: [ExtendedKind.SHORT_NOTE_EDIT],
-      '#e': [noteId.toLowerCase()],
-      limit: 50
+    const filter = this.editsFilter(noteId)
+    const relayEdits = await queryService.fetchEvents(relays, filter)
+    for (const edit of relayEdits) {
+      client.addEventToCache(edit)
+      this.indexArchiveEdit(edit)
     }
 
-    const edits = await queryService.fetchEvents(relays, filter)
-    for (const edit of edits) client.addEventToCache(edit)
-
-    const kind1Stub = { id: noteId, pubkey: authorPubkey }
-    return buildShortNoteEditState(edits, kind1Stub)
+    const state = buildShortNoteEditState(relayEdits, this.kind1Stub(noteId, authorPubkey))
+    return state.authorEdits.length > 0 ? state : undefined
   }
 
   /** Latest author edit for a kind-1 thread when composing a reply. */

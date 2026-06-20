@@ -27,7 +27,7 @@ export default function ShortNoteEditedContent({
   fullCalendarInvite?: { event: Event; naddr: string }
 }) {
   const { t } = useTranslation()
-  const [view, setView] = useState<ShortNoteEditedViewMode>('diff')
+  const [view, setView] = useState<ShortNoteEditedViewMode>('rendered')
 
   return (
     <div
@@ -42,16 +42,6 @@ export default function ShortNoteEditedContent({
       >
         <Button
           type="button"
-          variant={view === 'diff' ? 'secondary' : 'ghost'}
-          size="sm"
-          className="h-7 px-2.5 text-xs"
-          aria-pressed={view === 'diff'}
-          onClick={() => setView('diff')}
-        >
-          {t('Show changes')}
-        </Button>
-        <Button
-          type="button"
           variant={view === 'rendered' ? 'secondary' : 'ghost'}
           size="sm"
           className="h-7 px-2.5 text-xs"
@@ -59,6 +49,16 @@ export default function ShortNoteEditedContent({
           onClick={() => setView('rendered')}
         >
           {t('Formatted view')}
+        </Button>
+        <Button
+          type="button"
+          variant={view === 'diff' ? 'secondary' : 'ghost'}
+          size="sm"
+          className="h-7 px-2.5 text-xs"
+          aria-pressed={view === 'diff'}
+          onClick={() => setView('diff')}
+        >
+          {t('Show changes')}
         </Button>
       </div>
       {view === 'diff' ? (

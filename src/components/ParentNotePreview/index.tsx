@@ -17,6 +17,8 @@ export default function ParentNotePreview({
   onClick,
   /** NIP-10 `e` relay hints from the child note — speeds up parent fetch in notifications and feeds. */
   relayHints,
+  /** Child reply — pins kind-1 blurb to the revision cited in the reply, or original text if none. */
+  replyContext,
   /** Inline hint without pill background (e.g. reply thread rows). */
   appearance = 'default'
 }: {
@@ -24,6 +26,7 @@ export default function ParentNotePreview({
   className?: string
   onClick?: React.MouseEventHandler<HTMLDivElement> | undefined
   relayHints?: string[]
+  replyContext?: Event
   appearance?: 'default' | 'subtle'
 }) {
   const { t } = useTranslation()
@@ -126,6 +129,7 @@ export default function ParentNotePreview({
           event={finalEvent}
           previewDensity={appearance === 'subtle' ? 'compact' : 'default'}
           forParentReplyBlurb
+          replyContext={replyContext}
         />
       </div>
     </div>

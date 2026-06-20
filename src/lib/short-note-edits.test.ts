@@ -6,7 +6,9 @@ import {
   getShortNoteEditTargetId,
   isAuthorShortNoteEdit,
   mergeEditedShortNote,
-  pickLatestAuthorShortNoteEdit
+  mergeShortNoteEditEvents,
+  pickLatestAuthorShortNoteEdit,
+  resolveShortNoteParentForReplyBlurb
 } from '@/lib/short-note-edits'
 import type { Event } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
@@ -44,9 +46,25 @@ const kind1: Event = {
 }
 
 describe('short-note-edits', () => {
-  it('reads edit target from kind 1010', () => {
-    const edit = editEvent('dd'.repeat(32), kind1Author, 'v2', 200)
+  it('reads edit target from kind 1010 with relay + author on e tag', () => {
+    const edit: Event = {
+      id: '72d2b33825f88eba916a262354360a93160c26f1cc2e76aaae9265b480650f06',
+      pubkey: kind1Author,
+      kind: ExtendedKind.SHORT_NOTE_EDIT,
+      content: 'revised body',
+      created_at: 200,
+      tags: [
+        [
+          'e',
+          noteId,
+          'https://mercury-relay.imwald.eu',
+          kind1Author
+        ]
+      ],
+      sig: 'sig'
+    }
     expect(getShortNoteEditTargetId(edit)).toBe(noteId)
+    expect(isAuthorShortNoteEdit(edit, kind1)).toBe(true)
   })
 
   it('picks latest author edit by created_at', () => {
@@ -70,6 +88,45 @@ describe('short-note-edits', () => {
   it('merges edited content onto kind 1', () => {
     const edit = editEvent('11'.repeat(32), kind1Author, 'revised', 200)
     expect(mergeEditedShortNote(kind1, edit).content).toBe('revised')
+  })
+
+  it('mergeShortNoteEditEvents dedupes by id and keeps latest author revision', () => {
+    const e1 = editEvent('11'.repeat(32), kind1Author, 'v1', 200)
+    const e2 = editEvent('22'.repeat(32), kind1Author, 'v2', 300)
+    const merged = mergeShortNoteEditEvents([e1], [e1, e2], kind1)
+    expect(merged.authorEdits.map((e) => e.id)).toEqual([e1.id, e2.id])
+    expect(merged.latestAuthorEdit?.content).toBe('v2')
+  })
+
+  it('reply blurb uses original kind-1 when reply has no edit marker', () => {
+    const reply: Event = {
+      id: 'ff'.repeat(32),
+      pubkey: otherPubkey,
+      kind: kinds.ShortTextNote,
+      content: 'test',
+      created_at: 400,
+      tags: [['e', noteId, '', 'reply', kind1Author]],
+      sig: 'sig'
+    }
+    expect(resolveShortNoteParentForReplyBlurb(kind1, reply).content).toBe('original')
+  })
+
+  it('reply blurb uses tagged kind-1010 revision when reply cites edit', () => {
+    const edit = editEvent('11'.repeat(32), kind1Author, 'revised blurb text', 250)
+    const reply: Event = {
+      id: 'ff'.repeat(32),
+      pubkey: otherPubkey,
+      kind: ExtendedKind.COMMENT,
+      content: 'after edit',
+      created_at: 400,
+      tags: [
+        ['E', noteId, '', kind1Author],
+        ['e', noteId, '', 'reply', kind1Author],
+        ['e', edit.id, '', 'edit', kind1Author]
+      ],
+      sig: 'sig'
+    }
+    expect(resolveShortNoteParentForReplyBlurb(kind1, reply, edit).content).toBe('revised blurb text')
   })
 
   it('reads edit marker on kind 1111 replies', () => {
