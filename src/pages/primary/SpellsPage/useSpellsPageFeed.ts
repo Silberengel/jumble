@@ -19,6 +19,7 @@ import {
   threadWatchMatchesRefs
 } from '@/lib/notification-thread-watch'
 import { isIncomingNotificationsPaymentEvent } from '@/lib/superchat'
+import { isIncomingCollaborativeEditProposalNotification } from '@/lib/short-note-edits'
 import {
   decodeFollowSetSpellId,
   getFollowSetDTag,
@@ -604,6 +605,10 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
 
       // Never list your own authored events in this account's notifications (`#p` REQ still returns self-replies, self-`#p`, etc.).
       if (hexPubkeysEqual(evt.pubkey, pk)) return true
+
+      if (evt.kind === ExtendedKind.SHORT_NOTE_EDIT) {
+        return !isIncomingCollaborativeEditProposalNotification(evt, pk)
+      }
 
       if (
         threadWatchMatchesRefs(evt, mutedRefs) &&

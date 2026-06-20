@@ -9,6 +9,8 @@ import { isAttestableSuperchatPayment } from '@/lib/superchat'
 import { useNostr } from '@/providers/NostrProvider'
 import { DesktopMenu } from './DesktopMenu'
 import EditOrCloneEventDialog, { type TEditOrCloneMode } from './EditOrCloneEventDialog'
+import ReviewEditProposalsDialog from './ReviewEditProposalsDialog'
+import SuggestShortNoteEditDialog from './SuggestShortNoteEditDialog'
 import { MobileMenu } from './MobileMenu'
 import NoteOptionsMetaHeader from './NoteOptionsMetaHeader'
 import RawEventDialog from './RawEventDialog'
@@ -41,6 +43,8 @@ export default function NoteOptions({
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false)
   const [editCloneOpen, setEditCloneOpen] = useState(false)
   const [editCloneMode, setEditCloneMode] = useState<TEditOrCloneMode>('clone')
+  const [suggestEditOpen, setSuggestEditOpen] = useState(false)
+  const [reviewProposalsOpen, setReviewProposalsOpen] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [showSubMenu, setShowSubMenu] = useState(false)
   const [activeSubMenu, setActiveSubMenu] = useState<SubMenuAction[]>([])
@@ -99,6 +103,8 @@ export default function NoteOptions({
       setEditCloneMode(mode)
       setEditCloneOpen(true)
     },
+    onOpenSuggestEdit: () => setSuggestEditOpen(true),
+    onOpenReviewEditProposals: () => setReviewProposalsOpen(true),
     pinned,
     onViewAttestation: canViewAttestation
       ? () => {
@@ -179,6 +185,16 @@ export default function NoteOptions({
         onOpenChange={setEditCloneOpen}
         sourceEvent={event}
         mode={editCloneMode}
+      />
+      <SuggestShortNoteEditDialog
+        open={suggestEditOpen}
+        onOpenChange={setSuggestEditOpen}
+        sourceEvent={event}
+      />
+      <ReviewEditProposalsDialog
+        open={reviewProposalsOpen}
+        onOpenChange={setReviewProposalsOpen}
+        sourceEvent={event}
       />
     </div>
   )

@@ -54,6 +54,7 @@ import { muteSetHas } from '@/lib/mute-set'
 import { useNostr } from '@/providers/NostrProvider'
 import { useBookmarksOptional } from '@/providers/bookmarks-context'
 import { useThreadNotificationMenuState } from '@/hooks/useThreadNotificationMenuState'
+import { useShortNoteEdits } from '@/hooks/useShortNoteEdits'
 import { FAST_READ_RELAY_URLS, FAST_WRITE_RELAY_URLS } from '@/constants'
 import client from '@/services/client.service'
 import { eventService } from '@/services/client.service'
@@ -63,7 +64,9 @@ import {
   BellOff,
   Bookmark,
   Download,
+  Inbox,
   MessageCircle,
+  PenLine,
   Pencil,
   Pin,
   Settings,
@@ -138,6 +141,10 @@ interface UseMenuActionsProps {
   onOpenCallInvite?: (url: string) => void
   /** Opens edit/clone dialog (signed-in accounts only, not read-only npub). */
   onOpenEditOrClone?: (mode: TEditOrCloneMode) => void
+  /** Opens NIP-41 collaborative edit proposal dialog for someone else's kind-1 note. */
+  onOpenSuggestEdit?: () => void
+  /** Opens list of pending edit proposals for the author's kind-1 note. */
+  onOpenReviewEditProposals?: () => void
   /** When the feed already marks this note pinned (e.g. profile pin section). */
   pinned?: boolean
   /** Opens JSON viewer for the kind 9741 attestation of this payment or zap receipt. */
@@ -154,6 +161,8 @@ export function useMenuActions({
   onOpenPublicMessage,
   onOpenCallInvite,
   onOpenEditOrClone,
+  onOpenSuggestEdit,
+  onOpenReviewEditProposals,
   pinned: _pinnedInFeed = false,
   onViewAttestation
 }: UseMenuActionsProps) {
@@ -181,6 +190,10 @@ export function useMenuActions({
   }
   const [bookmarkUpdating, setBookmarkUpdating] = useState(false)
   const canSignEvents = account != null && account.signerType !== 'npub'
+  const shortNoteEditState = useShortNoteEdits(
+    event.kind === kinds.ShortTextNote ? event : undefined
+  )
+  const editProposalCount = shortNoteEditState?.editProposals?.length ?? 0
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { relaySets, favoriteRelays } = useFavoriteRelays()
   const httpWriteRelayUrls = useMemo(() => {
@@ -1400,6 +1413,43 @@ export function useMenuActions({
       })
     }
 
+    if (
+      canSignEvents &&
+      pubkey &&
+      event.pubkey === pubkey &&
+      event.kind === kinds.ShortTextNote &&
+      onOpenReviewEditProposals &&
+      editProposalCount > 0
+    ) {
+      actions.push({
+        icon: Inbox,
+        label: t('Edit suggestions ({{count}})', { count: editProposalCount }),
+        onClick: () => {
+          closeDrawer()
+          onOpenReviewEditProposals()
+        },
+        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
+      })
+    }
+
+    if (
+      canSignEvents &&
+      pubkey &&
+      event.pubkey !== pubkey &&
+      event.kind === kinds.ShortTextNote &&
+      onOpenSuggestEdit
+    ) {
+      actions.push({
+        icon: PenLine,
+        label: t('Suggest edit'),
+        onClick: () => {
+          closeDrawer()
+          onOpenSuggestEdit()
+        },
+        separator: actions.length === savesGroupStartIndex && savesGroupNeedsSeparator
+      })
+    }
+
     if (canManageIdentity && pubkey && event.pubkey === pubkey) {
       actions.push({
         icon: Pin,
@@ -1510,6 +1560,9 @@ export function useMenuActions({
     onOpenPublicMessage,
     onOpenCallInvite,
     onOpenEditOrClone,
+    onOpenSuggestEdit,
+    onOpenReviewEditProposals,
+    editProposalCount,
     canSignEvents,
     profile,
     noteTranslationFromMenu,

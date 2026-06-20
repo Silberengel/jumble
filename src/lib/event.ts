@@ -238,6 +238,11 @@ export function getParentETag(event?: Event) {
     return event.tags.find(tagNameEquals('e')) ?? event.tags.find(tagNameEquals('E'))
   }
 
+  // NIP-41 kind 1010: `e` references the edited kind-1 note (collaborative proposals use this for parent preview).
+  if (event.kind === ExtendedKind.SHORT_NOTE_EDIT) {
+    return event.tags.find(tagNameEquals('e')) ?? event.tags.find(tagNameEquals('E'))
+  }
+
   if (event.kind !== kinds.ShortTextNote) return undefined
 
   const isETag = (n: string) => n === 'e' || n === 'E'

@@ -149,11 +149,12 @@ class ShortNoteEditsService {
     incomingEdits: readonly Event[]
   ): ShortNoteEditState {
     const prev = this.stateMap.get(this.cacheKey(noteId))
-    return mergeShortNoteEditEvents(prev?.authorEdits ?? [], incomingEdits, this.kind1Stub(noteId, authorPubkey))
+    const existing = [...(prev?.authorEdits ?? []), ...(prev?.editProposals ?? [])]
+    return mergeShortNoteEditEvents(existing, incomingEdits, this.kind1Stub(noteId, authorPubkey))
   }
 
   private commitState(noteId: string, state: ShortNoteEditState): ShortNoteEditState | undefined {
-    if (state.authorEdits.length === 0) {
+    if (state.authorEdits.length === 0 && state.editProposals.length === 0) {
       return this.stateMap.get(this.cacheKey(noteId))
     }
     this.stateMap.set(this.cacheKey(noteId), state)
@@ -220,7 +221,11 @@ class ShortNoteEditsService {
       relays: relayList
     })
 
-    const merged = this.mergeIntoState(noteId, authorPubkey, fetched?.authorEdits ?? [])
+    const relayEdits = [
+      ...(fetched?.authorEdits ?? []),
+      ...(fetched?.editProposals ?? [])
+    ]
+    const merged = this.mergeIntoState(noteId, authorPubkey, relayEdits)
     return this.commitState(noteId, merged)
   }
 
@@ -239,7 +244,7 @@ class ShortNoteEditsService {
     }
 
     const state = buildShortNoteEditState(relayEdits, this.kind1Stub(noteId, authorPubkey))
-    return state.authorEdits.length > 0 ? state : undefined
+    return state.authorEdits.length > 0 || state.editProposals.length > 0 ? state : undefined
   }
 
   /** Latest author edit for a kind-1 thread when composing a reply. */

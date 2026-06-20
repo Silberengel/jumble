@@ -648,6 +648,7 @@ export default {
     'Notification boost detail': 'Die Vorschau darüber ist der Originalbeitrag.',
     'Notification poll vote summary': 'Hat an der Umfrage darüber teilgenommen.',
     'Notification poll vote options count': '{{count}} Option(en) gewählt',
+    'Suggested an edit to your note': 'Hat eine Bearbeitung deiner Notiz vorgeschlagen',
     'Imwald synthetic event': 'Imwald – synthetisches Ereignis',
     '+ Add a URL to this list': 'URL zur Liste hinzufügen',
     'Add a web URL': 'Web-URL hinzufügen',

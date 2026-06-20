@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   buildShortNoteEditState,
+  baselineShortNoteContentForProposal,
+  getEditProposalSummary,
   getReplyShortNoteEditId,
   getShortNoteEditTargetId,
   isAuthorShortNoteEdit,
+  isIncomingCollaborativeEditProposalNotification,
   mergeEditedShortNote,
   mergeShortNoteEditEvents,
   pickLatestAuthorShortNoteEdit,
@@ -82,7 +85,35 @@ describe('short-note-edits', () => {
     const state = buildShortNoteEditState([author, thirdParty], kind1)
     expect(state.latestAuthorEdit?.id).toBe(author.id)
     expect(state.authorEdits).toHaveLength(1)
+    expect(state.editProposals).toHaveLength(1)
+    expect(state.editProposals[0]?.id).toBe(thirdParty.id)
     expect(isAuthorShortNoteEdit(thirdParty, kind1)).toBe(false)
+  })
+
+  it('reads proposal summary tag', () => {
+    const proposal = editEvent('22'.repeat(32), otherPubkey, 'suggested', 250, [
+      ['p', kind1Author],
+      ['summary', 'typo fix']
+    ])
+    expect(getEditProposalSummary(proposal)).toBe('typo fix')
+  })
+
+  it('detects incoming collaborative edit proposal notifications', () => {
+    const proposal = editEvent('22'.repeat(32), otherPubkey, 'suggested', 250, [
+      ['p', kind1Author],
+      ['summary', 'please fix typo']
+    ])
+    expect(isIncomingCollaborativeEditProposalNotification(proposal, kind1Author)).toBe(true)
+    expect(isIncomingCollaborativeEditProposalNotification(proposal, otherPubkey)).toBe(false)
+    const authorEdit = editEvent('33'.repeat(32), kind1Author, 'self edit', 260)
+    expect(isIncomingCollaborativeEditProposalNotification(authorEdit, kind1Author)).toBe(false)
+  })
+
+  it('baseline for proposals uses latest author edit', () => {
+    const author = editEvent('11'.repeat(32), kind1Author, 'revised', 200)
+    const state = buildShortNoteEditState([author], kind1)
+    expect(baselineShortNoteContentForProposal(kind1, state)).toBe('revised')
+    expect(baselineShortNoteContentForProposal(kind1)).toBe('original')
   })
 
   it('merges edited content onto kind 1', () => {

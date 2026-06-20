@@ -328,6 +328,54 @@ export async function createShortNoteEditDraftEvent(
   return setDraftEventCache(baseDraft)
 }
 
+/** NIP-41 collaboration: third-party kind-1010 proposal to edit someone else's kind-1 note. */
+export async function createShortNoteEditProposalDraftEvent(
+  content: string,
+  originalNote: Event,
+  options: {
+    summary?: string
+    addClientTag?: boolean
+    isNsfw?: boolean
+    contentWarningLabel?: string
+    mediaImetaTags?: string[][]
+  } = {}
+): Promise<TDraftEvent> {
+  const contentWithPrefixedAddresses = prefixNostrAddresses(content)
+  const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(contentWithPrefixedAddresses)
+  const { quoteEventHexIds, quoteReplaceableCoordinates } = await extractRelatedEventIds(
+    transformedEmojisContent,
+    undefined
+  )
+  const hashtags = extractHashtags(transformedEmojisContent)
+
+  const tags = emojiTags
+    .concat(hashtags.map((hashtag) => buildTTag(hashtag)))
+    .concat(quoteEventHexIds.map((eventId) => buildQTag(eventId)))
+    .concat(quoteReplaceableCoordinates.map((coordinate) => buildReplaceableQTag(coordinate)))
+
+  const images = extractImagesFromContent(transformedEmojisContent)
+  if (images?.length) {
+    tags.push(...generateImetaTags(images))
+  }
+
+  mergeUploadImetaTagsInto(tags, options.mediaImetaTags)
+
+  tags.push(buildETag(originalNote.id, originalNote.pubkey))
+  tags.push(buildPTag(originalNote.pubkey))
+  if (options.summary?.trim()) {
+    tags.push(['summary', options.summary.trim()])
+  }
+
+  appendContentWarningTagIfNeeded(tags, options)
+
+  const baseDraft = {
+    kind: ExtendedKind.SHORT_NOTE_EDIT,
+    content: transformedEmojisContent,
+    tags
+  }
+  return setDraftEventCache(baseDraft)
+}
+
 // https://github.com/nostr-protocol/nips/blob/master/51.md
 export function createRelaySetDraftEvent(relaySet: Omit<TRelaySet, 'aTag'>): TDraftEvent {
   return {

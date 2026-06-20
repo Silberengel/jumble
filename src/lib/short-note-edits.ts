@@ -9,6 +9,8 @@ export type ShortNoteEditState = {
   latestAuthorEdit?: Event
   /** All author edits, oldest first. */
   authorEdits: Event[]
+  /** Third-party kind-1010 edit proposals (pubkey differs from note author). */
+  editProposals: Event[]
 }
 
 /** `e` tag on kind 1010 pointing at the edited kind-1 note id. */
@@ -40,6 +42,49 @@ export function pickLatestAuthorShortNoteEdit(
   return latest
 }
 
+/** Whether `edit` is a third-party proposal to change `kind1` (NIP-41 collaboration). */
+export function isCollaborativeEditProposal(edit: Event, kind1: Pick<Event, 'id' | 'pubkey'>): boolean {
+  if (edit.kind !== ExtendedKind.SHORT_NOTE_EDIT) return false
+  const target = getShortNoteEditTargetId(edit)
+  if (!target || target !== kind1.id.toLowerCase()) return false
+  return edit.pubkey.toLowerCase() !== kind1.pubkey.toLowerCase()
+}
+
+/** Kind-1010 edit proposal in the notifications spell (`#p` = note author). */
+export function isIncomingCollaborativeEditProposalNotification(
+  event: Event,
+  recipientPubkey: string
+): boolean {
+  const targetId = getShortNoteEditTargetId(event)
+  if (!targetId) return false
+  const recipient = recipientPubkey.trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(recipient)) return false
+  if (event.pubkey.toLowerCase() === recipient) return false
+  const notified = event.tags.some(
+    (t) => t[0] === 'p' && typeof t[1] === 'string' && t[1].toLowerCase() === recipient
+  )
+  if (!notified) return false
+  return isCollaborativeEditProposal(event, { id: targetId, pubkey: recipient })
+}
+
+export function getEditProposalSummary(proposal: Event): string | undefined {
+  const tag = proposal.tags.find(tagNameEquals('summary'))
+  const value = tag?.[1]?.trim()
+  return value || undefined
+}
+
+export function pickLatestEditProposal(
+  proposals: readonly Event[],
+  kind1: Pick<Event, 'id' | 'pubkey'>
+): Event | undefined {
+  let latest: Event | undefined
+  for (const proposal of proposals) {
+    if (!isCollaborativeEditProposal(proposal, kind1)) continue
+    if (!latest || proposal.created_at > latest.created_at) latest = proposal
+  }
+  return latest
+}
+
 export function buildShortNoteEditState(
   edits: readonly Event[],
   kind1: Pick<Event, 'id' | 'pubkey'>
@@ -47,10 +92,22 @@ export function buildShortNoteEditState(
   const authorEdits = edits
     .filter((e) => isAuthorShortNoteEdit(e, kind1))
     .sort((a, b) => a.created_at - b.created_at)
+  const editProposals = edits
+    .filter((e) => isCollaborativeEditProposal(e, kind1))
+    .sort((a, b) => b.created_at - a.created_at)
   return {
     latestAuthorEdit: authorEdits.length ? authorEdits[authorEdits.length - 1] : undefined,
-    authorEdits
+    authorEdits,
+    editProposals
   }
+}
+
+/** Baseline note text for proposing an edit (latest author revision or original). */
+export function baselineShortNoteContentForProposal(
+  kind1: Event,
+  editState?: Pick<ShortNoteEditState, 'latestAuthorEdit'>
+): string {
+  return editState?.latestAuthorEdit?.content ?? kind1.content
 }
 
 /** Dedupe by edit id and rebuild author edit state for a kind-1 note. */

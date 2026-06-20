@@ -119,11 +119,13 @@ export function applyFauxSpellCapsToSubRequests(requests: TFeedSubRequest[]): TF
 }
 
 /**
- * Same kinds as {@link RENDERABLE_NOTE_KINDS_SORTED}: anything `Note` renders with a real card, not
- * the unknown-event fallback. Live notifications REQ uses `#p` only (no relay `kinds`); this list is applied in
- * NoteList via `clientSideKindFilter` so only supported cards appear (other mention kinds are dropped).
+ * Same kinds as {@link RENDERABLE_NOTE_KINDS_SORTED}, plus NIP-41 collaborative edit proposals (kind 1010).
+ * Live notifications REQ uses `#p` only (no relay `kinds`); this list is applied in NoteList via
+ * `clientSideKindFilter` so only supported cards appear.
  */
-export const NOTIFICATION_SPELL_KINDS = RENDERABLE_NOTE_KINDS_SORTED
+export const NOTIFICATION_SPELL_KINDS = [...RENDERABLE_NOTE_KINDS_SORTED, ExtendedKind.SHORT_NOTE_EDIT].sort(
+  (a, b) => a - b
+)
 
 /** Live notifications spell: longer than NoteList’s default 15s before empty state (slow `#p` on some relays). */
 export const NOTIFICATION_SPELL_LOADING_SAFETY_MS = 90_000

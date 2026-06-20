@@ -80,6 +80,7 @@ import NsfwNote from './NsfwNote'
 import PictureNote from './PictureNote'
 import Poll from './Poll'
 import NotificationEventCard from './NotificationEventCard'
+import ShortNoteEditProposalNotificationCard from './ShortNoteEditProposalNotificationCard'
 import ReactionEmojiDisplay from './ReactionEmojiDisplay'
 import UnknownNote from './UnknownNote'
 import VideoNote from './VideoNote'
@@ -488,7 +489,9 @@ export default function Note({
 
   let content: React.ReactNode
   
-  if (!isRenderableNoteKind(event.kind)) {
+  if (event.kind === ExtendedKind.SHORT_NOTE_EDIT) {
+    content = <ShortNoteEditProposalNotificationCard className="mt-2" event={displayEvent} />
+  } else if (!isRenderableNoteKind(event.kind)) {
     content = <UnknownNote className="mt-2" event={displayEvent} omitKindLabel />
   } else if (muteSetHas(mutePubkeySet, event.pubkey) && !showMuted) {
     content = <MutedNote show={() => setShowMuted(true)} />
