@@ -1,0 +1,3 @@
+export const SEARCH_DEBOUNCE_MS = 300
+export const SEARCH_INDEX_SETTLE_MS = 400
+export const RELAY_SEARCH_TIMEOUT_MS = 30_000

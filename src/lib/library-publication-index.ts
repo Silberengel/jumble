@@ -530,7 +530,7 @@ function libraryIndexRelayUrls(extraRelayUrls: string[] = [], blockedRelays: rea
 
 export async function buildLibraryRelayUrls(
   userPubkey?: string,
-  blockedRelays: string[] = []
+  blockedRelays: readonly string[] = []
 ): Promise<string[]> {
   const base = libraryIndexRelayUrls([], blockedRelays)
   const urls = await buildComprehensiveRelayList({
@@ -540,7 +540,7 @@ export async function buildLibraryRelayUrls(
     includeSearchableRelays: false,
     includeFavoriteRelays: false,
     relayHints: base,
-    blockedRelays
+    blockedRelays: [...blockedRelays]
   })
   return libraryIndexRelayUrls([...urls], blockedRelays)
 }

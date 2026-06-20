@@ -1,9 +1,14 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": [
     "nip66-cron/index.mjs!",
-    "services/piper-tts-proxy/http.ts!",
     "vite-hidden-relay-dev-proxy.ts!"
   ],
-  "ignore": ["src/global-polyfill-types.d.ts", "src/types/**/*.d.ts", "server/**"]
+  "ignore": ["src/global-polyfill-types.d.ts", "src/types/**/*.d.ts", "server/**"],
+  "ignoreIssues": {
+    "src/components/ui/**": ["exports"],
+    "src/components/Composer/index.ts": ["exports"],
+    "src/components/NoteStats/*.tsx": ["exports"]
+  },
+  "ignoreBinaries": ["convert"]
 }

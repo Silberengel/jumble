@@ -15,15 +15,7 @@ import {
 import { applyCapitalLetterTagRelayFallback } from '@/lib/relay-fetch-relay-stack'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
-import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
-import {
-  authenticateNip42Relay,
-  isRelayAuthAccessDeniedMessage,
-  isRelayAuthRequiredCloseReason,
-  isRelaySubscriptionClosedByCaller,
-  RelayAuthAccessDeniedError
-} from '@/lib/relay-nip42-auth'
-import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
+import { openGroupedRelaySubscriptionsWithNip42 } from '@/lib/relay-nip42-grouped-subscribe'
 import { isIndexRelayTransportFailure, queryIndexRelay } from '@/lib/index-relay-http'
 import logger from '@/lib/logger'
 import activityTrace from '@/lib/activity-trace'
@@ -36,9 +28,8 @@ import {
   normalizeUrl
 } from '@/lib/url'
 import { RelaySubscribeOpBatch, type RelayOpTerminalRow } from '@/services/relay-operation-log.service'
-import { patchRelayNoticeForFetchFailures } from '@/services/relay-notice-fetch-failure'
 import type { Filter, Event as NEvent } from 'nostr-tools'
-import { SimplePool, EventTemplate, VerifiedEvent, nip19 } from 'nostr-tools'
+import { SimplePool, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
 import {
   sanitizeRelayUrlsForFetch,
@@ -1015,147 +1006,30 @@ export class QueryService {
         }
       : undefined
 
-    const subs: { relayKey: string; close: () => void }[] = []
-    const nip42ResubscribePending = new Set<number>()
-    /** Same idea as `master` subscribe: only one successful auth+resubscribe cycle per relay slot. */
-    const nip42HasAuthedOnce = new Set<number>()
-    const allOpened = Promise.all(
-      groupedRequests.map(async ({ url, filters: relayFilters }, i) => {
-        await this.acquireGlobalRelayConnectionSlot()
-        try {
-          const relayKey = normalizeUrl(url) || url
-          await this.acquireSubSlot(relayKey)
-          let relay: AbstractRelay
-          try {
-            relay = await this.pool.ensureRelay(url, {
-              connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS
-            })
-            patchRelayNoticeForFetchFailures(relay, relayKey, this.onRelayNoticeFetchFailure)
-          } catch (err) {
-            relaySessionStrikes.recordReadFailure(url, 'connection')
-            this.releaseSubSlot(relayKey)
-            handleClose(i, (err as Error)?.message ?? String(err))
-            return
-          }
-
-          let slotReleased = false
-          const releaseOnce = () => {
-            if (!slotReleased) {
-              slotReleased = true
-              this.releaseSubSlot(relayKey)
-            }
-          }
-
-          const sub = relay.subscribe(relayFilters, {
-            receivedEvent: (_relay, id) => this.trackEventSeenOn(id, _relay),
-            onevent: (evt: NEvent) => forwardOnevent?.(evt),
-            oneose: () => handleEose(i),
-            onclose: (reason: string) => {
-              if (isRelaySubscriptionClosedByCaller(reason) && nip42ResubscribePending.has(i)) {
-                return
-              }
-              releaseOnce()
-              if (
-                isRelayAuthRequiredCloseReason(reason) &&
-                this.canSignerAuthenticateRelay() &&
-                !nip42HasAuthedOnce.has(i)
-              ) {
-                nip42ResubscribePending.add(i)
-                applyRelayNip42AckTimeout(relay)
-                authenticateNip42Relay(relay, async (authEvt: EventTemplate) => {
-                  const evt = await queueRelayAuthSign(() => this.signer!.signEvent(authEvt))
-                  if (!evt) throw new Error('sign event failed')
-                  return evt as VerifiedEvent
-                })
-                  .then(async () => {
-                    nip42HasAuthedOnce.add(i)
-                    await this.acquireGlobalRelayConnectionSlot()
-                    try {
-                      await this.acquireSubSlot(relayKey)
-                      let liveRelay: AbstractRelay
-                      try {
-                        liveRelay = await this.pool.ensureRelay(url, {
-                          connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS
-                        })
-                        patchRelayNoticeForFetchFailures(liveRelay, relayKey, this.onRelayNoticeFetchFailure)
-                      } catch (err) {
-                        relaySessionStrikes.recordReadFailure(url, 'connection')
-                        nip42ResubscribePending.delete(i)
-                        this.releaseSubSlot(relayKey)
-                        handleClose(i, (err as Error)?.message ?? String(err))
-                        return
-                      }
-                      let slotReleased2 = false
-                      const releaseSlot2 = () => {
-                        if (!slotReleased2) {
-                          slotReleased2 = true
-                          this.releaseSubSlot(relayKey)
-                        }
-                      }
-                      try {
-                        const sub2 = liveRelay.subscribe(relayFilters, {
-                          receivedEvent: (_relay, id) => this.trackEventSeenOn(id, _relay),
-                          onevent: (evt: NEvent) => forwardOnevent?.(evt),
-                          oneose: () => handleEose(i),
-                          onclose: (reason2: string) => {
-                            releaseSlot2()
-                            handleClose(i, reason2)
-                          },
-                          alreadyHaveEvent: localAlreadyHaveEvent,
-                          eoseTimeout: relaySubscriptionEoseTimeoutMs
-                        })
-                        subs.push({
-                          relayKey,
-                          close: () => {
-                            releaseSlot2()
-                            sub2.close()
-                          }
-                        })
-                        nip42ResubscribePending.delete(i)
-                      } catch (err) {
-                        relaySessionStrikes.recordReadFailure(url, 'connection')
-                        nip42ResubscribePending.delete(i)
-                        releaseSlot2()
-                        handleClose(i, (err as Error)?.message ?? String(err))
-                      }
-                    } finally {
-                      this.releaseGlobalRelayConnectionSlot()
-                    }
-                  })
-                  .catch((err) => {
-                    nip42ResubscribePending.delete(i)
-                    const authMsg = err instanceof Error ? err.message : String(err)
-                    if (
-                      err instanceof RelayAuthAccessDeniedError ||
-                      isRelayAuthAccessDeniedMessage(authMsg)
-                    ) {
-                      nip42HasAuthedOnce.add(i)
-                      relaySessionStrikes.recordReadFailure(url, 'connection')
-                    }
-                    handleClose(i, authMsg || reason)
-                  })
-                return
-              }
-              if (isRelayAuthRequiredCloseReason(reason)) {
-                callbacks.startLogin?.()
-              }
-              handleClose(i, reason)
-            },
-            alreadyHaveEvent: localAlreadyHaveEvent,
-            eoseTimeout: relaySubscriptionEoseTimeoutMs
-          })
-          subs.push({
-            relayKey,
-            close: () => {
-              releaseOnce()
-              sub.close()
-            }
-          })
-        } finally {
-          this.releaseGlobalRelayConnectionSlot()
-        }
-      })
-    )
+    const { subs, allOpened } = openGroupedRelaySubscriptionsWithNip42({
+      groupedRequests,
+      eoseTimeoutMs: relaySubscriptionEoseTimeoutMs,
+      slots: {
+        acquireGlobal: (opts) => this.acquireGlobalRelayConnectionSlot(opts),
+        releaseGlobal: () => this.releaseGlobalRelayConnectionSlot(),
+        acquireSub: (relayKey) => this.acquireSubSlot(relayKey),
+        releaseSub: (relayKey) => this.releaseSubSlot(relayKey)
+      },
+      ensureRelay: (url) =>
+        this.pool.ensureRelay(url, { connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS }),
+      onRelayNoticeFetchFailure: this.onRelayNoticeFetchFailure,
+      trackEventSeenOn: (id, relay) => this.trackEventSeenOn(id, relay),
+      canSignerAuthenticateRelay: () => this.canSignerAuthenticateRelay(),
+      signAuthEvent: (authEvt) => this.signer!.signEvent(authEvt) as Promise<VerifiedEvent>,
+      forwardOnevent,
+      localAlreadyHaveEvent,
+      handleEose,
+      handleClose,
+      onStartLogin: callbacks.startLogin,
+      recordConnectionFailure: (url) => {
+        relaySessionStrikes.recordReadFailure(url, 'connection')
+      }
+    })
 
     return {
       close: () => {

@@ -111,12 +111,11 @@ import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
 import {
   authenticateNip42Relay,
   isRelayAuthAccessDeniedMessage,
-  isRelayAuthRequiredCloseReason,
   isRelayAuthRequiredErrorMessage,
   isRelayConnectionClosedError,
-  isRelaySubscriptionClosedByCaller,
   RelayAuthAccessDeniedError
 } from '@/lib/relay-nip42-auth'
+import { openGroupedRelaySubscriptionsWithNip42 } from '@/lib/relay-nip42-grouped-subscribe'
 import { applyRelayNip42AckTimeout } from '@/lib/relay-nip42-tuning'
 import { getKeyForDeletedLookup } from '@/lib/deleted-event-key'
 import { buildDeletionRelayUrls, dispatchTombstonesUpdated } from '@/lib/tombstone-events'
@@ -3066,180 +3065,50 @@ class ClientService extends EventTarget {
         }
       : undefined
 
-    const subs: { relayKey: string; close: () => void }[] = []
-    /** Ignore a follow-up `closed by caller` while NIP-42 auth + resubscribe is in flight (parent `close()` must not finalize the batch early). */
-    const nip42ResubscribePending = new Set<number>()
-    const nip42HasAuthedOnce = new Set<number>()
     const slotPriority = connectionSlotPriority === true
-    const allOpened = Promise.all(
-      groupedRequests.map(async ({ url, filters: relayFilters }, i) => {
-        await that.queryService.acquireGlobalRelayConnectionSlot(
-          slotPriority ? { priority: true } : undefined
-        )
-        try {
-          const relayKey = normalizeUrl(url) || url
-          await that.queryService.acquireSubSlot(relayKey)
-          let relay: AbstractRelay
-          try {
-            relay = await that.pool.ensureRelay(url, { connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS })
-            patchRelayNoticeForFetchFailures(relay, relayKey, (u, m) => that.handleRelayNoticeSession(u, m))
-          } catch (err) {
-            relaySessionStrikes.recordConnectionFailure(
-              url,
-              (err as Error)?.message ?? String(err),
-              'connection'
-            )
-            that.queryService.releaseSubSlot(relayKey)
-            handleClose(i, (err as Error)?.message ?? String(err))
-            return
-          }
-
-          let slotReleased = false
-          const releaseOnce = () => {
-            if (!slotReleased) {
-              slotReleased = true
-              that.queryService.releaseSubSlot(relayKey)
-            }
-          }
-
-          const sub = relay.subscribe(relayFilters, {
-            receivedEvent: (_relay, id) => that.trackEventSeenOn(id, _relay),
-            onevent: (evt: NEvent) => {
-              logFirstEventIfFirstResponseWasEmpty(evt, relayKey)
-              logFirstRelayResponse('event', relayKey)
-              forwardOnevent?.(evt)
-            },
-            oneose: () => handleEose(i),
-            onclose: (reason: string) => {
-              if (isRelaySubscriptionClosedByCaller(reason) && nip42ResubscribePending.has(i)) {
-                return
-              }
-              releaseOnce()
-              if (
-                isRelayAuthRequiredCloseReason(reason) &&
-                that.canSignerAuthenticateRelay() &&
-                !nip42HasAuthedOnce.has(i)
-              ) {
-                nip42ResubscribePending.add(i)
-                applyRelayNip42AckTimeout(relay)
-                authenticateNip42Relay(relay, async (authEvt: EventTemplate) => {
-                  const evt = await queueRelayAuthSign(() => that.signer!.signEvent(authEvt))
-                  if (!evt) throw new Error('sign event failed')
-                  return evt as VerifiedEvent
-                })
-                  .then(async () => {
-                    nip42HasAuthedOnce.add(i)
-                    await that.queryService.acquireGlobalRelayConnectionSlot(
-                      slotPriority ? { priority: true } : undefined
-                    )
-                    try {
-                      await that.queryService.acquireSubSlot(relayKey)
-                      // After AUTH the socket may be closed or the relay dropped from the pool;
-                      // resubscribe on a fresh connection from ensureRelay (fixes SendingOnClosedConnection).
-                      let liveRelay: AbstractRelay
-                      try {
-                        liveRelay = await that.pool.ensureRelay(url, {
-                          connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS
-                        })
-                        patchRelayNoticeForFetchFailures(liveRelay, relayKey, (u, m) =>
-                          that.handleRelayNoticeSession(u, m)
-                        )
-                      } catch (err) {
-                        relaySessionStrikes.recordConnectionFailure(
-                          url,
-                          (err as Error)?.message ?? String(err),
-                          'connection'
-                        )
-                        nip42ResubscribePending.delete(i)
-                        that.queryService.releaseSubSlot(relayKey)
-                        handleClose(i, (err as Error)?.message ?? String(err))
-                        return
-                      }
-                      let slotReleased2 = false
-                      const releaseSlot2 = () => {
-                        if (!slotReleased2) {
-                          slotReleased2 = true
-                          that.queryService.releaseSubSlot(relayKey)
-                        }
-                      }
-                      try {
-                        const sub2 = liveRelay.subscribe(relayFilters, {
-                          receivedEvent: (_relay, id) => that.trackEventSeenOn(id, _relay),
-                          onevent: (evt: NEvent) => {
-                            logFirstEventIfFirstResponseWasEmpty(evt, relayKey)
-                            logFirstRelayResponse('event', relayKey)
-                            forwardOnevent?.(evt)
-                          },
-                          oneose: () => handleEose(i),
-                          onclose: (reason2: string) => {
-                            releaseSlot2()
-                            handleClose(i, reason2)
-                          },
-                          alreadyHaveEvent: localAlreadyHaveEvent,
-                          eoseTimeout: SUBSCRIBE_RELAY_EOSE_TIMEOUT_MS
-                        })
-                        logger.debug('[relay-req] req_sent', {
-                          reqGroupId,
-                          url: relayKey,
-                          ms: Math.round(performance.now() - reqT0),
-                          note: 'after_auth'
-                        })
-                        subs.push({
-                          relayKey,
-                          close: () => {
-                            releaseSlot2()
-                            sub2.close()
-                          }
-                        })
-                        nip42ResubscribePending.delete(i)
-                      } catch (err) {
-                        nip42ResubscribePending.delete(i)
-                        releaseSlot2()
-                        handleClose(i, (err as Error)?.message ?? String(err))
-                      }
-                    } finally {
-                      that.queryService.releaseGlobalRelayConnectionSlot()
-                    }
-                  })
-                  .catch((err) => {
-                    nip42ResubscribePending.delete(i)
-                    const authMsg = err instanceof Error ? err.message : String(err)
-                    if (
-                      err instanceof RelayAuthAccessDeniedError ||
-                      isRelayAuthAccessDeniedMessage(authMsg)
-                    ) {
-                      nip42HasAuthedOnce.add(i)
-                      relaySessionStrikes.recordReadFailure(url, 'connection')
-                    }
-                    handleClose(i, authMsg || reason)
-                  })
-                return
-              }
-              if (isRelayAuthRequiredCloseReason(reason)) {
-                startLogin?.()
-              }
-              handleClose(i, reason)
-            },
-            alreadyHaveEvent: localAlreadyHaveEvent,
-            eoseTimeout: SUBSCRIBE_RELAY_EOSE_TIMEOUT_MS
-          })
-          logger.debug('[relay-req] req_sent', {
-            reqGroupId,
-            url: relayKey,
-            ms: Math.round(performance.now() - reqT0)
-          })
-          subs.push({
-            relayKey,
-            close: () => {
-              releaseOnce()
-              sub.close()
-            }
-          })
-        } finally {
-          that.queryService.releaseGlobalRelayConnectionSlot()
+    const { subs, allOpened } = openGroupedRelaySubscriptionsWithNip42({
+      groupedRequests,
+      eoseTimeoutMs: SUBSCRIBE_RELAY_EOSE_TIMEOUT_MS,
+      connectionSlotPriority: slotPriority,
+      slots: {
+        acquireGlobal: (opts) => that.queryService.acquireGlobalRelayConnectionSlot(opts),
+        releaseGlobal: () => that.queryService.releaseGlobalRelayConnectionSlot(),
+        acquireSub: (relayKey) => that.queryService.acquireSubSlot(relayKey),
+        releaseSub: (relayKey) => that.queryService.releaseSubSlot(relayKey)
+      },
+      ensureRelay: (url) =>
+        that.pool.ensureRelay(url, { connectionTimeout: RELAY_POOL_CONNECTION_TIMEOUT_MS }),
+      onRelayNoticeFetchFailure: (u, m) => that.handleRelayNoticeSession(u, m),
+      trackEventSeenOn: (id, relay) => that.trackEventSeenOn(id, relay),
+      canSignerAuthenticateRelay: () => that.canSignerAuthenticateRelay(),
+      signAuthEvent: (authEvt) => that.signer!.signEvent(authEvt) as Promise<VerifiedEvent>,
+      forwardOnevent,
+      wrapOnevent: (relayKey, deliver) => (evt) => {
+        logFirstEventIfFirstResponseWasEmpty(evt, relayKey)
+        logFirstRelayResponse('event', relayKey)
+        deliver(evt)
+      },
+      localAlreadyHaveEvent,
+      handleEose,
+      handleClose,
+      onStartLogin: startLogin,
+      recordConnectionFailure: (url, err, phase) => {
+        const msg = err instanceof Error ? err.message : String(err)
+        if (phase === 'resubscribe' && typeof err === 'string') {
+          relaySessionStrikes.recordReadFailure(url, 'connection')
+          return
         }
-      })
-    )
+        relaySessionStrikes.recordConnectionFailure(url, msg, 'connection')
+      },
+      onSubscribed: (relayKey, { afterAuth }) => {
+        logger.debug('[relay-req] req_sent', {
+          reqGroupId,
+          url: relayKey,
+          ms: Math.round(performance.now() - reqT0),
+          ...(afterAuth ? { note: 'after_auth' } : {})
+        })
+      }
+    })
 
     const handleNewEventFromInternal = (data: Event) => {
       const customEvent = data as CustomEvent<NEvent>
