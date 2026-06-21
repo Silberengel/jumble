@@ -20,6 +20,7 @@ import {
   createPublicMessageReplyDraftEvent,
   createShortTextNoteDraftEvent,
   createHighlightDraftEvent,
+  createWebBookmarkDraftEvent,
   deleteDraftEventCache,
   createVoiceDraftEvent,
   createVoiceCommentDraftEvent,
@@ -61,6 +62,7 @@ import postEditorCache from '@/services/post-editor-cache.service'
 import { TPollCreateData } from '@/types'
 import {
   Book,
+  Bookmark,
   Check,
   ChevronDown,
   ListTodo,
@@ -126,6 +128,7 @@ import {
 import { NeventPickerProvider } from './PostTextarea/Mention/NeventPickerProvider'
 import Uploader from './Uploader'
 import HighlightEditor, { HighlightData } from './HighlightEditor'
+import WebBookmarkEditor, { type WebBookmarkDraftData } from './WebBookmarkEditor'
 import EditOrCloneEventDialog from '../NoteOptions/EditOrCloneEventDialog'
 import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
 import {
@@ -347,6 +350,8 @@ export default function PostContent({
       sourceValue: ''
     }
   )
+  const [isWebBookmark, setIsWebBookmark] = useState(false)
+  const [webBookmarkData, setWebBookmarkData] = useState<WebBookmarkDraftData>({ url: '', title: '' })
   const [pollCreateData, setPollCreateData] = useState<TPollCreateData>({
     isMultipleChoice: false,
     options: ['', ''],
@@ -691,6 +696,8 @@ export default function PostContent({
       return ExtendedKind.CITATION_HARDCOPY
     } else if (isCitationPrompt) {
       return ExtendedKind.CITATION_PROMPT
+    } else if (isWebBookmark) {
+      return ExtendedKind.WEB_BOOKMARK
     } else if (isHighlight) {
       return kinds.Highlights
     } else if (isPoll) {
@@ -713,6 +720,7 @@ export default function PostContent({
     isCitationExternal,
     isCitationHardcopy,
     isCitationPrompt,
+    isWebBookmark,
     isHighlight,
     isPublicMessage,
     isPoll,
@@ -737,6 +745,8 @@ export default function PostContent({
       parentEventKind: parentEvent?.kind,
       isHighlight,
       highlightSourceEmpty: !highlightData.sourceValue.trim(),
+      isWebBookmark,
+      webBookmarkUrlEmpty: !webBookmarkData.url.trim(),
       isCitationInternal,
       citationInternalCTag,
       isCitationExternal,
@@ -777,6 +787,8 @@ export default function PostContent({
       parentEvent?.kind,
       isHighlight,
       highlightData.sourceValue,
+      isWebBookmark,
+      webBookmarkData.url,
       isCitationInternal,
       citationInternalCTag,
       isCitationExternal,
@@ -1321,6 +1333,15 @@ export default function PostContent({
       })
     }
 
+    // Web bookmarks (NIP-B0)
+    if (isWebBookmark) {
+      return createWebBookmarkDraftEvent({
+        url: webBookmarkData.url,
+        title: webBookmarkData.title || undefined,
+        note: cleanedText.trim() || undefined
+      })
+    }
+
     // Highlights
     if (isHighlight) {
       return await createHighlightDraftEvent(
@@ -1414,6 +1435,8 @@ export default function PostContent({
     isCitationExternal,
     isCitationHardcopy,
     isCitationPrompt,
+    isWebBookmark,
+    webBookmarkData,
     isHighlight,
     highlightData,
     isPublicMessage,
@@ -1794,6 +1817,7 @@ export default function PostContent({
       // When enabling poll mode, clear other modes
       setIsPublicMessage(false)
       setIsHighlight(false)
+      setIsWebBookmark(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
@@ -1819,6 +1843,7 @@ export default function PostContent({
       // When enabling public message mode, clear other modes
       setIsPoll(false)
       setIsHighlight(false)
+      setIsWebBookmark(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
@@ -1847,6 +1872,7 @@ export default function PostContent({
     setIsPoll(false)
     setIsPublicMessage(false)
     setIsHighlight(false)
+    setIsWebBookmark(false)
     setIsLongFormArticle(false)
     setIsWikiArticle(false)
     setIsNostrSpecification(false)
@@ -1988,6 +2014,7 @@ export default function PostContent({
       !isPoll &&
       !isPublicMessage &&
       !isHighlight &&
+      !isWebBookmark &&
       !isLongFormArticle &&
       !isWikiArticle &&
       !isNostrSpecification &&
@@ -2004,6 +2031,7 @@ export default function PostContent({
       isPoll,
       isPublicMessage,
       isHighlight,
+      isWebBookmark,
       isLongFormArticle,
       isWikiArticle,
       isNostrSpecification,
@@ -2024,6 +2052,7 @@ export default function PostContent({
       return !(
         isPoll ||
         isHighlight ||
+        isWebBookmark ||
         isLongFormArticle ||
         isWikiArticle ||
         isNostrSpecification ||
@@ -2041,6 +2070,7 @@ export default function PostContent({
       isPublicMessage,
       isPoll,
       isHighlight,
+      isWebBookmark,
       isLongFormArticle,
       isWikiArticle,
       isNostrSpecification,
@@ -2061,6 +2091,7 @@ export default function PostContent({
       setIsPoll(false)
       setIsPublicMessage(false)
       setIsHighlight(false)
+      setIsWebBookmark(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
@@ -2086,6 +2117,33 @@ export default function PostContent({
       // When enabling highlight mode, clear other modes and set client tag to true
       setIsPoll(false)
       setIsPublicMessage(false)
+      setIsWebBookmark(false)
+      setIsLongFormArticle(false)
+      setIsWikiArticle(false)
+      setIsNostrSpecification(false)
+      setIsPublicationContent(false)
+      setIsMusicTrack(false)
+      setIsCitationInternal(false)
+      setIsCitationExternal(false)
+      setIsCitationHardcopy(false)
+      setIsCitationPrompt(false)
+      setIsDiscussionThread(false)
+      setMediaNoteKind(null)
+      setMediaUrl('')
+      setMediaImetaTags([])
+      composerImetaTagsRef.current = []
+      setAddClientTag(true)
+    }
+  }
+
+  const handleWebBookmarkToggle = () => {
+    if (parentEvent) return
+    setIsWebBookmark((prev) => !prev)
+    if (!isWebBookmark) {
+      setIsPoll(false)
+      setIsPublicMessage(false)
+      setIsHighlight(false)
+      setIsWebBookmark(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
@@ -2110,6 +2168,7 @@ export default function PostContent({
       setIsPoll(false)
       setIsPublicMessage(false)
       setIsHighlight(false)
+      setIsWebBookmark(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
@@ -2667,7 +2726,7 @@ export default function PostContent({
       setContentWarningLabel,
       minPow,
       setMinPow,
-      showMentionsPicker: !isHighlight,
+      showMentionsPicker: !isHighlight && !isWebBookmark,
       mentionsContent: text,
       mentionsParentEvent: isPublicMessage ? undefined : parentEvent,
       mentions: isPublicMessage ? extractedMentions : mentions,
@@ -2788,6 +2847,7 @@ export default function PostContent({
     setIsPoll(false)
     setIsPublicMessage(false)
     setIsHighlight(false)
+    setIsWebBookmark(false)
     setMediaNoteKind(null)
     setIsCitationInternal(false)
     setIsCitationExternal(false)
@@ -2830,6 +2890,7 @@ export default function PostContent({
     setIsPoll(false)
     setIsPublicMessage(false)
     setIsHighlight(false)
+    setIsWebBookmark(false)
     setMediaNoteKind(null)
     setIsLongFormArticle(false)
     setIsWikiArticle(false)
@@ -3814,12 +3875,12 @@ export default function PostContent({
           'flex min-w-0 flex-col overflow-hidden',
           isPageLayout
             ? 'shrink-0'
-            : isHighlight
+            : isHighlight || isWebBookmark
               ? 'min-h-0 min-w-0 flex-1 gap-2'
               : 'min-h-0 flex-1'
         )}
       >
-      <div className={cn('flex min-h-0 flex-col', !isHighlight && !isPageLayout && 'min-h-0 flex-1')}>
+      <div className={cn('flex min-h-0 flex-col', !isHighlight && !isWebBookmark && !isPageLayout && 'min-h-0 flex-1')}>
       <PostTextarea
           ref={textareaRef}
           fillAvailableHeight={!isPageLayout}
@@ -3838,6 +3899,7 @@ export default function PostContent({
           onUploadCompressProgress={handleUploadCompressProgress}
           kind={getDeterminedKind}
           highlightData={isHighlight ? highlightData : undefined}
+          webBookmarkData={isWebBookmark ? webBookmarkData : undefined}
           pollCreateData={isPoll ? pollCreateData : undefined}
           extraPreviewTags={mergedExtraPreviewTags}
           articleMetadata={articlePreviewMetadata}
@@ -3855,6 +3917,7 @@ export default function PostContent({
                 isMusicTrack ? Music :
                 isCitationInternal || isCitationExternal || isCitationHardcopy || isCitationPrompt ? Quote :
                 isHighlight ? Highlighter :
+                isWebBookmark ? Bookmark :
                 isPublicMessage ? MessageCircle :
                 isPoll ? ListTodo :
                 isDiscussionThread ? MessagesSquare :
@@ -3871,6 +3934,7 @@ export default function PostContent({
                 isCitationHardcopy ? t('Hardcopy Citation') :
                 isCitationPrompt ? t('Prompt Citation') :
                 isHighlight ? t('Highlight') :
+                isWebBookmark ? t('Web bookmark') :
                 isPublicMessage ? t('Public Message') :
                 isPoll ? t('Poll') :
                 isDiscussionThread ? t('Thread') :
@@ -3961,6 +4025,18 @@ export default function PostContent({
                         <span className="text-xs text-muted-foreground mt-0.5">{t('Save a quote or passage')}</span>
                       </div>
                       {isHighlight && <Check className="h-4 w-4 shrink-0 text-primary" />}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleWebBookmarkToggle} className="gap-3 py-2 cursor-pointer">
+                      <Bookmark className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <div className="flex flex-col flex-1 min-w-0">
+                        <span className="font-medium leading-none">{t('Web bookmark')}</span>
+                        <span className="text-xs text-muted-foreground mt-0.5">
+                          {t('Save a link with optional title and note (kind 39701)', {
+                            defaultValue: 'Save a link with optional title and note (kind 39701)'
+                          })}
+                        </span>
+                      </div>
+                      {isWebBookmark && <Check className="h-4 w-4 shrink-0 text-primary" />}
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={handlePublicMessageToggle} className="gap-3 py-2 cursor-pointer">
                       <MessageCircle className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -4095,6 +4171,11 @@ export default function PostContent({
             setHighlightData={setHighlightData}
             setIsHighlight={setIsHighlight}
           />
+        </div>
+      ) : null}
+      {isWebBookmark ? (
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain popover-scroll-y">
+          <WebBookmarkEditor webBookmarkData={webBookmarkData} setWebBookmarkData={setWebBookmarkData} />
         </div>
       ) : null}
       </div>

@@ -377,7 +377,6 @@ export const StorageKey = {
   SHOW_RECOMMENDED_RELAYS_PANEL: 'showRecommendedRelaysPanel',
   DEFAULT_EXPIRATION_ENABLED: 'defaultExpirationEnabled',
   DEFAULT_EXPIRATION_MONTHS: 'defaultExpirationMonths',
-  SHOW_RSS_FEED: 'showRssFeed',
   /** When not `'false'`, allow Nostr Archives REST for discovery/stats (default on). */
   USE_NOSTR_ARCHIVES_API: 'useNostrArchivesApi',
   ADD_RANDOM_RELAYS_TO_PUBLISH: 'addRandomRelaysToPublish',

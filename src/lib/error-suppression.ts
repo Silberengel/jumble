@@ -112,8 +112,7 @@ function isExpectedDevAppNoise(message: string): boolean {
     message.includes('[SpellsPage] Spell feed') ||
     message.includes('[NIP-42] Auth accepted') ||
     message.includes('[RelayInfo] NIP-11 received') ||
-    message.includes('[client] Prewarm:') ||
-    message.includes('[RssFeedSettingsPage] Loaded RSS feed list')
+    message.includes('[client] Prewarm:')
   ) {
     return true
   }

@@ -91,7 +91,6 @@ const ProfilePageLazy = lazy(() => import('./pages/primary/ProfilePage'))
 const RelayPageLazy = lazy(() => import('./pages/primary/RelayPage'))
 const SearchPageLazy = lazy(() => import('./pages/primary/SearchPage'))
 const LibraryPageLazy = lazy(() => import('./pages/primary/LibraryPage'))
-const RssPageLazy = lazy(() => import('./pages/primary/RssPage'))
 const SettingsPrimaryPageLazy = lazy(() => import('./pages/primary/SettingsPrimaryPage'))
 const CalendarPrimaryPageLazy = lazy(() => import('./pages/primary/CalendarPrimaryPage'))
 
@@ -142,7 +141,6 @@ const PRIMARY_PAGE_REF_MAP = {
   relay: createRef<TPageRef>(),
   search: createRef<TPageRef>(),
   library: createRef<TPageRef>(),
-  rss: createRef<TPageRef>(),
   settings: createRef<TPageRef>(),
   spells: createRef<TPageRef>(),
   calendar: createRef<TPageRef>()
@@ -186,11 +184,6 @@ const getPrimaryPageMap = () => ({
       <LibraryPageLazy ref={PRIMARY_PAGE_REF_MAP.library} />
     </Suspense>
   ),
-  rss: (
-    <Suspense fallback={primaryPageLazyFallback}>
-      <RssPageLazy ref={PRIMARY_PAGE_REF_MAP.rss} />
-    </Suspense>
-  ),
   settings: (
     <Suspense fallback={primaryPageLazyFallback}>
       <SettingsPrimaryPageLazy ref={PRIMARY_PAGE_REF_MAP.settings} />
@@ -231,6 +224,9 @@ function noteContextToPrimaryEntry(pageContext: string): { name: TPrimaryPageNam
   }
   if (pageContext === 'explore' || pageContext === 'home') {
     return { name: 'explore' }
+  }
+  if (pageContext === 'rss') {
+    return { name: 'feed' }
   }
   const map = getPrimaryPageMap()
   if (pageContext in map) {
@@ -305,7 +301,6 @@ function buildNoteUrl(noteId: string, currentPage: TPrimaryPageName | null): str
     'profile',
     'feed',
     'spells',
-    'rss',
     'explore',
     'calendar'
   ]
@@ -329,7 +324,6 @@ function buildRssArticleUrl(
     'profile',
     'feed',
     'spells',
-    'rss',
     'explore',
     'calendar'
   ]
@@ -1222,7 +1216,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             ? noteContextToPrimaryEntry(contextualRssMatch[1])
             : null
           const rssPrimaryEntry: { name: TPrimaryPageName; props?: object } = resolvedRss ?? {
-            name: 'rss'
+            name: 'feed'
           }
 
           const applyRssPrimary = () => {
@@ -1259,6 +1253,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           (firstSeg === 'discussions' ||
             firstSeg === 'home' ||
             firstSeg === 'explore' ||
+            firstSeg === 'rss' ||
             firstSeg in primaryMap))
 
       if (isPrimaryPageUrl) {
@@ -1270,6 +1265,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
               ? 'explore'
               : firstSeg === 'discussions'
                 ? 'discussions'
+                : firstSeg === 'rss'
+                  ? 'feed'
                 : firstSeg in primaryMap
                   ? (firstSeg as TPrimaryPageName)
                   : null
@@ -1458,9 +1455,9 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
             setSavedPrimaryPage(resolvedPop.name)
           }
         } else if (/^\/rss-item\/[^/?#]+/.test(rssPathSync)) {
-          setCurrentPrimaryPage('rss')
-          setPrimaryPages((prev) => mergePrimaryPageEntry(prev, { name: 'rss' }))
-          setSavedPrimaryPage('rss')
+          setCurrentPrimaryPage('feed')
+          setPrimaryPages((prev) => mergePrimaryPageEntry(prev, { name: 'feed' }))
+          setSavedPrimaryPage('feed')
         }
       }
 
@@ -1654,6 +1651,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
   }, [secondaryStack, currentPrimaryPage, primaryNoteView])
 
   const navigatePrimaryPage = (page: TPrimaryPageName, props?: any) => {
+    const resolvedPage: TPrimaryPageName = (page as string) === 'rss' ? 'feed' : page
     // Clear any primary note view when navigating to a new primary page
     // This ensures menu clicks always take you to the primary page, not stuck on overlays
     setPrimaryNoteView(null)
@@ -1664,17 +1662,17 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     
     // Update primary pages and current page
     setPrimaryPages((prev) => {
-      const exists = prev.find((p) => p.name === page)
+      const exists = prev.find((p) => p.name === resolvedPage)
       if (exists) {
         exists.props = props
         return [...prev]
       }
-      return [...prev, { name: page, element: getPrimaryPageMap()[page], props }]
+      return [...prev, { name: resolvedPage, element: getPrimaryPageMap()[resolvedPage], props }]
     })
-    setCurrentPrimaryPage(page)
+    setCurrentPrimaryPage(resolvedPage)
     
     // Update URL for primary pages (spells uses ?spell= for faux feeds)
-    const newUrl = buildPrimaryPageUrl(page, props)
+    const newUrl = buildPrimaryPageUrl(resolvedPage, props)
     window.history.pushState(null, '', newUrl)
     
     // NEVER scroll to top - feed should maintain scroll position at all times

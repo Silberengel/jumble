@@ -18,6 +18,8 @@ const baseInput = {
   extractedMentionCount: 0,
   isHighlight: false,
   highlightSourceEmpty: false,
+  isWebBookmark: false,
+  webBookmarkUrlEmpty: false,
   isCitationInternal: false,
   citationInternalCTag: '',
   isCitationExternal: false,
@@ -81,5 +83,16 @@ describe('computeComposerBlockReason', () => {
         extractedMentionCount: 0
       })
     ).toBe('public_message_recipients')
+  })
+
+  it('blocks web bookmark when URL is empty', () => {
+    expect(
+      computeComposerBlockReason({
+        ...baseInput,
+        determinedKind: ExtendedKind.WEB_BOOKMARK,
+        isWebBookmark: true,
+        webBookmarkUrlEmpty: true
+      })
+    ).toBe('web_bookmark_url')
   })
 })

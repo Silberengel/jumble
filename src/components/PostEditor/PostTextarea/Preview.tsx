@@ -24,12 +24,16 @@ import MusicTrackNote from '../../Note/MusicTrackNote'
 import MarkdownArticle from '../../Note/LazyMarkdownArticle'
 import AsciidocArticle from '../../Note/LazyAsciidocArticle'
 import { HighlightData } from '../HighlightEditor'
+import type { WebBookmarkDraftData } from '../WebBookmarkEditor'
+import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
+import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 
 export default function Preview({ 
   content, 
   className,
   kind = 1,
   highlightData,
+  webBookmarkData,
   pollCreateData,
   mediaImetaTags,
   mediaUrl,
@@ -43,6 +47,7 @@ export default function Preview({
   className?: string
   kind?: number
   highlightData?: HighlightData
+  webBookmarkData?: WebBookmarkDraftData
   pollCreateData?: TPollCreateData
   mediaImetaTags?: string[][]
   mediaUrl?: string
@@ -226,6 +231,12 @@ export default function Preview({
         }
       }
     }
+    if (webBookmarkData?.url && kind === ExtendedKind.WEB_BOOKMARK) {
+      const canonical = canonicalizeRssArticleUrl(webBookmarkData.url)
+      const d = urlToWebBookmarkDTag(canonical)
+      if (d) tags.push(['d', d])
+      if (webBookmarkData.title) tags.push(['title', webBookmarkData.title])
+    }
     if (extraPreviewTags?.length) {
       tags.push(...extraPreviewTags)
     }
@@ -237,7 +248,7 @@ export default function Preview({
       stripped.push(buildClientTag())
     }
     return stripped
-  }, [emojiTags, highlightTags, pollTags, mediaImetaTags, articleMetadata, musicTrackMetadata, kind, extraPreviewTags, addClientTag, contentWarning])
+  }, [emojiTags, highlightTags, pollTags, mediaImetaTags, articleMetadata, musicTrackMetadata, webBookmarkData, kind, extraPreviewTags, addClientTag, contentWarning])
   
   const fakeEvent = useMemo(() => {
     // For voice comments, include the media URL in content if not already there
@@ -262,6 +273,7 @@ export default function Preview({
     if (musicTrackMetadata?.audioUrl?.trim()) return true
     if (kind === ExtendedKind.POLL && pollCreateData?.options.some((o) => o.trim())) return true
     if (kind === kinds.Highlights && highlightData?.sourceValue?.trim()) return true
+    if (kind === ExtendedKind.WEB_BOOKMARK && webBookmarkData?.url?.trim()) return true
     if ((mediaImetaTags?.length ?? 0) > 0) return true
     return false
   }, [
@@ -272,6 +284,7 @@ export default function Preview({
     kind,
     pollCreateData,
     highlightData,
+    webBookmarkData,
     mediaImetaTags
   ])
 
@@ -310,6 +323,14 @@ export default function Preview({
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
         <Highlight event={fakeEvent} />
+      </Card>
+    )
+  }
+
+  if (kind === ExtendedKind.WEB_BOOKMARK) {
+    return withClientBadge(
+      <Card className={cn('p-3', className, selectableClass)}>
+        <ContentPreview event={fakeEvent} />
       </Card>
     )
   }

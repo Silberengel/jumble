@@ -1005,9 +1005,7 @@ export function useMenuActions({
           const path =
             currentPrimaryPage === 'spells'
               ? `/spells/notes/${noteId}`
-              : currentPrimaryPage === 'rss'
-                ? `/rss/notes/${noteId}`
-                : `/notes/${noteId}`
+              : `/notes/${noteId}`
           navigator.clipboard.writeText(`https://jumble.imwald.eu${path}`)
           closeDrawer()
         }

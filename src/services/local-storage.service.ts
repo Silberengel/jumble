@@ -66,7 +66,6 @@ const SETTINGS_KEYS = [
   StorageKey.SHOW_LIVE_ACTIVITIES_BANNER,
   StorageKey.DEFAULT_EXPIRATION_ENABLED,
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
-  StorageKey.SHOW_RSS_FEED,
   StorageKey.USE_NOSTR_ARCHIVES_API,
   StorageKey.CACHE_RELAYS_ENABLED,
   StorageKey.HOME_FEED_RELAY_SOURCE
@@ -106,7 +105,6 @@ class LocalStorageService {
   private shownCreateWalletGuideToastPubkeys: Set<string> = new Set()
   private defaultExpirationEnabled: boolean = false
   private defaultExpirationMonths: number = 6
-  private showRssFeed: boolean = true
   /** Nostr Archives REST (discovery, stats prefetch). Default on; set `'false'` to disable. */
   private useNostrArchivesApi: boolean = false
   /** Kind 10432 cache relays on this device. Default on; set `'false'` to skip localhost cache relays. */
@@ -408,9 +406,6 @@ class LocalStorageService {
       }
     }
 
-    const showRssFeedStr = window.localStorage.getItem(StorageKey.SHOW_RSS_FEED)
-    this.showRssFeed = showRssFeedStr === null ? true : showRssFeedStr === 'true' // Default to true
-
     const addRandomRelaysStr = window.localStorage.getItem(StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH)
     this.addRandomRelaysToPublish = addRandomRelaysStr === null ? true : addRandomRelaysStr === 'true'
 
@@ -625,8 +620,6 @@ class LocalStorageService {
       const num = parseInt(defaultExpirationMonthsStr)
       if (!isNaN(num) && num >= 0) this.defaultExpirationMonths = num
     }
-    const showRssStr = get(StorageKey.SHOW_RSS_FEED)
-    if (showRssStr != null) this.showRssFeed = showRssStr === 'true'
     const archivesApiStr = get(StorageKey.USE_NOSTR_ARCHIVES_API)
     if (archivesApiStr != null) this.useNostrArchivesApi = archivesApiStr !== 'false'
     const cacheRelaysEnabledStr = get(StorageKey.CACHE_RELAYS_ENABLED)
@@ -1018,15 +1011,6 @@ class LocalStorageService {
       this.defaultExpirationMonths = months
       this.persistSetting(StorageKey.DEFAULT_EXPIRATION_MONTHS, months.toString())
     }
-  }
-
-  getShowRssFeed() {
-    return this.showRssFeed
-  }
-
-  setShowRssFeed(show: boolean) {
-    this.showRssFeed = show
-    this.persistSetting(StorageKey.SHOW_RSS_FEED, show.toString())
   }
 
   getUseNostrArchivesApi(): boolean {

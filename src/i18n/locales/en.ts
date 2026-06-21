@@ -2518,6 +2518,9 @@ export default {
     'Page title': 'Page title',
     'Short description': 'Short description',
     'Save web bookmark': 'Save web bookmark',
+    'Web bookmark URL is required': 'Web bookmark URL is required',
+    'Save a link with optional title and note (kind 39701)':
+      'Save a link with optional title and note (kind 39701)',
     'Sign in to publish web bookmark': 'Please log in with a signing key to save web bookmarks.',
     'Follow sets settings intro':
       'NIP-51 follow sets (kind 30000) group people for custom feeds (for example in Spells). Lists are published to your NIP-65 outboxes and profile discovery relays.',

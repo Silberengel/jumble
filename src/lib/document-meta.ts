@@ -73,7 +73,6 @@ const PRIMARY_PAGE_LABEL: Record<string, string> = {
   profile: 'Profile',
   relay: 'Relay',
   search: 'Search',
-  rss: 'RSS',
   settings: 'Settings',
   spells: 'Spells',
   calendar: 'Calendar'
@@ -148,9 +147,6 @@ export function resolveImwaldRouteSocialCopy(
     } else if (path.includes('/translation')) {
       pageTitle = `Translation · ${SITE_NAME}`
       ogTitle = `Translation settings · ${SITE_NAME}`
-    } else if (path.includes('/rss-feeds')) {
-      pageTitle = `RSS feeds · ${SITE_NAME}`
-      ogTitle = `RSS feed settings · ${SITE_NAME}`
     } else if (path.includes('/follow-sets')) {
       pageTitle = `Follow sets · ${SITE_NAME}`
       ogTitle = `Follow sets · ${SITE_NAME}`

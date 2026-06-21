@@ -12,6 +12,7 @@ export type ComposerBlockReason =
   | 'poll_options'
   | 'public_message_recipients'
   | 'highlight_source'
+  | 'web_bookmark_url'
   | 'citation_fields'
   | 'music_track_fields'
   | 'discussion_fields'
@@ -39,6 +40,8 @@ export type ComposerBlockReasonInput = {
   parentEventKind?: number
   isHighlight: boolean
   highlightSourceEmpty: boolean
+  isWebBookmark: boolean
+  webBookmarkUrlEmpty: boolean
   isCitationInternal: boolean
   citationInternalCTag: string
   isCitationExternal: boolean
@@ -98,6 +101,7 @@ export function computeComposerBlockReason(input: ComposerBlockReasonInput): Com
     return 'public_message_recipients'
   }
   if (input.isHighlight && input.highlightSourceEmpty) return 'highlight_source'
+  if (input.isWebBookmark && input.webBookmarkUrlEmpty) return 'web_bookmark_url'
   if (input.isCitationInternal && !input.citationInternalCTag.trim()) return 'citation_fields'
   if (
     input.isCitationExternal &&
@@ -178,6 +182,8 @@ export function composerBlockReasonMessageKey(
       return 'Add recipients using nostr: mentions (e.g., nostr:npub1...) or open Advanced'
     case 'highlight_source':
       return 'Highlight source is required'
+    case 'web_bookmark_url':
+      return 'Web bookmark URL is required'
     case 'citation_fields':
       return 'Fill required citation fields'
     case 'music_track_fields':

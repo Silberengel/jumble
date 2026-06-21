@@ -38,7 +38,6 @@ const RelayPageLazy = lazy(() => import('./pages/secondary/RelayPage'))
 const RelayReviewsPageLazy = lazy(() => import('./pages/secondary/RelayReviewsPage'))
 const RelaySettingsPageLazy = lazy(() => import('./pages/secondary/RelaySettingsPage'))
 const CacheSettingsPageLazy = lazy(() => import('./pages/secondary/CacheSettingsPage'))
-const RssFeedSettingsPageLazy = lazy(() => import('./pages/secondary/RssFeedSettingsPage'))
 const FollowSetsSettingsPageLazy = lazy(() => import('./pages/secondary/FollowSetsSettingsPage'))
 const PersonalListsSettingsPageLazy = lazy(() => import('./pages/secondary/PersonalListsSettingsPage'))
 const UserEmojiListPageLazy = lazy(() => import('./pages/secondary/UserEmojiListPage'))
@@ -120,7 +119,6 @@ const ROUTES = [
   { path: '/settings/wallet', element: SR(WalletPageLazy) },
   { path: '/settings/posts', element: SR(PostSettingsPageLazy) },
   { path: '/settings/general', element: SR(GeneralSettingsPageLazy) },
-  { path: '/settings/rss-feeds', element: SR(RssFeedSettingsPageLazy) },
   { path: '/settings/follow-sets', element: SR(FollowSetsSettingsPageLazy) },
   { path: '/settings/emoji-sets', element: SR(EmojiSetsSettingsPageLazy) },
   { path: '/settings/personal-lists', element: SR(PersonalListsSettingsPageLazy) },

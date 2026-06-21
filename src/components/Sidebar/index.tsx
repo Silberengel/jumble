@@ -6,7 +6,6 @@ import FeedButton from './FeedButton'
 import HomeButton from './HomeButton'
 import NotificationButton from './NotificationButton'
 import PostButton from './PostButton'
-import RssButton from './RssButton'
 import SearchButton from './SearchButton'
 import LibraryButton from './LibraryButton'
 import FavoritesButton from './FavoritesButton'
@@ -45,7 +44,6 @@ export default function PrimaryPageSidebar() {
           <FavoritesButton />
           <DiscussionsButton />
           <SpellsButton />
-          <RssButton />
           <PostButton />
           <div className="max-xl:hidden w-full min-w-0 space-y-2 px-1">
             <LiveActivitiesStrip placement="sidebar" />

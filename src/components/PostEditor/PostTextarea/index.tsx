@@ -36,6 +36,7 @@ import Mention from './Mention'
 import mentionSuggestion from './Mention/suggestion'
 import Preview from './Preview'
 import { HighlightData } from '../HighlightEditor'
+import type { WebBookmarkDraftData } from '../WebBookmarkEditor'
 import { getKindDescription } from '@/lib/kind-description'
 import type { TContentWarningDraftOptions } from '@/lib/content-warning'
 
@@ -78,6 +79,7 @@ const PostTextarea = forwardRef<
     onUploadCompressProgress?: (file: File, percent: number) => void
     kind?: number
     highlightData?: HighlightData
+    webBookmarkData?: WebBookmarkDraftData
     pollCreateData?: import('@/types').TPollCreateData
     headerActions?: React.ReactNode
     mediaImetaTags?: string[][]
@@ -128,6 +130,7 @@ const PostTextarea = forwardRef<
       onUploadCompressProgress,
       kind = 1,
       highlightData,
+      webBookmarkData,
       pollCreateData,
       headerActions,
       mediaImetaTags,
@@ -517,6 +520,7 @@ const PostTextarea = forwardRef<
                 className={previewSurfaceClass}
                 kind={effectivePreviewKind}
                 highlightData={highlightData}
+                webBookmarkData={webBookmarkData}
                 pollCreateData={pollCreateData}
                 mediaImetaTags={mediaImetaTags}
                 mediaUrl={mediaUrl}

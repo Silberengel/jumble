@@ -14,7 +14,6 @@ const RelaySettingsPageLazy = lazy(() => import('@/pages/secondary/RelaySettings
 const WalletPageLazy = lazy(() => import('@/pages/secondary/WalletPage'))
 const PostSettingsPageLazy = lazy(() => import('@/pages/secondary/PostSettingsPage'))
 const GeneralSettingsPageLazy = lazy(() => import('@/pages/secondary/GeneralSettingsPage'))
-const RssFeedSettingsPageLazy = lazy(() => import('@/pages/secondary/RssFeedSettingsPage'))
 const FollowSetsSettingsPageLazy = lazy(() => import('@/pages/secondary/FollowSetsSettingsPage'))
 const EmojiSetsSettingsPageLazy = lazy(() => import('@/pages/secondary/EmojiSetsSettingsPage'))
 const CacheSettingsPageLazy = lazy(() => import('@/pages/secondary/CacheSettingsPage'))
@@ -109,7 +108,6 @@ export class URLParser {
         'relays',
         'wallet',
         'posts',
-        'rss-feeds',
         'follow-sets',
         'emoji-sets',
         'cache',
@@ -173,8 +171,6 @@ export class ComponentFactory {
         return navLazyPage(PostSettingsPageLazy, shell)
       case 'general':
         return navLazyPage(GeneralSettingsPageLazy, shell)
-      case 'rss-feeds':
-        return navLazyPage(RssFeedSettingsPageLazy, shell)
       case 'follow-sets':
         return navLazyPage(FollowSetsSettingsPageLazy, shell)
       case 'emoji-sets':
