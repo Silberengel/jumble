@@ -3,6 +3,7 @@ import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import {
   buildAllFavoritesFeedRelayUrls,
   buildHomeRelaySetFeedRelayUrls,
+  ensureHomeFeedRelayUrlsHaveFallback,
   ensureHomeFeedTrendingRelay,
   stripNostrLandAggrFromRelayUrls
 } from '@/lib/home-feed-relays'
@@ -147,9 +148,8 @@ export function FeedProvider({ children }: { children: ReactNode }) {
         : useGlobalRelayDefaults
           ? DEFAULT_FAVORITE_RELAYS
           : [],
-      /** Kept for feed-layer identity / aggr sync; URLs are merged into inbox/outbox above. */
-      cacheRelayUrls: [] as string[],
-      httpRelayUrls: [] as string[]
+      cacheRelayUrls,
+      httpRelayUrls: (relayList?.httpRead ?? []) as string[]
     }
   }, [relayList, cacheRelayListEvent, useGlobalRelayDefaults])
 

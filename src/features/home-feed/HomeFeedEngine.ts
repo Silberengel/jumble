@@ -27,6 +27,19 @@ import {
   setSessionFeedSnapshot
 } from '@/services/session-feed-snapshot.service'
 import logger from '@/lib/logger'
+import indexedDb from '@/services/indexed-db.service'
+
+function unionKindsFromSubRequests(requests: readonly TFeedSubRequest[]): number[] {
+  const kindSet = new Set<number>()
+  for (const req of requests) {
+    const list = req.filter.kinds
+    if (list?.length) {
+      for (const k of list) kindSet.add(k)
+    }
+  }
+  if (kindSet.size === 0) kindSet.add(kinds.ShortTextNote)
+  return [...kindSet]
+}
 
 function asTimelineSubRequests(requests: readonly TFeedSubRequest[]) {
   return requests as Array<{ urls: string[]; filter: TSubRequestFilter }>
@@ -64,6 +77,10 @@ export type HomeFeedEngineClient = {
   ) => Promise<Event[]>
   getTimelineDiskSnapshotEvents?: (
     subRequests: { urls: string[]; filter: TSubRequestFilter }[]
+  ) => Promise<Event[]>
+  getLocalFeedEvents?: (
+    subRequests: { urls: string[]; filter: TSubRequestFilter }[],
+    options?: { maxRowsScanned?: number; maxMatches?: number }
   ) => Promise<Event[]>
   loadMoreTimeline: (
     timelineKey: string,
@@ -214,17 +231,9 @@ export class HomeFeedEngine {
       return
     }
 
-    if (client.getTimelineDiskSnapshotEvents && this.rawEvents.length === 0) {
-      try {
-        const disk = await client.getTimelineDiskSnapshotEvents(asTimelineSubRequests(mapped))
-        if (gen !== this.generation) return
-        if (disk.length > 0) {
-          this.rawEvents = mergeEventsById(this.rawEvents, disk, HOME_FEED_EVENT_CAP)
-          this.emit()
-        }
-      } catch {
-        /* optional disk prime */
-      }
+    if (!bundle.relaySetFeedOnly) {
+      await this.primeFromLocalStores(gen, mapped)
+      if (gen !== this.generation) return
     }
 
     try {
@@ -281,6 +290,49 @@ export class HomeFeedEngine {
       this.error = e instanceof Error ? e.message : String(e)
       this.loading = false
       this.emit()
+    }
+  }
+
+  private async primeFromLocalStores(
+    gen: number,
+    mapped: readonly TFeedSubRequest[]
+  ): Promise<void> {
+    const { client } = this.options
+    const reqs = asTimelineSubRequests(mapped)
+    const localCap = Math.min(HOME_FEED_EVENT_CAP, Math.max(HOME_FEED_PAGE_LIMIT * 2, 200))
+
+    try {
+      const localPromise = client.getLocalFeedEvents
+        ? client.getLocalFeedEvents(reqs, {
+            maxRowsScanned: 50_000,
+            maxMatches: Math.min(localCap * 3, 3000)
+          })
+        : client.getTimelineDiskSnapshotEvents
+          ? client.getTimelineDiskSnapshotEvents(reqs)
+          : Promise.resolve([] as Event[])
+
+      const archivePromise = indexedDb
+        .scanEventArchiveByKinds({
+          kinds: unionKindsFromSubRequests(mapped),
+          maxRowsScanned: 50_000,
+          maxMatches: localCap * 2
+        })
+        .catch(() => [] as Event[])
+
+      const [localRows, archiveRows] = await Promise.all([localPromise, archivePromise])
+      if (gen !== this.generation) return
+
+      const merged = mergeEventsById(
+        mergeEventsById(this.rawEvents, localRows, HOME_FEED_EVENT_CAP),
+        archiveRows,
+        HOME_FEED_EVENT_CAP
+      )
+      if (merged.length !== this.rawEvents.length) {
+        this.rawEvents = merged
+        this.emit()
+      }
+    } catch {
+      /* local warmup is best-effort */
     }
   }
 

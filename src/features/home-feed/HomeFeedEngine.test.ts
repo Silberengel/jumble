@@ -5,6 +5,12 @@ import { createFeedDescriptor } from '@/features/feed/descriptor'
 import type { Event } from 'nostr-tools'
 import { kinds } from 'nostr-tools'
 
+vi.mock('@/services/indexed-db.service', () => ({
+  default: {
+    scanEventArchiveByKinds: vi.fn(async () => [])
+  }
+}))
+
 function mockBundle(): HomeFeedDescriptorBundle {
   const descriptor = createFeedDescriptor({
     surface: 'home',
@@ -58,7 +64,9 @@ describe('HomeFeedEngine', () => {
     })
 
     const startPromise = engine.start(false)
-    await Promise.resolve()
+    await vi.waitFor(() => {
+      expect(onEvents).toBeDefined()
+    })
     onEvents?.([evt('e1')], false)
     await startPromise
 
@@ -85,5 +93,30 @@ describe('HomeFeedEngine', () => {
 
     await engine.start(true)
     expect(client.subscribeTimeline).toHaveBeenCalled()
+  })
+
+  it('primes from local feed stores before subscribe', async () => {
+    let subscribed = false
+    const client = {
+      getLocalFeedEvents: vi.fn(async () => [evt('local-1')]),
+      subscribeTimeline: vi.fn(async () => {
+        subscribed = true
+        return { closer: vi.fn(), timelineKey: 'tk-1' }
+      }),
+      fetchEvents: vi.fn(async () => []),
+      loadMoreTimeline: vi.fn(async () => [])
+    }
+
+    const engine = new HomeFeedEngine({
+      client,
+      bundle: mockBundle(),
+      sessionSnapshotKey: 'snap',
+      onChange: () => {}
+    })
+
+    await engine.start(false)
+    expect(client.getLocalFeedEvents).toHaveBeenCalled()
+    expect(subscribed).toBe(true)
+    expect(engine.getSnapshot().rawEvents.some((e) => e.id === 'local-1')).toBe(true)
   })
 })
