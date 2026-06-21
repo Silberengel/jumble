@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import i18n, { Resource } from 'i18next'
 import LanguageDetector from 'i18next-browser-languagedetector'
 import { initReactI18next } from 'react-i18next'
+import storage from '@/services/local-storage.service'
 import { TRINITY_LANGUAGE_CODES, TRINITY_LANGUAGE_DISPLAY_NAMES } from '@/lib/trinity-languages'
 import en from './locales/en'
 
@@ -44,6 +45,7 @@ async function ensureLocaleLoaded(code: TLanguage): Promise<void> {
 export async function changeAppLanguage(code: TLanguage): Promise<void> {
   await ensureLocaleLoaded(code)
   await i18n.changeLanguage(code)
+  storage.setAppLanguage(code)
 }
 
 let initPromise: Promise<void> | null = null

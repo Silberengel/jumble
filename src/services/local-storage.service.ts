@@ -7,11 +7,8 @@ import {
 } from '@/constants'
 import { kinds } from 'nostr-tools'
 import { isSameAccount } from '@/lib/account'
-import {
-  mergeAccountSecrets,
-  mergeAccountsSettingsJson,
-  mergeCurrentAccountSettingsJson
-} from '@/lib/account-secrets'
+import { mergeAccountSecrets } from '@/lib/account-secrets'
+import { mergeSettingsRecordWithLocalStorage } from '@/lib/settings-storage-merge'
 import { DEFAULT_ZAP_SATS } from '@/lib/lightning'
 import { isPaytoCategory } from '@/lib/payto-category-display'
 import type { PaytoCategory } from '@/lib/payto-registry'
@@ -40,6 +37,7 @@ const SETTINGS_KEYS = [
   StorageKey.THEME,
   StorageKey.ADD_CLIENT_TAG,
   StorageKey.FONT_SIZE,
+  StorageKey.APP_LANGUAGE,
   StorageKey.NOTE_LIST_MODE,
   StorageKey.ACCOUNTS,
   StorageKey.CURRENT_ACCOUNT,
@@ -74,9 +72,6 @@ const SETTINGS_KEYS = [
   StorageKey.HOME_FEED_RELAY_SOURCE
 ] as const
 
-/** Auth keys stay mirrored in localStorage so slow/failed IDB writes cannot drop login on mobile PWA. */
-const AUTH_SETTINGS_KEYS = new Set<string>([StorageKey.ACCOUNTS, StorageKey.CURRENT_ACCOUNT])
-
 class LocalStorageService {
   static instance: LocalStorageService
 
@@ -85,6 +80,7 @@ class LocalStorageService {
   private theme: TTheme = 'light'
   private addClientTag: boolean = true
   private fontSize: TFontSize = DEFAULT_FONT_SIZE
+  private appLanguage: string | null = null
   private accounts: TAccount[] = []
   private currentAccount: TAccount | null = null
   private noteListMode: TNoteListMode = 'postsAndReplies'
@@ -138,6 +134,7 @@ class LocalStorageService {
     this.addClientTag = addClientTagStr === null ? true : addClientTagStr === 'true'
     this.fontSize =
       (window.localStorage.getItem(StorageKey.FONT_SIZE) as TFontSize) ?? DEFAULT_FONT_SIZE
+    this.appLanguage = window.localStorage.getItem(StorageKey.APP_LANGUAGE)
     const accountsStr = window.localStorage.getItem(StorageKey.ACCOUNTS)
     this.accounts = accountsStr ? JSON.parse(accountsStr) : []
     const currentAccountStr = window.localStorage.getItem(StorageKey.CURRENT_ACCOUNT)
@@ -441,15 +438,13 @@ class LocalStorageService {
     window.localStorage.removeItem(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS)
   }
 
-  /** Persist a setting. Keys in SETTINGS_KEYS go only to IndexedDB; others use localStorage. */
+  /** Persist a setting. SETTINGS_KEYS mirror to localStorage + IndexedDB; others use localStorage only. */
   private persistSetting(key: string, value: string): void {
     if ((SETTINGS_KEYS as readonly string[]).includes(key)) {
-      if (AUTH_SETTINGS_KEYS.has(key)) {
-        try {
-          window.localStorage.setItem(key, value)
-        } catch {
-          // Quota or private browsing — IndexedDB remains primary.
-        }
+      try {
+        window.localStorage.setItem(key, value)
+      } catch {
+        // Quota or private browsing — IndexedDB remains primary.
       }
       void this.persistSettingToIndexedDb(key, value)
       return
@@ -488,35 +483,22 @@ class LocalStorageService {
         idbBefore = await idb.getAllSettings()
       }
       const merged = this.mergeSettingsRecordWithLocalStorage(idbBefore)
+      if (merged[StorageKey.APP_LANGUAGE] == null) {
+        const legacyLanguage = window.localStorage.getItem('i18nextLng')
+        if (legacyLanguage) merged[StorageKey.APP_LANGUAGE] = legacyLanguage
+      }
       this.applySettings(merged)
       await this.persistSettingsKeysDiffToIdb(idbBefore, merged)
-      this.syncAuthSettingsToLocalStorage(merged)
-      this.clearSettingsFromLocalStorage()
+      this.syncSettingsToLocalStorage(merged)
     })()
     return this.initPromise
   }
 
-  /** Fill gaps from localStorage (used when IDB predates a key or a write only landed in LS). */
+  /** Merge IndexedDB settings with localStorage (LS wins for general keys; auth keys merge secrets). */
   private mergeSettingsRecordWithLocalStorage(idb: Record<string, string>): Record<string, string> {
-    const out: Record<string, string> = { ...idb }
-    for (const key of SETTINGS_KEYS) {
-      const fromLs = window.localStorage.getItem(key)
-      if (key === StorageKey.ACCOUNTS) {
-        const merged = mergeAccountsSettingsJson(out[key], fromLs ?? undefined)
-        if (merged != null) out[key] = merged
-        continue
-      }
-      if (key === StorageKey.CURRENT_ACCOUNT) {
-        const merged = mergeCurrentAccountSettingsJson(out[key], fromLs ?? undefined)
-        if (merged != null) out[key] = merged
-        continue
-      }
-      if (out[key] != null) continue
-      if (fromLs != null) {
-        out[key] = fromLs
-      }
-    }
-    return out
+    return mergeSettingsRecordWithLocalStorage(idb, SETTINGS_KEYS, (key) =>
+      window.localStorage.getItem(key)
+    )
   }
 
   /** Persist keys that differ from the pre-merge IDB snapshot so the next cold load reads from IDB only. */
@@ -534,17 +516,9 @@ class LocalStorageService {
     }
   }
 
-  /** Remove SETTINGS_KEYS from localStorage so we don't duplicate; source of truth is IndexedDB. */
-  private clearSettingsFromLocalStorage(): void {
+  /** Keep localStorage aligned with the merged settings record after initAsync (mobile PWA resilience). */
+  private syncSettingsToLocalStorage(record: Record<string, string>): void {
     for (const key of SETTINGS_KEYS) {
-      if (AUTH_SETTINGS_KEYS.has(key)) continue
-      window.localStorage.removeItem(key)
-    }
-  }
-
-  /** Keep auth rows in localStorage aligned with the merged settings record after initAsync. */
-  private syncAuthSettingsToLocalStorage(record: Record<string, string>): void {
-    for (const key of AUTH_SETTINGS_KEYS) {
       const value = record[key]
       if (value == null) continue
       try {
@@ -574,6 +548,10 @@ class LocalStorageService {
     if (addClientTagStr != null) this.addClientTag = addClientTagStr === 'true'
     if (get(StorageKey.FONT_SIZE) != null) {
       this.fontSize = (get(StorageKey.FONT_SIZE) as TFontSize) ?? this.fontSize
+    }
+    const appLanguageStr = get(StorageKey.APP_LANGUAGE)
+    if (appLanguageStr != null) {
+      this.appLanguage = appLanguageStr
     }
     const noteListModeStr = get(StorageKey.NOTE_LIST_MODE)
     if (noteListModeStr != null && ['posts', 'postsAndReplies', 'media'].includes(noteListModeStr)) {
@@ -702,6 +680,15 @@ class LocalStorageService {
   setFontSize(fontSize: TFontSize) {
     this.persistSetting(StorageKey.FONT_SIZE, fontSize)
     this.fontSize = fontSize
+  }
+
+  getAppLanguage(): string | null {
+    return this.appLanguage
+  }
+
+  setAppLanguage(language: string) {
+    this.appLanguage = language
+    this.persistSetting(StorageKey.APP_LANGUAGE, language)
   }
 
   getNoteListMode() {

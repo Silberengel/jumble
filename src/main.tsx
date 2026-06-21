@@ -10,7 +10,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary.tsx'
-import { initI18n } from './i18n'
+import { changeAppLanguage, initI18n, normalizeToSupportedAppLanguage } from './i18n'
 import { restorePersistedFeedSnapshots } from './services/session-feed-snapshot.service'
 import { installStaleBuildChunkRecovery } from './lib/stale-chunk-recovery'
 import { initPwaUpdate } from './lib/pwa-update'
@@ -37,6 +37,10 @@ async function bootstrap() {
   restorePersistedFeedSnapshots()
   console.info('[imwald] Boot: hydrating settings from IndexedDB…')
   await storage.initAsync()
+  const savedAppLanguage = storage.getAppLanguage()
+  if (savedAppLanguage) {
+    await changeAppLanguage(normalizeToSupportedAppLanguage(savedAppLanguage))
+  }
   console.info('[imwald] Boot: mounting React')
   // Mark session storage as used so it's visible in DevTools; VersionUpdateBanner and NotePage also use it.
   try {

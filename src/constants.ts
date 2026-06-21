@@ -342,6 +342,8 @@ export const StorageKey = {
   /** Resolved theme (light/dark) written by ThemeProvider; stored in IndexedDB. */
   THEME: 'theme',
   FONT_SIZE: 'fontSize',
+  /** App UI language (mirrors i18next; persisted to IndexedDB + localStorage). */
+  APP_LANGUAGE: 'appLanguage',
   RELAY_SETS: 'relaySets',
   ACCOUNTS: 'accounts',
   CURRENT_ACCOUNT: 'currentAccount',
