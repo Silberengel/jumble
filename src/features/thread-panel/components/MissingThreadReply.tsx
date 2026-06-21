@@ -6,9 +6,12 @@ import {
   missingStatsReplyLookupPointers,
   normalizeHexEventId
 } from '@/features/thread-panel/thread-panel-utils'
-import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
+import { buildNoteLookupSearchFallbackRelayUrls, buildViewerNostrLandAggrEligibilityUrls } from '@/lib/feed-full-search-relays'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import client from '@/services/client.service'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
 import { Search } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { useMemo, useState } from 'react'
@@ -28,6 +31,17 @@ export default function MissingThreadReply({
   onFound?: (event: Event) => void
 }) {
   const { t } = useTranslation()
+  const nostr = useNostrOptional()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const nostrLandAggrEligibilityUrls = useMemo(
+    () =>
+      buildViewerNostrLandAggrEligibilityUrls({
+        favoriteRelayUrls: favoriteRelays,
+        relayList: nostr?.relayList,
+        cacheRelayUrls: getCacheRelayUrlsFromEvent(nostr?.cacheRelayListEvent)
+      }),
+    [favoriteRelays, nostr?.relayList, nostr?.cacheRelayListEvent]
+  )
   const [copied, setCopied] = useState(false)
   const [searching, setSearching] = useState(false)
   const [triedSearch, setTriedSearch] = useState(false)
@@ -59,7 +73,14 @@ export default function MissingThreadReply({
     setSearching(true)
     setTriedSearch(false)
     try {
-      const relayUrls = sanitizeRelayUrlsForFetch(getAggrAwareSearchRelayUrls())
+      const relayUrls = sanitizeRelayUrlsForFetch(
+        await buildNoteLookupSearchFallbackRelayUrls({
+          viewerPubkey: nostr?.pubkey,
+          favoriteRelays,
+          blockedRelays,
+          nostrLandAggrEligibilityUrls
+        })
+      )
       const found = await fetchMissingStatsReplyEvent({ id, pubkey }, relayUrls)
       if (found) {
         const hex = normalizeHexEventId(found.id) ?? normalizeHexEventId(id)!

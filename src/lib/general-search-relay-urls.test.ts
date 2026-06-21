@@ -41,4 +41,14 @@ describe('buildGeneralSearchRelayUrls', () => {
     })
     expect(urls).not.toContain('wss://blocked.example')
   })
+
+  it('prepends aggr when wss://nostr.land is on favorites', () => {
+    const urls = buildGeneralSearchRelayUrls({
+      relayList: null,
+      cacheRelayListEvent: undefined,
+      favoriteRelays: ['wss://nostr.land/'],
+      blockedRelays: []
+    })
+    expect(urls.some((u) => /aggr\.nostr\.land/i.test(u))).toBe(true)
+  })
 })

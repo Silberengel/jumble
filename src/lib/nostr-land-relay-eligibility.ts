@@ -51,6 +51,17 @@ export function relayUrlsMentionNostrLandDomain(urls: readonly string[]): boolea
 let viewerStackMentionsNostrLand = false
 
 /**
+ * True when aggr.nostr.land should be used for search / event-by-id widening: either the global
+ * sync flag is set, or `eligibilityUrls` includes canonical `wss://nostr.land`.
+ */
+export function isViewerNostrLandAggrEligible(eligibilityUrls?: readonly string[]): boolean {
+  if (eligibilityUrls?.length && relayUrlsIncludeCanonicalNostrLandRelay(eligibilityUrls)) {
+    return true
+  }
+  return viewerStackMentionsNostrLand
+}
+
+/**
  * Synced from the logged-in viewer’s kind 10012 favorites, kind 30002 relay sets, and kind
  * 10002 / 10243 / 10432 relay lists.
  * When true, {@link AGGR_NOSTR_LAND_WSS} is treated as a search relay and inbox-tier read relay.
@@ -65,8 +76,8 @@ export function getViewerRelayStackNostrLandAggrEligible(): boolean {
 }
 
 /** Aggr URL to merge into NIP-50 / searchable relay sets when the viewer lists `wss://nostr.land`. */
-export function getViewerNostrLandAggrSearchRelayUrls(): string[] {
-  if (!viewerStackMentionsNostrLand) return []
+export function getViewerNostrLandAggrSearchRelayUrls(eligibilityUrls?: readonly string[]): string[] {
+  if (!isViewerNostrLandAggrEligible(eligibilityUrls)) return []
   const n = normalizeAnyRelayUrl(AGGR_NOSTR_LAND_WSS) || AGGR_NOSTR_LAND_WSS
   return n ? [n] : []
 }
@@ -74,8 +85,9 @@ export function getViewerNostrLandAggrSearchRelayUrls(): string[] {
 /**
  * Search / wide-id fetch relays: aggr first when eligible, then {@link SEARCHABLE_RELAY_URLS}.
  * Use for reply-to blurbs, thread parent/root fallback, embed wide pass, etc. — not home timeline OP REQs.
+ * Pass {@link buildViewerNostrLandAggrEligibilityUrls} when global sync may not have run yet.
  */
-export function getAggrAwareSearchRelayUrls(): string[] {
+export function getAggrAwareSearchRelayUrls(eligibilityUrls?: readonly string[]): string[] {
   const seen = new Set<string>()
   const out: string[] = []
   const add = (raw: string) => {
@@ -86,14 +98,17 @@ export function getAggrAwareSearchRelayUrls(): string[] {
     seen.add(k)
     out.push(n)
   }
-  for (const u of getViewerNostrLandAggrSearchRelayUrls()) add(u)
+  for (const u of getViewerNostrLandAggrSearchRelayUrls(eligibilityUrls)) add(u)
   for (const u of SEARCHABLE_RELAY_URLS) add(u)
   return out
 }
 
 /** Drop aggr unless the viewer has `wss://nostr.land` on favorites or relay lists. */
-export function filterAggrNostrLandUnlessViewerEligible(urls: readonly string[]): string[] {
-  if (viewerStackMentionsNostrLand) return [...urls]
+export function filterAggrNostrLandUnlessViewerEligible(
+  urls: readonly string[],
+  eligibilityUrls?: readonly string[]
+): string[] {
+  if (isViewerNostrLandAggrEligible(eligibilityUrls)) return [...urls]
   return urls.filter((u) => !relayUrlIsAggrNostrLand(u))
 }
 
@@ -120,17 +135,47 @@ export function urlsForViewerNostrLandAggrEligibilitySync(options: {
   ]
 }
 
+/** Convenience wrapper for note lookup / embed components (favorites + NIP-65 + cache + HTTP). */
+export function buildViewerNostrLandAggrEligibilityUrls(options: {
+  favoriteRelayUrls?: readonly string[]
+  relaySetUrls?: readonly string[]
+  relayList?: {
+    read?: string[]
+    write?: string[]
+    httpRead?: string[]
+    httpWrite?: string[]
+  } | null
+  cacheRelayUrls?: readonly string[]
+}): string[] {
+  return urlsForViewerNostrLandAggrEligibilitySync({
+    favoriteRelayUrls: options.favoriteRelayUrls,
+    relaySetUrls: options.relaySetUrls,
+    relayListRead: options.relayList?.read,
+    relayListWrite: options.relayList?.write,
+    cacheRelayRead: options.cacheRelayUrls,
+    cacheRelayWrite: options.cacheRelayUrls,
+    httpRelayRead: options.relayList?.httpRead,
+    httpRelayWrite: options.relayList?.httpWrite
+  })
+}
+
 /**
  * Prepend aggr for event-by-id lookups (threads, embeds, parent previews, comprehensive fetch).
  * Home OP timelines must not use this — use {@link buildAllFavoritesFeedRelayUrls} / `nostrLandAggr: 'never'`.
  */
-export function prependAggrForEventLookupRelayUrls(relayUrls: readonly string[]): string[] {
-  return prependAggrNostrLandIfViewerEligible(relayUrls)
+export function prependAggrForEventLookupRelayUrls(
+  relayUrls: readonly string[],
+  eligibilityUrls?: readonly string[]
+): string[] {
+  return prependAggrNostrLandIfViewerEligible(relayUrls, eligibilityUrls)
 }
 
 /** Deduped prepend of aggr when the viewer opted into nostr.land relays (see sync…). */
-export function prependAggrNostrLandIfViewerEligible(relayUrls: readonly string[]): string[] {
-  if (!viewerStackMentionsNostrLand) return [...relayUrls]
+export function prependAggrNostrLandIfViewerEligible(
+  relayUrls: readonly string[],
+  eligibilityUrls?: readonly string[]
+): string[] {
+  if (!isViewerNostrLandAggrEligible(eligibilityUrls)) return [...relayUrls]
   const aggrNorm = (normalizeAnyRelayUrl(AGGR_NOSTR_LAND_WSS) || AGGR_NOSTR_LAND_WSS).toLowerCase()
   const norm = (u: string) => (normalizeAnyRelayUrl(u) || u.trim()).toLowerCase()
   if (relayUrls.some((u) => norm(u) === aggrNorm)) {

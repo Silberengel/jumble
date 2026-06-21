@@ -1,9 +1,9 @@
-import { SEARCHABLE_RELAY_URLS } from '@/constants'
 import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
+import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { normalizeUrl } from '@/lib/url'
 import type { TRelayList } from '@/types'
 
-/** User inbox/outbox + favorites + {@link SEARCHABLE_RELAY_URLS} for general text search on relays. */
+/** User inbox/outbox + favorites + aggr-aware searchable relays for general text search on relays. */
 export function buildGeneralSearchRelayUrls(options: {
   relayList: TRelayList | null | undefined
   cacheRelayListEvent: import('nostr-tools').Event | null | undefined
@@ -11,6 +11,13 @@ export function buildGeneralSearchRelayUrls(options: {
   blockedRelays: readonly string[]
 }): string[] {
   const relays: string[] = []
+  const eligibility = [
+    ...(options.favoriteRelays ?? []),
+    ...(options.relayList?.read ?? []),
+    ...(options.relayList?.write ?? []),
+    ...(options.relayList?.httpRead ?? []),
+    ...(options.relayList?.httpWrite ?? [])
+  ]
 
   if (options.relayList) {
     relays.push(
@@ -20,7 +27,7 @@ export function buildGeneralSearchRelayUrls(options: {
   }
 
   relays.push(...(options.favoriteRelays ?? []))
-  relays.push(...SEARCHABLE_RELAY_URLS)
+  relays.push(...getAggrAwareSearchRelayUrls(eligibility))
 
   const blockedSet = new Set(
     (options.blockedRelays ?? [])

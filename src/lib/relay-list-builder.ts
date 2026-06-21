@@ -430,15 +430,13 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     SEARCHABLE_RELAY_URLS.forEach(addRelay)
   }
 
-  if (includeViewerHttpIndexRelays && userPubkey && viewerRelayListForShare) {
-    const hasHttp =
-      (viewerRelayListForShare.httpRead?.length ?? 0) > 0 ||
-      (viewerRelayListForShare.httpWrite?.length ?? 0) > 0
-    if (hasHttp) {
-      ;[...(viewerRelayListForShare.httpRead ?? []), ...(viewerRelayListForShare.httpWrite ?? [])].forEach(
-        addHttpRelay
-      )
-    }
+  if (includeViewerHttpIndexRelays && userPubkey) {
+    const fromPeek = [
+      ...(viewerRelayListForShare?.httpRead ?? []),
+      ...(viewerRelayListForShare?.httpWrite ?? [])
+    ]
+    const httpSources = fromPeek.length > 0 ? fromPeek : [...client.getViewerHttpIndexRelayBases()]
+    httpSources.forEach(addHttpRelay)
   }
 
   const merged = Array.from(relayUrls)

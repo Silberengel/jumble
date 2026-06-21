@@ -1,13 +1,18 @@
 import ClientSelect from '@/components/ClientSelect'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
-import { FAST_READ_RELAY_URLS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { FAST_READ_RELAY_URLS } from '@/constants'
+import { buildViewerNostrLandAggrEligibilityUrls } from '@/lib/feed-full-search-relays'
+import { getAggrAwareSearchRelayUrls, prependAggrNostrLandIfViewerEligible } from '@/lib/nostr-land-relay-eligibility'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { normalizeUrl } from '@/lib/url'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
 import { AlertCircle, Search } from 'lucide-react'
 import { nip19 } from 'nostr-tools'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import logger from '@/lib/logger'
 
@@ -24,6 +29,17 @@ export default function NotFound({
   onEventFound?: (event: any) => void 
 }) {
   const { t } = useTranslation()
+  const nostr = useNostrOptional()
+  const { favoriteRelays } = useFavoriteRelays()
+  const nostrLandAggrEligibilityUrls = useMemo(
+    () =>
+      buildViewerNostrLandAggrEligibilityUrls({
+        favoriteRelayUrls: favoriteRelays,
+        relayList: nostr?.relayList,
+        cacheRelayUrls: getCacheRelayUrlsFromEvent(nostr?.cacheRelayListEvent)
+      }),
+    [favoriteRelays, nostr?.relayList, nostr?.cacheRelayListEvent]
+  )
   const [isSearchingExternal, setIsSearchingExternal] = useState(false)
   const [triedExternal, setTriedExternal] = useState(false)
   const [externalRelays, setExternalRelays] = useState<string[]>([])
@@ -98,21 +114,24 @@ export default function NotFound({
           .map(url => normalizeUrl(url))
           .filter((url): url is string => Boolean(url))
         
-        const normalizedSearchableRelays = SEARCHABLE_RELAY_URLS
-          .map(url => normalizeUrl(url))
+        const normalizedSearchableRelays = getAggrAwareSearchRelayUrls(nostrLandAggrEligibilityUrls)
+          .map((url) => normalizeUrl(url) || url)
           .filter((url): url is string => Boolean(url))
 
         const normalizedFastRead = FAST_READ_RELAY_URLS
           .map(url => normalizeUrl(url))
           .filter((url): url is string => Boolean(url))
 
-        const orderedExternalRelays = Array.from(
-          new Set([
-            ...normalizedBech32Hints,
-            ...normalizedSeenRelays,
-            ...normalizedSearchableRelays,
-            ...normalizedFastRead
-          ])
+        const orderedExternalRelays = prependAggrNostrLandIfViewerEligible(
+          Array.from(
+            new Set([
+              ...normalizedBech32Hints,
+              ...normalizedSeenRelays,
+              ...normalizedSearchableRelays,
+              ...normalizedFastRead
+            ])
+          ),
+          nostrLandAggrEligibilityUrls
         )
 
         setExternalRelays(orderedExternalRelays)
@@ -139,7 +158,7 @@ export default function NotFound({
     }
 
     getExternalRelays()
-  }, [bech32Id])
+  }, [bech32Id, nostrLandAggrEligibilityUrls])
 
   const handleTryExternalRelays = async () => {
     if (!bech32Id || isSearchingExternal) return

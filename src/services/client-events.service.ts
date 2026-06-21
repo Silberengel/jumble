@@ -680,6 +680,7 @@ export class EventService {
       eoseTimeout: EXTERNAL_RELAY_EVENT_FETCH_EOSE_TIMEOUT_MS,
       globalTimeout: EXTERNAL_RELAY_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
       immediateReturn: false,
+      foreground: true,
       eventTagRelayHints: opts?.eventTagRelayHints === true
     })
 
@@ -1395,6 +1396,7 @@ export class EventService {
         immediateReturn: true,
         eoseTimeout: HINTED_EVENT_FETCH_EOSE_TIMEOUT_MS,
         globalTimeout: HINTED_EVENT_FETCH_GLOBAL_TIMEOUT_MS,
+        foreground: true,
         eventTagRelayHints: hasEventTagRelayHints
       })
       const hinted = hintedEvents
@@ -1517,7 +1519,8 @@ export class EventService {
     const events = await this.queryService.query(relayUrls, filter, undefined, {
       immediateReturn: useFastSingleHitQuery,
       eoseTimeout: useFastSingleHitQuery ? SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS : 500,
-      globalTimeout: tryHarderGlobalTimeout
+      globalTimeout: tryHarderGlobalTimeout,
+      foreground: useFastSingleHitQuery || threadContext
     })
 
     const event = events
@@ -1564,7 +1567,8 @@ export class EventService {
       {
         immediateReturn: isSingleEventFetch,
         eoseTimeout: isSingleEventFetch ? SINGLE_EVENT_BY_ID_QUERY_EOSE_TIMEOUT_MS : 500,
-        globalTimeout: isSingleEventFetch ? SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS : 10000
+        globalTimeout: isSingleEventFetch ? SINGLE_EVENT_BY_ID_QUERY_GLOBAL_TIMEOUT_MS : 10000,
+        foreground: isSingleEventFetch
       }
     )
 

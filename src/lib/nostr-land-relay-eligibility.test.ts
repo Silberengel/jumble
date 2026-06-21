@@ -65,6 +65,12 @@ describe('nostr.land aggr eligibility', () => {
     expect(getAggrAwareSearchRelayUrls().some((u) => /aggr\.nostr\.land/i.test(u))).toBe(false)
   })
 
+  it('getAggrAwareSearchRelayUrls uses per-call eligibility without global sync', () => {
+    syncViewerRelayStackNostrLandAggrEligible([])
+    const urls = getAggrAwareSearchRelayUrls(['wss://nostr.land/'])
+    expect(urls[0]).toMatch(/^wss:\/\/aggr\.nostr\.land\/?$/)
+  })
+
   it('strips aggr from fetch stacks when viewer does not list nostr.land', () => {
     syncViewerRelayStackNostrLandAggrEligible([])
     expect(

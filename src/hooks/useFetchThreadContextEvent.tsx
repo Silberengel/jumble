@@ -1,5 +1,6 @@
 import { THREAD_CONTEXT_EVENT_FETCH_GLOBAL_TIMEOUT_MS } from '@/constants'
-import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
+import { buildNoteLookupSearchFallbackRelayUrls, buildViewerNostrLandAggrEligibilityUrls } from '@/lib/feed-full-search-relays'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { resolveNoteEventBeforeRelayFetch } from '@/lib/fetch-note-event-layers'
 import { eventMatchesPointer } from '@/lib/thread-context-local'
@@ -49,8 +50,17 @@ export function useFetchThreadContextEvent(
   role: ThreadContextRole,
   initialEvent?: Event
 ) {
-  const { pubkey: viewerPubkey } = useNostr()
-  const { blockedRelays } = useFavoriteRelays()
+  const { pubkey: viewerPubkey, relayList, cacheRelayListEvent } = useNostr()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const nostrLandAggrEligibilityUrls = useMemo(
+    () =>
+      buildViewerNostrLandAggrEligibilityUrls({
+        favoriteRelayUrls: favoriteRelays,
+        relayList,
+        cacheRelayUrls: getCacheRelayUrlsFromEvent(cacheRelayListEvent)
+      }),
+    [favoriteRelays, relayList, cacheRelayListEvent]
+  )
   const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReplyIngress()
   const [error, setError] = useState<Error | null>(null)
@@ -146,7 +156,15 @@ export function useFetchThreadContextEvent(
           return eventService.fetchEvent(eventId, threadOpts)
         }
 
-        const aggrAwareSearch = sanitizeRelayUrlsForFetch(getAggrAwareSearchRelayUrls())
+        const aggrAwareSearch = sanitizeRelayUrlsForFetch(
+          await buildNoteLookupSearchFallbackRelayUrls({
+            viewerPubkey: viewerPubkey ?? undefined,
+            favoriteRelays,
+            blockedRelays,
+            relayHints: relayUrls,
+            nostrLandAggrEligibilityUrls
+          })
+        )
         const tasks: Array<() => Promise<Event | undefined>> = [fetchParentOrRoot]
         if (aggrAwareSearch.length > 0) {
           tasks.push(async () => {
@@ -200,6 +218,8 @@ export function useFetchThreadContextEvent(
     refetchToken,
     viewerPubkey,
     blockedKey,
+    favoriteRelays,
+    nostrLandAggrEligibilityUrls,
     role
   ])
 

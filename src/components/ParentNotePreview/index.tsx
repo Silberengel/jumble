@@ -1,9 +1,12 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchEvent } from '@/hooks'
-import { getAggrAwareSearchRelayUrls } from '@/lib/nostr-land-relay-eligibility'
+import { buildNoteLookupSearchFallbackRelayUrls, buildViewerNostrLandAggrEligibilityUrls } from '@/lib/feed-full-search-relays'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event } from 'nostr-tools'
@@ -30,6 +33,17 @@ export default function ParentNotePreview({
   appearance?: 'default' | 'subtle'
 }) {
   const { t } = useTranslation()
+  const nostr = useNostrOptional()
+  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const nostrLandAggrEligibilityUrls = useMemo(
+    () =>
+      buildViewerNostrLandAggrEligibilityUrls({
+        favoriteRelayUrls: favoriteRelays,
+        relayList: nostr?.relayList,
+        cacheRelayUrls: getCacheRelayUrlsFromEvent(nostr?.cacheRelayListEvent)
+      }),
+    [favoriteRelays, nostr?.relayList, nostr?.cacheRelayListEvent]
+  )
   const fetchOpts = useMemo(
     () => (relayHints?.length ? { relayHints } : undefined),
     [relayHints]
@@ -46,10 +60,16 @@ export default function ParentNotePreview({
 
     setIsFetchingFallback(true)
     try {
-      const foundEvent = await client.fetchEventWithExternalRelays(
-        eventId,
-        sanitizeRelayUrlsForFetch(getAggrAwareSearchRelayUrls())
+      const relayUrls = sanitizeRelayUrlsForFetch(
+        await buildNoteLookupSearchFallbackRelayUrls({
+          viewerPubkey: nostr?.pubkey,
+          favoriteRelays,
+          blockedRelays,
+          relayHints,
+          nostrLandAggrEligibilityUrls
+        })
       )
+      const foundEvent = await client.fetchEventWithExternalRelays(eventId, relayUrls)
       if (foundEvent) {
         client.addEventToCache(foundEvent)
         setFallbackEvent(foundEvent)
@@ -59,7 +79,7 @@ export default function ParentNotePreview({
     } finally {
       setIsFetchingFallback(false)
     }
-  }, [eventId])
+  }, [eventId, nostr?.pubkey, favoriteRelays, blockedRelays, relayHints, nostrLandAggrEligibilityUrls])
 
   useEffect(() => {
     autoSearchableAttemptedRef.current = false

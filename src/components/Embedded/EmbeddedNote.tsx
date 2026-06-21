@@ -20,6 +20,7 @@ import { useViewerInboxRelayUrls } from '@/hooks/useViewerInboxRelayUrls'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import {
   getAggrAwareSearchRelayUrls,
+  prependAggrNostrLandIfViewerEligible,
   syncViewerRelayStackNostrLandAggrEligible,
   urlsForViewerNostrLandAggrEligibilitySync
 } from '@/lib/nostr-land-relay-eligibility'
@@ -274,9 +275,27 @@ function EmbeddedNoteFetched({
       buildEmbedWideRelayUrlsStatic(
         menuRelayUrls,
         relayHintsFromParent,
-        inboxRelayUrls
+        inboxRelayUrls,
+        urlsForViewerNostrLandAggrEligibilitySync({
+          favoriteRelayUrls: favoriteRelays,
+          relaySetUrls: relaySets.flatMap((set) => set.relayUrls),
+          relayListRead: relayList?.read ?? inboxRelayUrls,
+          relayListWrite: relayList?.write ?? [],
+          cacheRelayRead: getCacheRelayUrlsFromEvent(cacheRelayListEvent),
+          cacheRelayWrite: getCacheRelayUrlsFromEvent(cacheRelayListEvent),
+          httpRelayRead: relayList?.httpRead ?? [],
+          httpRelayWrite: relayList?.httpWrite ?? []
+        })
       ),
-    [menuRelayUrls, relayHintsFromParent, inboxRelayUrls]
+    [
+      menuRelayUrls,
+      relayHintsFromParent,
+      inboxRelayUrls,
+      favoriteRelays,
+      relaySets,
+      relayList,
+      cacheRelayListEvent
+    ]
   )
   const fetchRelayOpts = useMemo(
     () => (relayHintsFromParent.length > 0 ? { relayHints: relayHintsFromParent } : undefined),
@@ -588,11 +607,12 @@ function preferPublicIndexRelaysFirst(urls: readonly string[]): string[] {
 function buildEmbedWideRelayUrlsStatic(
   menuRelayUrls: string[],
   relayHintsFromParent: string[],
-  viewerInboxRelayUrls: string[]
+  viewerInboxRelayUrls: string[],
+  nostrLandAggrEligibilityUrls: readonly string[] = []
 ): string[] {
   const rest = preferPublicIndexRelaysFirst(
     dedupeNormalizeRelayUrlsOrdered([
-      ...getAggrAwareSearchRelayUrls(),
+      ...getAggrAwareSearchRelayUrls(nostrLandAggrEligibilityUrls),
       ...viewerInboxRelayUrls,
       ...nip66Service.getSearchableRelayUrls(),
       ...FAST_READ_RELAY_URLS,
@@ -601,18 +621,21 @@ function buildEmbedWideRelayUrlsStatic(
     ])
   )
   return sanitizeRelayUrlsForFetch(
-    feedRelayPolicyUrls(
-      [
-        ...(relayHintsFromParent.length
-          ? [{ source: 'relay-hint' as const, urls: relayHintsFromParent, explicit: true }]
-          : []),
-        { source: 'fallback', urls: rest }
-      ],
-      {
-        operation: 'read',
-        applySocialKindBlockedFilter: false,
-        allowThirdPartyLocalRelays: false
-      }
+    prependAggrNostrLandIfViewerEligible(
+      feedRelayPolicyUrls(
+        [
+          ...(relayHintsFromParent.length
+            ? [{ source: 'relay-hint' as const, urls: relayHintsFromParent, explicit: true }]
+            : []),
+          { source: 'fallback', urls: rest }
+        ],
+        {
+          operation: 'read',
+          applySocialKindBlockedFilter: false,
+          allowThirdPartyLocalRelays: false
+        }
+      ),
+      nostrLandAggrEligibilityUrls
     )
   )
 }
