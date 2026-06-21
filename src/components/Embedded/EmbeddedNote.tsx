@@ -27,6 +27,9 @@ import {
   sanitizeRelayUrlsForFetch
 } from '@/lib/read-only-relay-personal'
 import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
+import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
+import { collectRemoteReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
+import { collectWriteOutboxUrlsFromRelayList } from '@/lib/viewer-write-outboxes'
 import { useFavoriteRelays } from '@/providers/favorite-relays-context'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
 import { useNostr } from '@/providers/NostrProvider'
@@ -615,6 +618,22 @@ function buildEmbedWideRelayUrlsStatic(
 }
 
 /** NIP-65 / nevent relays / seen-on — merged into a second wide REQ if the first pass missed. */
+function authorMailboxHintUrls(
+  relayList: { read?: string[]; write?: string[]; httpRead?: string[]; httpWrite?: string[] },
+  limit = 12
+): string[] {
+  const stripped = stripMailboxLocalUrlsForRemoteViewers({
+    read: relayList.read ?? [],
+    write: relayList.write ?? [],
+    httpRead: relayList.httpRead,
+    httpWrite: relayList.httpWrite
+  })
+  return [
+    ...collectRemoteReadInboxUrlsFromRelayList(stripped).slice(0, limit),
+    ...collectWriteOutboxUrlsFromRelayList(stripped).slice(0, limit)
+  ]
+}
+
 async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event): Promise<string[]> {
   const hintRelays: string[] = [...relayHintsForEmbeddedNotePointer(noteId, containingEvent)]
   const resolvedHexId = (() => {
@@ -635,10 +654,7 @@ async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event)
       const containingAuthorRelayList = await client
         .fetchRelayList(containingEvent.pubkey)
         .catch(() => ({ read: [] as string[], write: [] as string[] }))
-      hintRelays.push(
-        ...(containingAuthorRelayList.read ?? []).slice(0, 12),
-        ...(containingAuthorRelayList.write ?? []).slice(0, 12)
-      )
+      hintRelays.push(...authorMailboxHintUrls(containingAuthorRelayList))
     } catch (err) {
       logger.debug('[EmbeddedNote] containing author relays failed', { error: err })
     }
@@ -652,20 +668,14 @@ async function loadAsyncEmbedRelayHints(noteId: string, containingEvent?: Event)
         const authorRelayList = await client
           .fetchRelayList(data.author)
           .catch(() => ({ read: [] as string[], write: [] as string[] }))
-        hintRelays.push(
-          ...(authorRelayList.read ?? []).slice(0, 12),
-          ...(authorRelayList.write ?? []).slice(0, 12)
-        )
+        hintRelays.push(...authorMailboxHintUrls(authorRelayList))
       }
     } else if (type === 'naddr') {
       if (data.relays) hintRelays.push(...data.relays)
       const authorRelayList = await client
         .fetchRelayList(data.pubkey)
         .catch(() => ({ read: [] as string[], write: [] as string[] }))
-      hintRelays.push(
-        ...(authorRelayList.read ?? []).slice(0, 12),
-        ...(authorRelayList.write ?? []).slice(0, 12)
-      )
+      hintRelays.push(...authorMailboxHintUrls(authorRelayList))
     }
   } catch {
     /* invalid */

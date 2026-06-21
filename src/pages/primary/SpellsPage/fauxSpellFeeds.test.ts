@@ -29,6 +29,15 @@ describe('buildNotificationSpellRelayUrls', () => {
     expect(out.some((u) => u.includes('theforest.nostr1.com') || u.includes('nostr.land'))).toBe(true)
     expect(out.some((u) => u.includes('nosmero.com'))).toBe(true)
   })
+
+  it('pins viewer HTTP inbox relays when mention index fills the cap', () => {
+    const personal = [
+      'https://mercury-relay.imwald.eu/',
+      ...Array.from({ length: 12 }, (_, i) => `wss://personal-inbox-${i}.example/`)
+    ]
+    const out = buildNotificationSpellRelayUrls(personal)
+    expect(out.some((u) => u.includes('mercury-relay.imwald.eu'))).toBe(true)
+  })
 })
 
 describe('buildDiscussionsSpellRelayUrls', () => {

@@ -14,6 +14,8 @@ function relayKey(url: string): string {
 
 /**
  * Logged-in user's read inbox: kind 10432 cache, then kind 10243 HTTP read, then kind 10002 WS read.
+ * Use this (or {@link userReadInboxUrls}) anywhere kind-10002 `read` inboxes are merged into relay lists —
+ * do not use `relayList.read` alone.
  * Pass `cacheUrls` when kind 10432 is stored separately (e.g. from {@link cacheRelayListEvent});
  * those URLs are stripped from the WS layer so each relay appears once with cache-first ordering.
  */

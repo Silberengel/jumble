@@ -21,7 +21,13 @@ import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
 import { scrollActivity } from '@/lib/scroll-activity.service'
 import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
-import { getProfileFromEvent, getRelayListFromEvent, mergeHydratedCacheRelayListEvents, mergeHydratedHttpRelayListEvents } from '@/lib/event-metadata'
+import {
+  getProfileFromEvent,
+  getRelayListFromEvent,
+  mergeHydratedCacheRelayListEvents,
+  mergeHydratedHttpRelayListEvents
+} from '@/lib/event-metadata'
+import { collectRemoteReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { LEGACY_PROFILE_BADGES_D_TAG } from '@/lib/nip58-profile-badges'
 import { formatPubkey, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
 import { getPubkeysFromPTags, getServersFromServerTags } from '@/lib/tag'
@@ -1349,7 +1355,7 @@ export class ReplaceableEventService {
     const authorRelays = authorRelayList
       ? [
           ...(authorRelayList.write || []).slice(0, 10),
-          ...(authorRelayList.read || []).slice(0, 10)
+          ...collectRemoteReadInboxUrlsFromRelayList(authorRelayList).slice(0, 10)
         ]
       : []
 

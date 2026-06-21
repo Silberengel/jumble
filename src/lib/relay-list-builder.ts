@@ -14,7 +14,11 @@ import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-me
 import storage from '@/services/local-storage.service'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { mergeRelayUrlLayers, userReadRelaysWithHttp } from '@/lib/favorites-feed-relays'
-import { collectUserReadInboxUrls } from '@/lib/viewer-read-inboxes'
+import {
+  collectReadInboxUrlsFromRelayList,
+  collectRemoteReadInboxUrlsFromRelayList,
+  collectUserReadInboxUrls
+} from '@/lib/viewer-read-inboxes'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
@@ -261,7 +265,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     }
   }
   const viewerWsForAuthorOverlap = [
-    ...(viewerRelayListForShare?.read ?? []),
+    ...collectReadInboxUrlsFromRelayList(viewerRelayListForShare ?? undefined),
     ...(viewerRelayListForShare?.write ?? [])
   ]
 
@@ -321,7 +325,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
         AUTHOR_NIP65_RELAY_CAP
       ).forEach(addRelayFromHints)
       pickAuthorNip65RelaysPreferringViewerOverlap(
-        (authorRelayList.read ?? []).filter(urlIsNonLocalForRemoteViewer),
+        collectRemoteReadInboxUrlsFromRelayList(authorRelayList),
         viewerWsForAuthorOverlap,
         AUTHOR_NIP65_RELAY_CAP
       ).forEach(addRelayFromHints)
@@ -373,7 +377,7 @@ export async function buildComprehensiveRelayList(options: RelayListBuilderOptio
     // Even if not including user's own relays, still include user's inboxes for reading
     try {
       const userRelayList = viewerRelayListForShare ?? (await client.peekRelayListFromStorage(userPubkey))
-      ;(userRelayList.read ?? [])
+      userReadRelaysWithHttp(userRelayList)
         .slice(0, 10)
         .filter(urlIsNonLocalForRemoteViewer)
         .forEach((u) => {

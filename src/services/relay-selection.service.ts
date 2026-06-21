@@ -2,6 +2,7 @@ import { Event, kinds } from 'nostr-tools'
 import { ExtendedKind, FAST_WRITE_RELAY_URLS, PUBLISH_RELAY_LIST_RESOLUTION_TIMEOUT_MS, RANDOM_PUBLISH_RELAY_COUNT, RELAY_PICKER_CONTEXT_PUBKEY_CAP } from '@/constants'
 import { filterRelaysForEventPublish } from '@/lib/relay-publish-filter'
 import { collectRecipientInboxUrls, collectSenderOutboxUrls } from '@/lib/public-message-publish-relays'
+import { collectRemoteReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { collectViewerWriteOutboxUrls } from '@/lib/viewer-write-outboxes'
 import storage from '@/services/local-storage.service'
 import { NOSTR_URI_FOR_REPLY_PUBKEYS_REGEX } from '@/lib/content-patterns'
@@ -420,8 +421,10 @@ class RelaySelectionService {
         // Use cached version from IndexedDB instead of fetching from relays
         if (parentEvent) {
           const authorRelayList = await this.getCachedRelayList(parentEvent.pubkey)
-          if (authorRelayList?.read) {
-            const filteredRelays = this.filterLocalRelaysFromOthers(authorRelayList.read)
+          if (authorRelayList) {
+            const filteredRelays = this.filterLocalRelaysFromOthers(
+              collectRemoteReadInboxUrlsFromRelayList(authorRelayList)
+            )
             filteredRelays.slice(0, 4).forEach(url => contextualRelays.add(url))
           }
         }

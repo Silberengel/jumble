@@ -18,6 +18,7 @@ import {
 import { MAX_CONCURRENT_RELAY_CONNECTIONS } from '@/constants'
 import { ensureTrendingInFavoriteRelayList } from '@/lib/wisp-trending-relay'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
+import { pinViewerMailboxReadRelaysInRelayCap } from '@/lib/feed-relay-urls'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import { profileFetchRelayUrlsWithoutFastReadLayer } from '@/lib/viewer-relay-defaults'
@@ -341,9 +342,7 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
       source: index === 0 ? 'explicit' : index === 1 ? 'viewer-read' : 'fallback',
       urls
     }))
-    return {
-      ...r,
-      urls: feedRelayPolicyUrls(policyLayers, {
+    const capped = feedRelayPolicyUrls(policyLayers, {
         operation: 'read',
         blockedRelays,
         maxRelays: max,
@@ -351,6 +350,9 @@ export function augmentSubRequestsWithFavoritesFastReadAndInbox(
         socialKindBlockedExemptRelays: [...userReadSocialExempt],
         allowThirdPartyLocalRelays: true
       })
+    return {
+      ...r,
+      urls: pinViewerMailboxReadRelaysInRelayCap(capped, userInboxReadRelays, max)
     }
   })
 }

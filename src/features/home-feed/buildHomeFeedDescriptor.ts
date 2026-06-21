@@ -112,13 +112,13 @@ export function buildHomeFeedDescriptorBundle(
   )
   if (stableNotes.length === 0 && stableReplies.length === 0) return null
 
-  /** Posts tier follows favorites; when none are configured, fall back to the reply/inbox stack. */
+  /** Posts tier uses the same viewer inbox stack as Replies when not on a relay-set-only feed. */
   const notesRelayUrls =
-    input.relayUrls.length > 0
-      ? input.relayUrls
-      : input.replyRelayUrls.length > 0
-        ? input.replyRelayUrls
-        : input.relayUrls
+    !relaySetFeedOnly && input.replyRelayUrls.length > 0
+      ? input.replyRelayUrls
+      : input.relayUrls.length > 0
+        ? input.relayUrls
+        : input.replyRelayUrls
 
   const defaultKinds =
     input.showKinds.length > 0 ? [...input.showKinds] : [kinds.ShortTextNote]

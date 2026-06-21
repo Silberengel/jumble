@@ -183,8 +183,8 @@ export function FeedProvider({ children }: { children: ReactNode }) {
     return urlsForViewerNostrLandAggrEligibilitySync({
       favoriteRelayUrls: favoriteRelays,
       relaySetUrls: relaySets.flatMap((set) => set.relayUrls),
-      relayListRead: relayList?.read ?? [],
-      relayListWrite: relayList?.write ?? [],
+      relayListRead: replyExtraRelayLayers.inboxRelayUrls,
+      relayListWrite: replyExtraRelayLayers.outboxRelayUrls,
       cacheRelayRead: cacheRelayUrls,
       cacheRelayWrite: cacheRelayUrls,
       httpRelayRead: relayList?.httpRead ?? [],
@@ -244,7 +244,8 @@ export function FeedProvider({ children }: { children: ReactNode }) {
         replyRelays
       })
     }
-    setUrlStateIfChanged(setRelayUrls, primaryRelays)
+    /** Notes tier uses the same viewer inbox stack as Replies (10432 + 10243 + 10002), not favorites alone. */
+    setUrlStateIfChanged(setRelayUrls, usingRelaySet ? primaryRelays : replyRelays)
     setUrlStateIfChanged(setReplyRelayUrls, replyRelays)
   }, [
     effectiveHomeFeedRelaySource,

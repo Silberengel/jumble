@@ -5,6 +5,7 @@ import {
   MAX_PUBLISH_RELAYS
 } from '@/constants'
 import { feedRelayPolicyUrls, type FeedRelayLayer } from '@/features/feed/relay-policy'
+import { pinViewerMailboxReadRelaysInRelayCap } from '@/lib/feed-relay-urls'
 import {
   isLocalNetworkUrl,
   isValidRelayFetchUrl,
@@ -131,7 +132,7 @@ export function buildPrioritizedReadRelayUrls(opts: {
     { source: 'favorites', urls: layers[2] ?? [] },
     { source: 'fast-read', urls: layers[3] ?? [] }
   ]
-  return feedRelayPolicyUrls(policyLayers, {
+  const capped = feedRelayPolicyUrls(policyLayers, {
     operation: 'read',
     blockedRelays: opts.blockedRelays,
     maxRelays: max,
@@ -139,6 +140,7 @@ export function buildPrioritizedReadRelayUrls(opts: {
     socialKindBlockedExemptRelays: [...exemptFromSocial],
     allowThirdPartyLocalRelays: true
   })
+  return pinViewerMailboxReadRelaysInRelayCap(capped, opts.userReadRelays ?? [], max)
 }
 
 /**

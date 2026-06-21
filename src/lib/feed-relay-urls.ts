@@ -1,4 +1,9 @@
-import { normalizeHttpRelayUrl, normalizeRelayUrlByScheme, isHttpOrHttpsScheme } from '@/lib/url'
+import {
+  isHttpOrHttpsScheme,
+  isLocalNetworkUrl,
+  normalizeHttpRelayUrl,
+  normalizeRelayUrlByScheme
+} from '@/lib/url'
 import type { TFeedSubRequest } from '@/types'
 
 function relayDedupeKey(url: string): string {
@@ -22,26 +27,22 @@ export function uniqueRelayUrlsFromSubRequests(requests: readonly TFeedSubReques
   return out
 }
 
-/**
- * Keep viewer kind-10243 HTTP index relays in a capped feed stack (they are easy to drop when
- * favorites + NIP-65 WS fill {@link FAUX_SPELL_MAX_RELAYS}).
- */
-export function pinHttpIndexRelaysInRelayCap(
+function pinRelaysInCap(
   capped: readonly string[],
-  sourceUrls: readonly string[],
-  maxRelays: number
+  pinSources: readonly string[],
+  maxRelays: number,
+  isProtectedInStack: (normalizedUrl: string) => boolean
 ): string[] {
-  const httpSources = sourceUrls
-    .map((u) => normalizeHttpRelayUrl(u) || (isHttpOrHttpsScheme(u.trim()) ? u.trim() : ''))
-    .filter(Boolean)
-  if (httpSources.length === 0) return [...capped]
+  if (pinSources.length === 0) return [...capped]
 
-  const httpKeySet = new Set(httpSources.map((u) => u.toLowerCase()))
+  const pinKeySet = new Set(pinSources.map((u) => relayDedupeKey(u)).filter(Boolean))
   const out = [...capped]
   const outKeys = new Set(out.map(relayDedupeKey))
 
-  for (const http of httpSources) {
-    const key = http.toLowerCase()
+  for (const raw of pinSources) {
+    const n = normalizeRelayUrlByScheme(raw) || raw.trim()
+    if (!n) continue
+    const key = relayDedupeKey(n)
     if (outKeys.has(key)) continue
 
     while (out.length >= maxRelays) {
@@ -49,7 +50,7 @@ export function pinHttpIndexRelaysInRelayCap(
       for (let i = out.length - 1; i >= 0; i--) {
         const candidate = out[i]!
         const ck = relayDedupeKey(candidate)
-        if (httpKeySet.has(ck) || isHttpOrHttpsScheme(candidate.trim())) continue
+        if (pinKeySet.has(ck) || isProtectedInStack(candidate)) continue
         out.splice(i, 1)
         outKeys.delete(ck)
         dropped = true
@@ -59,11 +60,71 @@ export function pinHttpIndexRelaysInRelayCap(
     }
 
     if (out.length >= maxRelays) continue
-    out.push(http)
+    out.push(n)
     outKeys.add(key)
+    pinKeySet.add(key)
   }
 
   return out.slice(0, maxRelays)
+}
+
+function mailboxReadPinSources(sourceUrls: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  const add = (raw: string) => {
+    const n = normalizeRelayUrlByScheme(raw) || raw.trim()
+    if (!n) return
+    const key = relayDedupeKey(n)
+    if (seen.has(key)) return
+    seen.add(key)
+    out.push(n)
+  }
+  for (const raw of sourceUrls) {
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+    if (isHttpOrHttpsScheme(trimmed)) {
+      add(normalizeHttpRelayUrl(trimmed) || trimmed)
+      continue
+    }
+    if (isLocalNetworkUrl(trimmed)) add(trimmed)
+  }
+  return out
+}
+
+/**
+ * Keep viewer kind-10432 cache + kind-10243 HTTP read relays in a capped feed stack.
+ * Favorites and NIP-65 WS inboxes otherwise fill the cap and drop mailbox layers.
+ */
+export function pinViewerMailboxReadRelaysInRelayCap(
+  capped: readonly string[],
+  sourceUrls: readonly string[],
+  maxRelays: number
+): string[] {
+  const pinSources = mailboxReadPinSources(sourceUrls)
+  if (pinSources.length === 0) return [...capped]
+
+  const protectedKeys = new Set(pinSources.map((u) => relayDedupeKey(u)).filter(Boolean))
+
+  return pinRelaysInCap(capped, pinSources, maxRelays, (candidate) => {
+    const ck = relayDedupeKey(candidate)
+    return (
+      protectedKeys.has(ck) ||
+      isHttpOrHttpsScheme(candidate.trim()) ||
+      isLocalNetworkUrl(candidate)
+    )
+  })
+}
+
+/**
+ * Keep viewer kind-10243 HTTP index relays in a capped feed stack (they are easy to drop when
+ * favorites + NIP-65 WS fill {@link FAUX_SPELL_MAX_RELAYS}).
+ */
+export function pinHttpIndexRelaysInRelayCap(
+  capped: readonly string[],
+  sourceUrls: readonly string[],
+  maxRelays: number
+): string[] {
+  return pinViewerMailboxReadRelaysInRelayCap(capped, sourceUrls, maxRelays)
 }
 
 /**

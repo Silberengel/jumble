@@ -32,7 +32,7 @@ import {
   parseThreadWatchListRefs
 } from '@/lib/notification-thread-watch'
 import { userIdToPubkey } from '@/lib/pubkey'
-import { pinHttpIndexRelaysInRelayCap, pinMentionRelaysInRelayCap } from '@/lib/feed-relay-urls'
+import { pinHttpIndexRelaysInRelayCap, pinMentionRelaysInRelayCap, pinViewerMailboxReadRelaysInRelayCap } from '@/lib/feed-relay-urls'
 import { pinMoneroNostrRelaysInRelayCap } from '@/lib/monero-nostr-relays'
 import { normalizeAnyRelayUrl, normalizeUrl } from '@/lib/url'
 import type { TFeedSubRequest } from '@/types'
@@ -82,13 +82,17 @@ export function buildNotificationSpellRelayUrls(
       allowThirdPartyLocalRelays: true
     }
   )
-  return pinMoneroNostrRelaysInRelayCap(
-    pinMentionRelaysInRelayCap(
-      capped,
-      mentionIndex,
-      FAUX_SPELL_MAX_RELAYS,
-      Math.min(NOTIFICATION_MENTION_RELAY_PIN_COUNT, mentionIndex.length)
+  return pinViewerMailboxReadRelaysInRelayCap(
+    pinMoneroNostrRelaysInRelayCap(
+      pinMentionRelaysInRelayCap(
+        capped,
+        mentionIndex,
+        FAUX_SPELL_MAX_RELAYS,
+        Math.min(NOTIFICATION_MENTION_RELAY_PIN_COUNT, mentionIndex.length)
+      ),
+      FAUX_SPELL_MAX_RELAYS
     ),
+    personal,
     FAUX_SPELL_MAX_RELAYS
   )
 }
@@ -373,7 +377,11 @@ export function buildDiscussionsSpellRelayUrls(
       allowThirdPartyLocalRelays: true
     }
   )
-  return ensureFauxSpellRelayStackTouchesFastRead(capped)
+  return pinViewerMailboxReadRelaysInRelayCap(
+    ensureFauxSpellRelayStackTouchesFastRead(capped),
+    personal,
+    FAUX_SPELL_MAX_RELAYS
+  )
 }
 
 export function buildMediaSpellFilter(): Filter {

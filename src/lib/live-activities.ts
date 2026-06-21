@@ -1,5 +1,6 @@
 import { FAST_READ_RELAY_URLS, MAX_CONCURRENT_RELAY_CONNECTIONS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
+import { pinViewerMailboxReadRelaysInRelayCap } from '@/lib/feed-relay-urls'
 import { isAudio, isHlsPlaylistUrl, isVideo } from '@/lib/url'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import {
@@ -687,13 +688,18 @@ export function buildLiveActivitiesRelayUrls(options: {
       { source: 'viewer-write' as const, urls: write },
       ...(includeFast ? [{ source: 'fast-read' as const, urls: fast }] : [])
     ]
-    return feedRelayPolicyUrls(layers, {
+    const capped = feedRelayPolicyUrls(layers, {
       operation: 'read',
       blockedRelays,
       maxRelays: MAX_CONCURRENT_RELAY_CONNECTIONS,
       applySocialKindBlockedFilter: true,
       allowThirdPartyLocalRelays: true
     })
+    return pinViewerMailboxReadRelaysInRelayCap(
+      capped,
+      relayListRead,
+      MAX_CONCURRENT_RELAY_CONNECTIONS
+    )
   }
   const fav = relayUrlsLocalsFirst(getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, true))
   const fast = dedupeNormalizeRelayUrlsOrdered(
