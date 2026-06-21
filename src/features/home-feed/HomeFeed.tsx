@@ -166,7 +166,15 @@ const HomeFeed = forwardRef<
       ? bundle?.seenOnAllowlistOp
       : bundle?.seenOnAllowlistReplies
 
-  if (!bundle) return null
+  if (!bundle) {
+    return (
+      <div className="min-h-[20vh] space-y-2 px-1 py-4" role="status" aria-busy="true">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <NoteCardLoadingSkeleton key={i} />
+        ))}
+      </div>
+    )
+  }
 
   return (
     <FeedProfileProvider value={feedProfileContextValue}>

@@ -19,6 +19,35 @@ describe('buildHomeFeedDescriptorBundle', () => {
     ).toBeNull()
   })
 
+  it('builds bundle from reply relays when favorites tier is empty', () => {
+    const bundle = buildHomeFeedDescriptorBundle({
+      homeFeedRelaySource: HOME_FEED_RELAY_SOURCE_FAVORITES,
+      relayUrls: [],
+      replyRelayUrls: ['wss://inbox.example.com'],
+      showKinds: [1],
+      listMode: 'postsAndReplies',
+      seeAllFeedEvents: false
+    })
+    expect(bundle).not.toBeNull()
+    expect(bundle?.activeSubRequests[0]?.urls.some((u) => u.includes('inbox.example.com'))).toBe(
+      true
+    )
+  })
+
+  it('uses reply relays for posts-only mode when favorites tier is empty', () => {
+    const bundle = buildHomeFeedDescriptorBundle({
+      homeFeedRelaySource: HOME_FEED_RELAY_SOURCE_FAVORITES,
+      relayUrls: [],
+      replyRelayUrls: ['wss://inbox.example.com'],
+      showKinds: [1],
+      listMode: 'posts',
+      seeAllFeedEvents: false
+    })
+    expect(bundle?.activeSubRequests[0]?.urls.some((u) => u.includes('inbox.example.com'))).toBe(
+      true
+    )
+  })
+
   it('builds stable keys for favorites vs relay-set', () => {
     const fav = buildHomeFeedDescriptorBundle({
       homeFeedRelaySource: HOME_FEED_RELAY_SOURCE_FAVORITES,

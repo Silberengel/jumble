@@ -3,9 +3,13 @@ import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripNostrLandAggrFromRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { isHomePrimaryFeedSubscriptionKey } from '@/lib/home-feed-relay-source'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
-import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
+import {
+  isMetadataRelaysOnlyPolicyActive,
+  viewerIncludeGlobalFastReadRelayLayer
+} from '@/lib/read-only-relay-personal'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeAnyRelayUrl } from '@/lib/url'
+import { publicReadRelayFallbackUrls } from '@/lib/viewer-relay-defaults'
 import {
   ensureTrendingInFavoriteRelayList,
   isWispTrendingNotesRelayUrl
@@ -48,6 +52,40 @@ export function buildHomeRelaySetFeedRelayUrls(
   return dedupeNormalizeRelayUrlsOrdered(visible)
 }
 
+/** {@link FAST_READ_RELAY_URLS} for home timelines (aggr stripped; honors personal-relay policy). */
+export function buildHomeFastReadRelayUrls(blockedRelays: readonly string[]): string[] {
+  if (!viewerIncludeGlobalFastReadRelayLayer()) return []
+  return stripNostrLandAggrFromRelayUrls(
+    feedRelayPolicyUrls(
+      [{ source: 'fast-read', urls: [...publicReadRelayFallbackUrls()] }],
+      {
+        operation: 'favorites-feed',
+        blockedRelays,
+        nostrLandAggr: 'never',
+        applySocialKindBlockedFilter: false,
+        allowThirdPartyLocalRelays: true
+      }
+    )
+  )
+}
+
+/** True when the stack has no real favorite/inbox relays (wisp trending alone does not count). */
+function homeFeedUrlsNeedFastReadFallback(urls: readonly string[]): boolean {
+  if (urls.length === 0) return true
+  return urls.every((u) => isWispTrendingNotesRelayUrl(u))
+}
+
+/** Last-resort home feed relays when favorites / inbox / extras produced nothing. */
+export function ensureHomeFeedRelayUrlsHaveFallback(
+  urls: readonly string[],
+  blockedRelays: readonly string[]
+): string[] {
+  if (!homeFeedUrlsNeedFastReadFallback(urls)) return [...urls]
+  const fast = buildHomeFastReadRelayUrls(blockedRelays)
+  if (fast.length === 0) return [...urls]
+  return dedupeNormalizeRelayUrlsOrdered([...urls, ...fast])
+}
+
 export function buildAllFavoritesFeedRelayUrls(
   favoriteRelays: string[],
   blockedRelays: string[],
@@ -58,23 +96,26 @@ export function buildAllFavoritesFeedRelayUrls(
     ? extraFeedRelayUrls.filter((u) => !isWispTrendingNotesRelayUrl(u))
     : extraFeedRelayUrls
   return ensureHomeFeedTrendingRelay(
-    stripNostrLandAggrFromRelayUrls(
-      feedRelayPolicyUrls(
-        [
+    ensureHomeFeedRelayUrlsHaveFallback(
+      stripNostrLandAggrFromRelayUrls(
+        feedRelayPolicyUrls(
+          [
+            {
+              source: 'favorites',
+              urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobalFavoriteDefaults)
+            },
+            { source: 'fallback', urls: extras }
+          ],
           {
-            source: 'favorites',
-            urls: getFavoritesFeedRelayUrls(favoriteRelays, blockedRelays, useGlobalFavoriteDefaults)
-          },
-          { source: 'fallback', urls: extras }
-        ],
-        {
-          operation: 'favorites-feed',
-          blockedRelays,
-          nostrLandAggr: 'never',
-          applySocialKindBlockedFilter: false,
-          allowThirdPartyLocalRelays: true
-        }
-      )
+            operation: 'favorites-feed',
+            blockedRelays,
+            nostrLandAggr: 'never',
+            applySocialKindBlockedFilter: false,
+            allowThirdPartyLocalRelays: true
+          }
+        )
+      ),
+      blockedRelays
     )
   )
 }

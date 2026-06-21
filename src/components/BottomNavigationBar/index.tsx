@@ -17,8 +17,8 @@ export default function BottomNavigationBar() {
       }}
     >
       <WriteButton />
-      <HomeButton />
       <SpellsButton />
+      <HomeButton />
       <SearchButton />
       <NotificationsButton />
     </div>

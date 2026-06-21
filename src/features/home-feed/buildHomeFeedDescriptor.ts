@@ -107,12 +107,23 @@ export function buildHomeFeedDescriptorBundle(
 ): HomeFeedDescriptorBundle | null {
   const relaySetFeedOnly = isHomeFeedRelaySetSource(input.homeFeedRelaySource)
   const stableNotes = stableRelayUrls(input.relayUrls)
-  if (stableNotes.length === 0) return null
+  const stableReplies = stableRelayUrls(
+    input.replyRelayUrls.length > 0 ? input.replyRelayUrls : input.relayUrls
+  )
+  if (stableNotes.length === 0 && stableReplies.length === 0) return null
+
+  /** Posts tier follows favorites; when none are configured, fall back to the reply/inbox stack. */
+  const notesRelayUrls =
+    input.relayUrls.length > 0
+      ? input.relayUrls
+      : input.replyRelayUrls.length > 0
+        ? input.replyRelayUrls
+        : input.relayUrls
 
   const defaultKinds =
     input.showKinds.length > 0 ? [...input.showKinds] : [kinds.ShortTextNote]
   const { notes, replies } = buildHomeFeedSubRequests(
-    input.relayUrls,
+    notesRelayUrls,
     input.replyRelayUrls,
     input.homeFeedRelaySource,
     defaultKinds
@@ -161,10 +172,8 @@ export function buildHomeFeedDescriptorBundle(
     pagination: { enabled: true, pageSize: HOME_FEED_PAGE_LIMIT }
   })
 
-  const seenOnAllowlistOp = stableNotes
-  const seenOnAllowlistReplies = stableRelayUrls(
-    input.replyRelayUrls.length > 0 ? input.replyRelayUrls : input.relayUrls
-  )
+  const seenOnAllowlistOp = stableNotes.length > 0 ? stableNotes : stableReplies
+  const seenOnAllowlistReplies = stableReplies
 
   return {
     descriptor,

@@ -226,7 +226,7 @@ export function useHomeFeed(): UseHomeFeedResult {
       engine.destroy()
       if (engineRef.current === engine) engineRef.current = null
     }
-  }, [bundle?.descriptor.key, sessionSnapshotKey])
+  }, [bundle?.descriptor.key, bundle?.subscriptionKey, sessionSnapshotKey])
 
   useEffect(() => {
     scrolledFromTopRef.current = scrolledFromTop

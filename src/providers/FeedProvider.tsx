@@ -50,22 +50,25 @@ function buildHomeReplyFeedRelayUrls(
 ): string[] {
   /** Home Replies: never prepend aggr (reserved for side-panel threads, profiles, spells). */
   return ensureHomeFeedTrendingRelay(
-    stripNostrLandAggrFromRelayUrls(
-      feedRelayPolicyUrls(
-        [
-          { source: 'favorites', urls: primaryRelayUrls },
-          { source: 'viewer-read', urls: inboxRelayUrls },
-          { source: 'cache', urls: cacheRelayUrls },
-          { source: 'http-index', urls: httpRelayUrls }
-        ],
-        {
-          operation: 'read',
-          blockedRelays,
-          nostrLandAggr: 'never',
-          applySocialKindBlockedFilter: false,
-          allowThirdPartyLocalRelays: true
-        }
-      )
+    ensureHomeFeedRelayUrlsHaveFallback(
+      stripNostrLandAggrFromRelayUrls(
+        feedRelayPolicyUrls(
+          [
+            { source: 'favorites', urls: primaryRelayUrls },
+            { source: 'viewer-read', urls: inboxRelayUrls },
+            { source: 'cache', urls: cacheRelayUrls },
+            { source: 'http-index', urls: httpRelayUrls }
+          ],
+          {
+            operation: 'read',
+            blockedRelays,
+            nostrLandAggr: 'never',
+            applySocialKindBlockedFilter: false,
+            allowThirdPartyLocalRelays: true
+          }
+        )
+      ),
+      blockedRelays
     )
   )
 }
@@ -194,7 +197,7 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })
   const updateFeedRelayUrls = useCallback(() => {
     const usingRelaySet = isHomeFeedRelaySetSource(effectiveHomeFeedRelaySource)
-    const primaryRelays = usingRelaySet
+    let primaryRelays = usingRelaySet
       ? buildHomeRelaySetFeedRelayUrls(homeFeedPrimaryRelayUrls, blockedRelays)
       : buildAllFavoritesFeedRelayUrls(
           homeFeedPrimaryRelayUrls,
@@ -202,6 +205,18 @@ export function FeedProvider({ children }: { children: ReactNode }) {
           [],
           useGlobalRelayDefaults
         )
+    if (
+      !usingRelaySet &&
+      primaryRelays.length === 0 &&
+      replyExtraRelayLayers.inboxRelayUrls.length > 0
+    ) {
+      primaryRelays = buildAllFavoritesFeedRelayUrls(
+        replyExtraRelayLayers.inboxRelayUrls,
+        blockedRelays,
+        [],
+        false
+      )
+    }
     const replyRelays = usingRelaySet
       ? primaryRelays
       : buildHomeReplyFeedRelayUrls(

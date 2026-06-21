@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest'
+import { FAST_READ_RELAY_URLS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
-import { buildAllFavoritesFeedRelayUrls, stripNostrLandAggrFromRelayUrls } from '@/lib/home-feed-relays'
+import {
+  buildAllFavoritesFeedRelayUrls,
+  buildHomeFastReadRelayUrls,
+  stripNostrLandAggrFromRelayUrls
+} from '@/lib/home-feed-relays'
 import { buildWispTrendingNotesRelayUrl, isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import {
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
+import { normalizeAnyRelayUrl } from '@/lib/url'
 
 describe('home feed relay policy', () => {
   it('keeps aggr.nostr.land out of the main home feed', () => {
@@ -64,5 +70,41 @@ describe('home feed relay policy', () => {
       'wss://AGGR.nostr.land'
     ])
     expect(stripped).toEqual(['wss://relay.example/'])
+  })
+
+  it('falls back to FAST_READ when favorites and extras are empty', () => {
+    setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
+    const fastOnly = buildHomeFastReadRelayUrls([])
+    expect(fastOnly.length).toBeGreaterThan(0)
+    const urls = buildAllFavoritesFeedRelayUrls([], [], [], false)
+    const fastHosts = new Set(
+      FAST_READ_RELAY_URLS.map((u) => {
+        try {
+          return new URL(u.replace(/^wss:\/\//i, 'https://')).hostname.toLowerCase()
+        } catch {
+          return ''
+        }
+      }).filter(Boolean)
+    )
+    expect(urls.length).toBeGreaterThan(0)
+    expect(
+      urls.some((u) => {
+        try {
+          const host = new URL(
+            (normalizeAnyRelayUrl(u) || u).replace(/^wss:\/\//i, 'https://')
+          ).hostname.toLowerCase()
+          return fastHosts.has(host)
+        } catch {
+          return false
+        }
+      })
+    ).toBe(true)
+  })
+
+  it('omits FAST_READ fallback under personal-relay policy', () => {
+    setViewerPersonalRelayKeys(new Set(['wss://relay.example.com/']), { viewerActive: true })
+    expect(buildAllFavoritesFeedRelayUrls([], [], [], false)).toEqual([])
+    expect(buildHomeFastReadRelayUrls([])).toEqual([])
+    setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
   })
 })
