@@ -323,10 +323,11 @@ async function publishToOneRelay (url, msg, eventId) {
       const finish = () => {
         if (settled) return
         settled = true
+        clearTimeout(t)
+        ws.removeListener('message', onMessage)
         resolve()
       }
-      const t = setTimeout(finish, 3000)
-      ws.once('message', (data) => {
+      const onMessage = (data) => {
         try {
           const j = JSON.parse(data.toString())
           if (j[0] === 'OK' && j[1] === eventId) {
@@ -335,13 +336,14 @@ async function publishToOneRelay (url, msg, eventId) {
             } else {
               log('Relay rejected event', { url, reason: j[3] })
             }
-            clearTimeout(t)
             finish()
           }
         } catch {
           /* ignore malformed frames */
         }
-      })
+      }
+      const t = setTimeout(finish, 3000)
+      ws.on('message', onMessage)
     })
     return accepted ? 1 : 0
   } catch (err) {

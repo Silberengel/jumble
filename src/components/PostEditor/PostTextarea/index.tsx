@@ -48,9 +48,11 @@ export type TPostTextareaHandle = {
   appendText: (text: string, addNewline?: boolean) => void
   insertText: (text: string) => void
   insertEmoji: (emoji: string | TEmoji) => void
-  clear: () => void
+  clear: (options?: { skipCache?: boolean }) => void
   /** Re-read `postEditorCache` / `defaultContent` into TipTap (dialog reopened; initial `content` only runs once). */
   syncFromPostCache: () => void
+  /** Drop a pending debounced parent/cache sync (e.g. before clearing draft after publish). */
+  cancelPendingEditorSync: () => void
   getText: () => string
   /** Replace editor from plain `content` (e.g. advanced lab). Syncs TipTap JSON cache and parent `text`. */
   setDocumentFromPlainText: (plain: string) => void
@@ -78,6 +80,8 @@ const PostTextarea = forwardRef<
     }) => void
     onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
     onUploadCompressProgress?: (file: File, percent: number) => void
+    /** External media URL pasted into the editor (no upload). */
+    onMediaUrlPasted?: (url: string) => void
     kind?: number
     highlightData?: HighlightData
     webBookmarkData?: WebBookmarkDraftData
@@ -131,6 +135,7 @@ const PostTextarea = forwardRef<
       onUploadSuccess,
       onUploadCompressPhase,
       onUploadCompressProgress,
+      onMediaUrlPasted,
       kind = 1,
       highlightData,
       webBookmarkData,
@@ -167,6 +172,8 @@ const PostTextarea = forwardRef<
     const [activeTab, setActiveTab] = useState<ComposerEditorTab>('edit')
     const activeTabRef = useRef(activeTab)
     activeTabRef.current = activeTab
+    const onMediaUrlPastedRef = useRef(onMediaUrlPasted)
+    onMediaUrlPastedRef.current = onMediaUrlPasted
     const onActiveTabChangeRef = useRef(onActiveTabChange)
     onActiveTabChangeRef.current = onActiveTabChange
 
@@ -291,6 +298,7 @@ const PostTextarea = forwardRef<
           onUploadEnd: (file) => onUploadEndRef.current?.(file),
           onUploadProgress: (file, p) => onUploadProgressRef.current?.(file, p),
           onUploadSuccess: (result) => onUploadSuccessRef.current?.(result),
+          onMediaUrlPasted: (url) => onMediaUrlPastedRef.current?.(url),
           onUploadCompressPhase: (file, phase) =>
             onUploadCompressPhaseRef.current?.(file, phase),
           onUploadCompressProgress: (file, pct) =>
@@ -405,7 +413,7 @@ const PostTextarea = forwardRef<
           }
         }
       },
-      clear: () => {
+      clear: (options?: { skipCache?: boolean }) => {
         const editor = editorRef.current
         if (parentSyncTimeoutRef.current) {
           clearTimeout(parentSyncTimeoutRef.current)
@@ -413,12 +421,20 @@ const PostTextarea = forwardRef<
         }
         if (editor) {
           editor.chain().clearContent().run()
-          postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
+          if (!options?.skipCache) {
+            postEditorCache.setPostContentCache({ kind, defaultContent, parentEvent }, editor.getJSON())
+          }
         }
         editorNonemptyRef.current = false
         onEditorNonemptyChangeRef.current?.(false)
         setText('')
         setPreviewContent('')
+      },
+      cancelPendingEditorSync: () => {
+        if (parentSyncTimeoutRef.current) {
+          clearTimeout(parentSyncTimeoutRef.current)
+          parentSyncTimeoutRef.current = null
+        }
       },
       syncFromPostCache: () => {
         const editor = editorRef.current

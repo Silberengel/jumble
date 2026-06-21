@@ -54,7 +54,7 @@ import { useReplyIngress } from '@/hooks/useReplyIngress'
 import { getParentReplyBlurbDisplayText } from '@/lib/parent-reply-blurb'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { canonicalizeRssArticleUrl, getArticleUrlFromCommentITags } from '@/lib/rss-article'
-import { cleanUrl, isBlossomBudBlobUrl, rewritePlainTextHttpUrls } from '@/lib/url'
+import { cleanUrl, isAudio, isImage, rewritePlainTextHttpUrls } from '@/lib/url'
 import logger from '@/lib/logger'
 import { startPublishTrace } from '@/lib/publish-trace'
 import { LoginRequiredError } from '@/lib/nostr-errors'
@@ -140,6 +140,21 @@ import {
 } from './PostEditorFormatToolbar'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 import { imageUrlLooksLikeHttpImage } from '@/lib/composer-markup-insert'
+import {
+  buildImetaTagFromMediaUrl,
+  enrichImetaTagFromMediaUrl,
+  inferMediaKindFromUrl,
+  mimeFromMediaUrl
+} from '@/lib/composer-media-url-imeta'
+import {
+  COMPOSER_IMETA_CONTENT_SYNC_DEBOUNCE_MS,
+  composerContentHasUploadPlaceholder,
+  composerImetaTagsEqual,
+  extractMediaUrlsFromComposerContent,
+  imetaUrlFromTagRow,
+  normalizeComposerMediaUrlKey,
+  reconcileComposerImetaWithContent
+} from '@/lib/composer-imeta-content-sync'
 import { useComposerController } from '@/hooks/useComposerController'
 import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
 import { ComposerKindFieldsShell } from '@/components/Composer'
@@ -528,6 +543,30 @@ export default function PostContent({
     mediaNoteKindRef.current = mediaNoteKind
   }, [mediaNoteKind])
 
+  const mediaUrlRef = useRef(mediaUrl)
+  mediaUrlRef.current = mediaUrl
+  const uploadProgressCountRef = useRef(0)
+  uploadProgressCountRef.current = uploadProgresses.length
+
+  const enrichAndPatchComposerImeta = useCallback((url: string) => {
+    const key = normalizeComposerMediaUrlKey(cleanUrl(url) || url)
+    void enrichImetaTagFromMediaUrl(key).then((enriched) => {
+      const content = textareaRef.current?.getText() ?? ''
+      if (composerContentHasUploadPlaceholder(content)) return
+      const stillPresent = extractMediaUrlsFromComposerContent(content).some(
+        (u) => normalizeComposerMediaUrlKey(u) === key
+      )
+      if (!stillPresent) return
+      const prev = composerImetaTagsRef.current
+      const existing = prev.find((t) => imetaUrlFromTagRow(t) === key)
+      if (!existing || JSON.stringify(existing) === JSON.stringify(enriched)) return
+      mediaUpload.registerImetaTag(key, enriched)
+      const next = prev.map((t) => (imetaUrlFromTagRow(t) === key ? enriched : t))
+      composerImetaTagsRef.current = next
+      setMediaImetaTags(next)
+    })
+  }, [])
+
   const appendComposerImetaTag = useCallback((newTag: string[]) => {
     const urlItem = newTag.find((x) => typeof x === 'string' && x.startsWith('url '))
     const rawUrl = urlItem?.slice(4)?.trim()
@@ -544,6 +583,109 @@ export default function PostContent({
     composerImetaTagsRef.current = [...composerImetaTagsRef.current, newTag]
     setMediaImetaTags([...composerImetaTagsRef.current])
   }, [])
+
+  const handlePastedMediaUrl = useCallback(
+    (url: string) => {
+      const cleaned = cleanUrl(url) || url
+      const basic = buildImetaTagFromMediaUrl(cleaned)
+      mediaUpload.registerImetaTag(cleaned, basic)
+      appendComposerImetaTag(basic)
+
+      if (isMusicTrack) {
+        if (isAudio(cleaned)) {
+          setMusicTrackAudioUrl(cleaned)
+          const ext = cleaned.split(/[?#]/)[0].split('.').pop()
+          if (ext && !musicTrackFormat.trim()) {
+            setMusicTrackFormat(ext)
+          }
+        } else if (isImage(cleaned)) {
+          setMusicTrackImageUrl(cleaned)
+        }
+      }
+
+      void enrichAndPatchComposerImeta(cleaned)
+    },
+    [appendComposerImetaTag, enrichAndPatchComposerImeta, isMusicTrack, musicTrackFormat]
+  )
+
+  const composerImetaSyncEnabled = useMemo(
+    () =>
+      !(
+        isMusicTrack ||
+        isWebBookmark ||
+        isHighlight ||
+        isPoll ||
+        isLongFormArticle ||
+        isWikiArticle ||
+        isNostrSpecification ||
+        isPublicationContent ||
+        isCitationInternal ||
+        isCitationExternal ||
+        isCitationHardcopy ||
+        isCitationPrompt ||
+        (isDiscussionThread && !parentEvent)
+      ),
+    [
+      isMusicTrack,
+      isWebBookmark,
+      isHighlight,
+      isPoll,
+      isLongFormArticle,
+      isWikiArticle,
+      isNostrSpecification,
+      isPublicationContent,
+      isCitationInternal,
+      isCitationExternal,
+      isCitationHardcopy,
+      isCitationPrompt,
+      isDiscussionThread,
+      parentEvent
+    ]
+  )
+
+  useEffect(() => {
+    if (!composerImetaSyncEnabled) return
+
+    const timer = window.setTimeout(() => {
+      if (uploadProgressCountRef.current > 0) return
+      const content = textareaRef.current?.getText() ?? text
+      if (composerContentHasUploadPlaceholder(content)) return
+
+      const prev = composerImetaTagsRef.current
+      const result = reconcileComposerImetaWithContent(content, prev, (url) => {
+        const cleaned = cleanUrl(url) || url
+        return mediaUpload.getImetaTagByUrl(cleaned) ?? buildImetaTagFromMediaUrl(cleaned)
+      })
+
+      if (!composerImetaTagsEqual(prev, result.tags)) {
+        for (const url of result.addedUrls) {
+          const cleaned = cleanUrl(url) || url
+          const tag =
+            result.tags.find((t) => imetaUrlFromTagRow(t) === normalizeComposerMediaUrlKey(cleaned)) ??
+            buildImetaTagFromMediaUrl(cleaned)
+          mediaUpload.registerImetaTag(cleaned, tag)
+        }
+        composerImetaTagsRef.current = result.tags
+        setMediaImetaTags(result.tags)
+        for (const url of result.addedUrls) {
+          enrichAndPatchComposerImeta(url)
+        }
+      }
+
+      const mediaKey = mediaUrlRef.current
+        ? normalizeComposerMediaUrlKey(cleanUrl(mediaUrlRef.current) || mediaUrlRef.current)
+        : ''
+      if (mediaKey) {
+        const stillInContent = result.tags.some((t) => imetaUrlFromTagRow(t) === mediaKey)
+        if (!stillInContent) {
+          setMediaUrl('')
+          setMediaNoteKind(null)
+        }
+      }
+    }, COMPOSER_IMETA_CONTENT_SYNC_DEBOUNCE_MS)
+
+    return () => window.clearTimeout(timer)
+  }, [text, uploadProgresses.length, composerImetaSyncEnabled, enrichAndPatchComposerImeta])
 
   const isFirstRender = useRef(true)
 
@@ -1753,10 +1895,8 @@ export default function PostContent({
         // console.log('Published event:', newEvent)
 
         // Full success - close the composer first so relay toasts / thread merge cannot leave it stuck open
-        postEditorCache.clearPostCache({ kind: getDeterminedKind, defaultContent, parentEvent })
+        discardPublishedDraft()
         if (isDiscussionThread && !parentEvent) {
-          postEditorCache.clearPostCache(discussionThreadDraftKindParams())
-          postEditorCache.clearThreadDraft()
           discussionFeedCache.clearDiscussionsListCache()
         }
         deleteDraftEventCache(draftEvent)
@@ -1848,10 +1988,8 @@ export default function PostContent({
                 }
               }
             }
-            postEditorCache.clearPostCache({ kind: getDeterminedKind, defaultContent, parentEvent })
+            discardPublishedDraft()
             if (isDiscussionThread && !parentEvent) {
-              postEditorCache.clearPostCache(discussionThreadDraftKindParams())
-              postEditorCache.clearThreadDraft()
               discussionFeedCache.clearDiscussionsListCache()
             }
             if (draftEvent) deleteDraftEventCache(draftEvent)
@@ -1988,6 +2126,40 @@ export default function PostContent({
     setMediaNoteUploadPending(false)
   }, [])
 
+  /** Wipe persisted + in-memory draft after a successful publish (before close). */
+  const discardPublishedDraft = useCallback(() => {
+    textareaRef.current?.cancelPendingEditorSync()
+    textareaRef.current?.clear({ skipCache: true })
+    postEditorCache.clearPostCache(
+      { kind: getDeterminedKind, defaultContent, parentEvent },
+      { flush: true }
+    )
+    if (isDiscussionThread && !parentEvent) {
+      postEditorCache.clearPostCache(discussionThreadDraftKindParams(), { flush: true })
+      postEditorCache.clearThreadDraft()
+    }
+    postEditorCache.clearAdvancedLabDraft(advancedLabPersistenceKey)
+    postEditorCache.flushPersist()
+    setText('')
+    setEditorHasContent(false)
+    setMediaNoteKind(null)
+    setMediaUrl('')
+    clearMediaNoteUploadIntent()
+    setMediaImetaTags([])
+    composerImetaTagsRef.current = []
+    uploadedMediaFileMap.current.clear()
+    setUploadProgresses([])
+    setMentions([])
+    setExtractedMentions([])
+  }, [
+    getDeterminedKind,
+    defaultContent,
+    parentEvent,
+    isDiscussionThread,
+    advancedLabPersistenceKey,
+    clearMediaNoteUploadIntent
+  ])
+
   const isMediaNoteComposerMode = mediaNoteKind !== null || mediaNoteUploadPending
 
   const clearNonMediaNoteComposerModes = () => {
@@ -2024,35 +2196,10 @@ export default function PostContent({
     setMediaNoteKind(null)
   }
 
-  const inferKindFromEditorMediaUrl = (url: string): number | null => {
-    if (isBlossomBudBlobUrl(url)) return ExtendedKind.PICTURE
-    const path = url.split(/[?#]/)[0].toLowerCase()
-    if (/\.(jpg|jpeg|png|gif|webp|heic|avif|apng)$/i.test(path)) return ExtendedKind.PICTURE
-    if (/\.(mp3|m4a|mka|ogg|opus|wav|aac|flac)$/i.test(path)) return ExtendedKind.VOICE
-    if (/\.(mp4|webm|mov|mkv|m4v|ogv|avi|mpeg|mpg|3gp|3g2)$/i.test(path)) return ExtendedKind.SHORT_VIDEO
-    return null
-  }
+  const inferKindFromEditorMediaUrl = (url: string): number | null => inferMediaKindFromUrl(url)
 
-  const mimeFromUrlPathForKind = (url: string, kind: number): string => {
-    const path = url.split(/[?#]/)[0].toLowerCase()
-    if (kind === ExtendedKind.PICTURE) {
-      if (path.endsWith('.png')) return 'image/png'
-      if (path.endsWith('.webp')) return 'image/webp'
-      if (path.endsWith('.gif')) return 'image/gif'
-      return 'image/jpeg'
-    }
-    if (kind === ExtendedKind.VOICE) {
-      if (path.endsWith('.mka')) return 'audio/x-matroska'
-      if (path.endsWith('.ogg')) return 'audio/ogg'
-      if (path.endsWith('.webm')) return 'audio/webm'
-      return 'audio/mpeg'
-    }
-    if (path.endsWith('.mkv')) return 'video/x-matroska'
-    if (path.endsWith('.webm')) return 'video/webm'
-    if (path.endsWith('.3gp')) return 'video/3gpp'
-    if (path.endsWith('.3g2')) return 'video/3gpp2'
-    return 'video/mp4'
-  }
+  const mimeFromUrlPathForKind = (url: string, kind: number): string =>
+    mimeFromMediaUrl(url, kind) ?? 'video/mp4'
 
   const textLooksLikeImetaWithUrl = (s: string): boolean =>
     /\bimeta\b[\s\S]{0,400}?\burl\s+https?:\/\//i.test(s)
@@ -3116,6 +3263,7 @@ export default function PostContent({
     uploadedMediaFileMap.current.clear()
     composerImetaTagsRef.current = []
     setUploadProgresses([])
+    postEditorCache.flushPersist()
   }
 
   const handleClearRef = useRef(handleClear)
@@ -4067,6 +4215,7 @@ export default function PostContent({
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
           onActiveTabChange={setComposerEditorTab}
+          onMediaUrlPasted={handlePastedMediaUrl}
           headerActions={(() => {
               const ActiveIcon =
                 isLongFormArticle ? FileText :

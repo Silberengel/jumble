@@ -270,13 +270,21 @@ class PostEditorCacheService {
     this.schedulePersist()
   }
 
-  clearPostCache({ kind, defaultContent, parentEvent }: TCacheKeyParams) {
+  clearPostCache({ kind, defaultContent, parentEvent }: TCacheKeyParams, options?: { flush?: boolean }) {
     const cacheKey = this.generateCacheKey({ kind, defaultContent, parentEvent })
     this.keysRestoredThisSession.delete(cacheKey)
     this.postContentCache.delete(cacheKey)
     this.postSettingsCache.delete(cacheKey)
     this.advancedLabDrafts.delete(cacheKey)
-    this.schedulePersist()
+    if (options?.flush) {
+      if (this.persistTimeoutId) {
+        clearTimeout(this.persistTimeoutId)
+        this.persistTimeoutId = null
+      }
+      this.persistNow()
+    } else {
+      this.schedulePersist()
+    }
   }
 
   /** Clear all post and settings drafts. Use when user explicitly clears caches. */

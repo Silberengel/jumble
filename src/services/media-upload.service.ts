@@ -9,7 +9,7 @@ import {
   mergeNip94Pairs,
   nip94PairsToImetaTag
 } from '@/lib/upload-nip94-imeta'
-import { simplifyUrl } from '@/lib/url'
+import { cleanUrl, simplifyUrl } from '@/lib/url'
 import { TDraftEvent, TMediaUploadServiceConfig } from '@/types'
 import { BlossomClient } from 'blossom-client-sdk'
 import { z } from 'zod'
@@ -312,6 +312,15 @@ class MediaUploadService {
 
   getImetaTagByUrl(url: string) {
     return this.imetaTagMap.get(url)
+  }
+
+  /** Cache imeta for pasted/external URLs (also registers normalized URL aliases). */
+  registerImetaTag(url: string, tag: string[]) {
+    this.imetaTagMap.set(url, tag)
+    const cleaned = cleanUrl(url)
+    if (cleaned && cleaned !== url) this.imetaTagMap.set(cleaned, tag)
+    const simplified = simplifyUrl(url)
+    if (simplified !== url && simplified !== cleaned) this.imetaTagMap.set(simplified, tag)
   }
 }
 

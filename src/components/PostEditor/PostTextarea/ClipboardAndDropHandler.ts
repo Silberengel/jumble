@@ -1,4 +1,5 @@
 import { fileLooksLikeUploadableMedia } from '@/lib/compress-upload-media'
+import { extractPastedMediaUrl } from '@/lib/composer-media-url-imeta'
 import mediaUpload from '@/services/media-upload.service'
 import { Extension } from '@tiptap/core'
 import { EditorView } from '@tiptap/pm/view'
@@ -23,11 +24,29 @@ export interface ClipboardAndDropHandlerOptions {
     /** True when the URL was already written into the ProseMirror doc (replace placeholder). */
     urlAlreadyInEditor?: boolean
   }) => void
+  /** Pasted external media URL (no upload); parent should register imeta. */
+  onMediaUrlPasted?: (url: string) => void
   onUploadEnd?: (file: File) => void
   onUploadProgress?: (file: File, progress: number) => void
   /** Same as `Uploader.onUploadCompressPhase` — keeps the post editor progress row in sync during local compression. */
   onUploadCompressPhase?: (file: File, phase: 'compressing' | 'uploading') => void
   onUploadCompressProgress?: (file: File, percent: number) => void
+}
+
+function insertTextAtSelection(view: EditorView, text: string) {
+  const { schema } = view.state
+  const parts = text.split('\n')
+  const nodes = []
+  for (let i = 0; i < parts.length; i++) {
+    if (i > 0) nodes.push(schema.nodes.hardBreak.create())
+    if (parts[i]) nodes.push(schema.text(parts[i]))
+  }
+  if (nodes.length === 0) return
+  let tr = view.state.tr.replaceSelectionWith(nodes[0])
+  for (let i = 1; i < nodes.length; i++) {
+    tr = tr.insert(tr.selection.from, nodes[i])
+  }
+  view.dispatch(tr)
 }
 
 export const ClipboardAndDropHandler = Extension.create<ClipboardAndDropHandlerOptions>({
@@ -40,6 +59,7 @@ export const ClipboardAndDropHandler = Extension.create<ClipboardAndDropHandlerO
       onUploadError: undefined,
       onUploadEnd: undefined,
       onUploadProgress: undefined,
+      onMediaUrlPasted: undefined,
       onProvideCancel: undefined
     }
   },
@@ -79,40 +99,39 @@ export const ClipboardAndDropHandler = Extension.create<ClipboardAndDropHandlerO
             return true
           },
           handlePaste(view, event) {
-            const items = Array.from(event.clipboardData?.items ?? [])
-            let handled = false
+            const clipboard = event.clipboardData
+            if (!clipboard) return false
 
-            for (const item of items) {
-              if (item.kind === 'file') {
-                const file = item.getAsFile()
-                if (file && fileLooksLikeUploadableMedia(file)) {
-                  uploadFiles(view, [file], options)
-                  handled = true
-                }
-              } else if (item.kind === 'string' && item.type === 'text/plain') {
-                item.getAsString((text) => {
-                  const { schema } = view.state
-                  const parts = text.split('\n')
-                  const nodes = []
-                  for (let i = 0; i < parts.length; i++) {
-                    if (i > 0) nodes.push(schema.nodes.hardBreak.create())
-                    if (parts[i]) nodes.push(schema.text(parts[i]))
-                  }
-                  if (nodes.length > 0) {
-                    const tr = view.state.tr.replaceSelectionWith(nodes[0])
-                    for (let i = 1; i < nodes.length; i++) {
-                      tr.insert(tr.selection.from, nodes[i])
-                    }
-                    view.dispatch(tr)
-                  }
-                })
-                handled = true
-              }
-
-              // Only handle the first file/string item
-              if (handled) break
+            const fileList = Array.from(clipboard.files ?? [])
+            const mediaFromFiles = fileList.filter((f) => fileLooksLikeUploadableMedia(f))
+            if (mediaFromFiles.length > 0) {
+              event.preventDefault()
+              uploadFiles(view, mediaFromFiles, options)
+              return true
             }
-            return handled
+
+            for (const item of Array.from(clipboard.items)) {
+              if (item.kind !== 'file') continue
+              const file = item.getAsFile()
+              if (file && fileLooksLikeUploadableMedia(file)) {
+                event.preventDefault()
+                uploadFiles(view, [file], options)
+                return true
+              }
+            }
+
+            const plain = clipboard.getData('text/plain')
+            if (plain) {
+              const mediaUrl = extractPastedMediaUrl(plain)
+              if (mediaUrl) {
+                event.preventDefault()
+                insertTextAtSelection(view, mediaUrl)
+                options.onMediaUrlPasted?.(mediaUrl)
+                return true
+              }
+            }
+
+            return false
           }
         }
       })
@@ -133,7 +152,7 @@ async function uploadFiles(
   })
 
   for (const file of files) {
-    const name = file.name
+    const name = file.name || file.type || 'clipboard'
 
     const placeholder = `[Uploading "${name}"...]`
     const uploadingNode = view.state.schema.text(placeholder)
