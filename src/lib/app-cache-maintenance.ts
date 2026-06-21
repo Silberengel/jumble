@@ -89,8 +89,7 @@ export async function refreshAppBrowserCache(options?: RefreshAppBrowserCacheOpt
     await options.requestAccountNetworkHydrate()
     await promiseWithTimeout(
       client.refreshAuthorPublishedReplaceablesOnProfileView(pubkey, { force: true }),
-      20_000,
-      'refreshAuthorPublishedReplaceablesOnProfileView'
+      20_000
     ).catch((error) => {
       logger.debug('[app-cache] Author replaceables refresh after cache refresh timed out or failed', {
         error: error instanceof Error ? error.message : String(error)

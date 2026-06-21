@@ -50,7 +50,7 @@ export function buildHomeRelaySetFeedRelayUrls(
 
 /** {@link DEFAULT_FAVORITE_RELAYS} for the home feed (aggr stripped; not gated on FAST_READ policy). */
 export function buildHomeDefaultFavoriteRelayUrls(blockedRelays: readonly string[]): string[] {
-  return stripNostrLandAggrFromRelayUrls(getFavoritesFeedRelayUrls([], blockedRelays, true))
+  return stripNostrLandAggrFromRelayUrls(getFavoritesFeedRelayUrls([], [...blockedRelays], true))
 }
 
 /** True when the stack has no real favorite/inbox relays (wisp trending alone does not count). */

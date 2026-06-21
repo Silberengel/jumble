@@ -722,7 +722,7 @@ class ClientService extends EventTarget {
     void this.fetchFavoriteRelays(pk)
       .then((favoriteUrls) => {
         if (favoriteUrls.length === 0) return
-        const merged = [...urls, ...favoriteUrls]
+        const merged = [...storageUrls.all, ...favoriteUrls]
         setViewerPersonalRelayKeys(buildPersonalRelayKeySet(merged), { viewerActive: true })
         syncViewerRelayStackNostrLandAggrEligible(merged)
         this.closeMetadataPolicyDisallowedRelayConnections()
