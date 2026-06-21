@@ -1,20 +1,13 @@
 import ClientTag from '@/components/ClientTag'
 import { Card } from '@/components/ui/card'
-import { ExtendedKind, POLL_TYPE } from '@/constants'
+import { ExtendedKind } from '@/constants'
 import {
-  buildClientTag,
-  stripImwaldAttributionTags,
-  transformCustomEmojisInContent
-} from '@/lib/draft-event'
-import { normalizeTopic } from '@/lib/discussion-topics'
-import { createFakeEvent } from '@/lib/event'
-import { randomString } from '@/lib/random'
-import { cleanUrl, rewritePlainTextHttpUrls } from '@/lib/url'
+  buildComposerPreviewEvent,
+  composerPreviewHasBody,
+  type ComposerPreviewInput
+} from '@/lib/build-composer-preview'
 import { cn } from '@/lib/utils'
-import { mergeContentWarningTagsFromDraftOptions, type TContentWarningDraftOptions } from '@/lib/content-warning'
-import { TPollCreateData } from '@/types'
-import { kinds, nip19 } from 'nostr-tools'
-import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
+import { kinds } from 'nostr-tools'
 import { useMemo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import ContentPreview from '../../ContentPreview'
@@ -23,270 +16,59 @@ import Highlight from '../../Note/Highlight'
 import MusicTrackNote from '../../Note/MusicTrackNote'
 import MarkdownArticle from '../../Note/LazyMarkdownArticle'
 import AsciidocArticle from '../../Note/LazyAsciidocArticle'
-import { HighlightData } from '../HighlightEditor'
-import type { WebBookmarkDraftData } from '../WebBookmarkEditor'
-import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
-import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 
-export default function Preview({ 
-  content, 
-  className,
-  kind = 1,
-  highlightData,
-  webBookmarkData,
-  pollCreateData,
-  mediaImetaTags,
-  mediaUrl,
-  articleMetadata,
-  musicTrackMetadata,
-  extraPreviewTags,
-  addClientTag = true,
-  contentWarning
-}: { 
-  content: string
-  className?: string
-  kind?: number
-  highlightData?: HighlightData
-  webBookmarkData?: WebBookmarkDraftData
-  pollCreateData?: TPollCreateData
-  mediaImetaTags?: string[][]
-  mediaUrl?: string
-  articleMetadata?: {
-    title?: string
-    summary?: string
-    image?: string
-    dTag?: string
-    topics?: string[]
-    /** Kind 30817: each number becomes a `k` tag. */
-    affectedKinds?: number[]
-  }
-  musicTrackMetadata?: {
-    dTag?: string
-    title?: string
-    audioUrl?: string
-    artist?: string
-    imageUrl?: string
-    album?: string
-    durationSec?: number
-    format?: string
-    language?: string
-    genres?: string[]
-  }
-  /** Merged into the fake event (e.g. kind 11 discussion title / topic tags). */
-  extraPreviewTags?: string[][]
-  /** When true (default), preview matches publish: Imwald `client` + attribution `alt` tags and badge. */
-  addClientTag?: boolean
-  /** Composer Advanced panel content-warning settings. */
-  contentWarning?: TContentWarningDraftOptions
-}) {
-  const { t } = useTranslation()
-  const { content: processedContent, emojiTags, highlightTags, pollTags } = useMemo(
-    () => {
-      // Clean tracking parameters from URLs in the preview
-      const cleanedContent = rewritePlainTextHttpUrls(content)
-      const { content: processed, emojiTags: tags } = transformCustomEmojisInContent(cleanedContent)
-      const customShortcodes = tags.map((t) => t[1]).filter(Boolean)
-      const withNativeEmojis = replaceStandardEmojiShortcodesInContent(processed, customShortcodes)
-      
-      // Build highlight tags if this is a highlight
-      let highlightTags: string[][] = []
-      if (kind === kinds.Highlights && highlightData) {
-        // Add source tag
-        if (highlightData.sourceType === 'url') {
-          try {
-            highlightTags.push([
-              'r',
-              cleanUrl(highlightData.sourceValue) || highlightData.sourceValue,
-              'source'
-            ])
-          } catch {
-            highlightTags.push(['r', highlightData.sourceValue, 'source'])
-          }
-        } else if (highlightData.sourceType === 'nostr') {
-          // For preview, we'll use a simple e-tag with the source value
-          // The actual tag building happens in createHighlightDraftEvent
-          if (highlightData.sourceHexId) {
-            highlightTags.push(['e', highlightData.sourceHexId])
-          } else if (highlightData.sourceValue) {
-            // Try to extract hex ID from bech32 if possible
-            try {
-              const decoded = nip19.decode(highlightData.sourceValue)
-              if (decoded.type === 'note' || decoded.type === 'nevent') {
-                const hexId = decoded.type === 'note' ? decoded.data : decoded.data.id
-                highlightTags.push(['e', hexId])
-              } else if (decoded.type === 'naddr') {
-                const { kind, pubkey, identifier } = decoded.data
-                highlightTags.push(['a', `${kind}:${pubkey}:${identifier}`])
-              }
-            } catch {
-              // If decoding fails, just use the source value as-is for preview
-              highlightTags.push(['r', highlightData.sourceValue])
-            }
-          }
-        }
-        
-        // Add context tag if provided
-        if (highlightData.context) {
-          highlightTags.push(['context', highlightData.context])
-        }
-      }
-      
-      // Build poll tags if this is a poll
-      let pollTags: string[][] = []
-      if (kind === ExtendedKind.POLL && pollCreateData) {
-        const validOptions = pollCreateData.options.filter((opt) => opt.trim())
-        pollTags.push(...validOptions.map((option) => ['option', randomString(9), option.trim()]))
-        pollTags.push(['polltype', pollCreateData.isMultipleChoice ? POLL_TYPE.MULTIPLE_CHOICE : POLL_TYPE.SINGLE_CHOICE])
-        if (pollCreateData.endsAt) {
-          pollTags.push(['endsAt', pollCreateData.endsAt.toString()])
-        }
-        if (pollCreateData.relays.length > 0) {
-          pollCreateData.relays.forEach((relay) => {
-            pollTags.push(['relay', relay])
-          })
-        }
-      }
-      
-      return {
-        content: withNativeEmojis,
-        emojiTags: tags,
-        highlightTags,
-        pollTags
-      }
-    },
-    [content, kind, highlightData, pollCreateData]
-  )
-  
-  // Combine emoji tags, highlight tags, poll tags, media imeta tags, and article metadata tags
-  const allTags = useMemo(() => {
-    const tags = [...emojiTags, ...highlightTags, ...pollTags]
-    // Add imeta tags for media (voice comments, etc.)
-    if (mediaImetaTags && mediaImetaTags.length > 0) {
-      tags.push(...mediaImetaTags)
-    }
-    // Add article metadata tags for article kinds
-    if (articleMetadata && (kind === kinds.LongFormArticle || kind === ExtendedKind.WIKI_ARTICLE || kind === ExtendedKind.NOSTR_SPECIFICATION || kind === ExtendedKind.PUBLICATION_CONTENT)) {
-      if (articleMetadata.dTag) {
-        tags.push(['d', articleMetadata.dTag])
-      }
-      if (articleMetadata.title) {
-        tags.push(['title', articleMetadata.title])
-      }
-      if (articleMetadata.summary) {
-        tags.push(['summary', articleMetadata.summary])
-      }
-      if (kind !== ExtendedKind.NOSTR_SPECIFICATION && articleMetadata.image) {
-        tags.push(['image', articleMetadata.image])
-      }
-      if (
-        kind === ExtendedKind.NOSTR_SPECIFICATION &&
-        articleMetadata.affectedKinds?.length
-      ) {
-        for (const k of articleMetadata.affectedKinds) {
-          tags.push(['k', String(k)])
-        }
-      }
-      if (articleMetadata.topics && articleMetadata.topics.length > 0) {
-        const normalizedTopics = articleMetadata.topics
-          .map(topic => normalizeTopic(topic.trim()))
-          .filter(topic => topic.length > 0)
-        tags.push(...normalizedTopics.map((topic) => ['t', topic]))
-      }
-    }
-    if (musicTrackMetadata && kind === ExtendedKind.MUSIC_TRACK) {
-      if (musicTrackMetadata.dTag) {
-        tags.push(['d', musicTrackMetadata.dTag])
-      }
-      if (musicTrackMetadata.title) {
-        tags.push(['title', musicTrackMetadata.title])
-      }
-      if (musicTrackMetadata.audioUrl) {
-        tags.push(['url', musicTrackMetadata.audioUrl])
-      }
-      tags.push(['t', 'music'])
-      if (musicTrackMetadata.artist) {
-        tags.push(['artist', musicTrackMetadata.artist])
-      }
-      if (musicTrackMetadata.imageUrl) {
-        tags.push(['image', musicTrackMetadata.imageUrl])
-      }
-      if (musicTrackMetadata.album) {
-        tags.push(['album', musicTrackMetadata.album])
-      }
-      if (musicTrackMetadata.durationSec) {
-        tags.push(['duration', String(musicTrackMetadata.durationSec)])
-      }
-      if (musicTrackMetadata.format) {
-        tags.push(['format', musicTrackMetadata.format])
-      }
-      if (musicTrackMetadata.language) {
-        tags.push(['language', musicTrackMetadata.language])
-      }
-      if (musicTrackMetadata.genres?.length) {
-        for (const g of musicTrackMetadata.genres) {
-          const topic = normalizeTopic(g.trim())
-          if (topic && topic !== 'music') {
-            tags.push(['t', topic])
-          }
-        }
-      }
-    }
-    if (webBookmarkData?.url && kind === ExtendedKind.WEB_BOOKMARK) {
-      const canonical = canonicalizeRssArticleUrl(webBookmarkData.url)
-      const d = urlToWebBookmarkDTag(canonical)
-      if (d) tags.push(['d', d])
-      if (webBookmarkData.title) tags.push(['title', webBookmarkData.title])
-    }
-    if (extraPreviewTags?.length) {
-      tags.push(...extraPreviewTags)
-    }
-    if (contentWarning) {
-      mergeContentWarningTagsFromDraftOptions(tags, contentWarning)
-    }
-    const stripped = stripImwaldAttributionTags(tags)
-    if (addClientTag) {
-      stripped.push(buildClientTag())
-    }
-    return stripped
-  }, [emojiTags, highlightTags, pollTags, mediaImetaTags, articleMetadata, musicTrackMetadata, webBookmarkData, kind, extraPreviewTags, addClientTag, contentWarning])
-  
-  const fakeEvent = useMemo(() => {
-    // For voice comments, include the media URL in content if not already there
-    let eventContent = processedContent
-    if ((kind === ExtendedKind.VOICE_COMMENT || kind === ExtendedKind.VOICE) && mediaUrl && !processedContent.includes(mediaUrl)) {
-      eventContent = mediaUrl + (processedContent ? '\n\n' + processedContent : '')
-    }
-    
-    return createFakeEvent({ 
-      content: eventContent, 
-      tags: allTags,
-      kind 
-    })
-  }, [processedContent, allTags, kind, mediaUrl])
-
-  const hasPreviewBody = useMemo(() => {
-    if (processedContent.trim()) return true
-    if (mediaUrl?.trim()) return true
-    if (articleMetadata?.title?.trim()) return true
-    if (articleMetadata?.summary?.trim()) return true
-    if (musicTrackMetadata?.title?.trim()) return true
-    if (musicTrackMetadata?.audioUrl?.trim()) return true
-    if (kind === ExtendedKind.POLL && pollCreateData?.options.some((o) => o.trim())) return true
-    if (kind === kinds.Highlights && highlightData?.sourceValue?.trim()) return true
-    if (kind === ExtendedKind.WEB_BOOKMARK && webBookmarkData?.url?.trim()) return true
-    if ((mediaImetaTags?.length ?? 0) > 0) return true
-    return false
-  }, [
-    processedContent,
+export default function Preview(props: ComposerPreviewInput & { className?: string }) {
+  const {
+    className,
+    content,
+    kind = 1,
+    highlightData,
+    webBookmarkData,
+    pollCreateData,
+    mediaImetaTags,
     mediaUrl,
     articleMetadata,
     musicTrackMetadata,
-    kind,
-    pollCreateData,
-    highlightData,
-    webBookmarkData,
-    mediaImetaTags
-  ])
+    extraPreviewTags,
+    addClientTag = true,
+    contentWarning
+  } = props
+  const { t } = useTranslation()
+
+  const previewInput = useMemo(
+    (): ComposerPreviewInput => ({
+      content,
+      kind,
+      highlightData,
+      webBookmarkData,
+      pollCreateData,
+      mediaImetaTags,
+      mediaUrl,
+      articleMetadata,
+      musicTrackMetadata,
+      extraPreviewTags,
+      addClientTag,
+      contentWarning
+    }),
+    [
+      content,
+      kind,
+      highlightData,
+      webBookmarkData,
+      pollCreateData,
+      mediaImetaTags,
+      mediaUrl,
+      articleMetadata,
+      musicTrackMetadata,
+      extraPreviewTags,
+      addClientTag,
+      contentWarning
+    ]
+  )
+
+  const fakeEvent = useMemo(() => buildComposerPreviewEvent(previewInput), [previewInput])
+
+  const hasPreviewBody = useMemo(() => composerPreviewHasBody(previewInput), [previewInput])
 
   const selectableClass = 'select-text'
   const withClientBadge = (node: ReactNode) =>
@@ -309,7 +91,6 @@ export default function Preview({
     )
   }
 
-  // For polls, use ContentPreview to show poll properly
   if (kind === ExtendedKind.POLL) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
@@ -317,8 +98,7 @@ export default function Preview({
       </Card>
     )
   }
-  
-  // For highlights, use the Highlight component for proper formatting
+
   if (kind === kinds.Highlights) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
@@ -335,8 +115,6 @@ export default function Preview({
     )
   }
 
-  // For kind 1 notes, use MarkdownArticle to match actual rendering
-  // This ensures preview matches the final result (no Links section, correct image placement, proper line breaks)
   if (
     kind === kinds.ShortTextNote ||
     kind === ExtendedKind.SHORT_NOTE_EDIT ||
@@ -358,7 +136,6 @@ export default function Preview({
     )
   }
 
-  // For LongFormArticle, use MarkdownArticle
   if (kind === kinds.LongFormArticle) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
@@ -367,7 +144,6 @@ export default function Preview({
     )
   }
 
-  // For WikiArticle (AsciiDoc), use AsciidocArticle
   if (kind === ExtendedKind.WIKI_ARTICLE) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
@@ -376,7 +152,6 @@ export default function Preview({
     )
   }
 
-  // Nostr Specification (30817) uses MarkdownArticle
   if (kind === ExtendedKind.NOSTR_SPECIFICATION) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>
@@ -385,7 +160,6 @@ export default function Preview({
     )
   }
 
-  // For PublicationContent, use AsciidocArticle
   if (kind === ExtendedKind.PUBLICATION_CONTENT) {
     return withClientBadge(
       <Card className={cn('p-3', className, selectableClass)}>

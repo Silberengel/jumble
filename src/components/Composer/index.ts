@@ -18,3 +18,8 @@ export {
 export type { ComposerContentProps } from './ComposerModes'
 export { getComposerModeFlags } from './composer-mode-flags'
 export type { ComposerMode, ComposerModeFlags } from './composer-mode-flags'
+export {
+  ComposerKindFieldsShell,
+  ComposerKindField
+} from './ComposerKindFieldsShell'
+export type { ComposerKindFieldsShellProps, ComposerKindFieldProps } from './ComposerKindFieldsShell'

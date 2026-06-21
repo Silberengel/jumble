@@ -1,4 +1,3 @@
-import { ExtendedKind } from '@/constants'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { parseEditorJsonToText, plainTextToTipTapDoc } from '@/lib/tiptap'
 import { cn } from '@/lib/utils'
@@ -15,8 +14,7 @@ import Placeholder from '@tiptap/extension-placeholder'
 import Text from '@tiptap/extension-text'
 import { TextSelection } from '@tiptap/pm/state'
 import { Editor, EditorContent, useEditor } from '@tiptap/react'
-import { Event, kinds } from 'nostr-tools'
-import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
+import { Event } from 'nostr-tools'
 import {
   Dispatch,
   forwardRef,
@@ -35,6 +33,7 @@ import emojiSuggestion from './Emoji/suggestion'
 import Mention from './Mention'
 import mentionSuggestion from './Mention/suggestion'
 import Preview from './Preview'
+import ComposerJsonPreview from './ComposerJsonPreview'
 import { HighlightData } from '../HighlightEditor'
 import type { WebBookmarkDraftData } from '../WebBookmarkEditor'
 import { getKindDescription } from '@/lib/kind-description'
@@ -42,6 +41,8 @@ import type { TContentWarningDraftOptions } from '@/lib/content-warning'
 
 /** Debounce lifting plain text + draft cache to PostContent (avoids re-rendering the full composer each keystroke). */
 const EDITOR_PARENT_SYNC_DEBOUNCE_MS = 250
+
+export type ComposerEditorTab = 'edit' | 'preview' | 'json'
 
 export type TPostTextareaHandle = {
   appendText: (text: string, addNewline?: boolean) => void
@@ -111,6 +112,8 @@ const PostTextarea = forwardRef<
     previewKind?: number
     /** When false (mobile page composer), editor uses a fixed height instead of flex-grow. */
     fillAvailableHeight?: boolean
+    /** Notifies parent when Edit / Preview / JSON tab changes (to hide kind-specific inputs). */
+    onActiveTabChange?: (tab: ComposerEditorTab) => void
   }
 >(
   (
@@ -141,12 +144,12 @@ const PostTextarea = forwardRef<
       addClientTag = true,
       contentWarning,
       previewKind,
-      fillAvailableHeight = true
+      fillAvailableHeight = true,
+      onActiveTabChange
     },
     ref
   ) => {
     const { t } = useTranslation()
-    const isSmallScreen = useScreenSizeOptional()?.isSmallScreen ?? false
     const onUploadSuccessRef = useRef(onUploadSuccess)
     onUploadSuccessRef.current = onUploadSuccess
     const onUploadCompressPhaseRef = useRef(onUploadCompressPhase)
@@ -161,9 +164,15 @@ const PostTextarea = forwardRef<
     onUploadProgressRef.current = onUploadProgress
     const onSubmitRef = useRef(onSubmit)
     onSubmitRef.current = onSubmit
-    const [activeTab, setActiveTab] = useState('edit')
+    const [activeTab, setActiveTab] = useState<ComposerEditorTab>('edit')
     const activeTabRef = useRef(activeTab)
     activeTabRef.current = activeTab
+    const onActiveTabChangeRef = useRef(onActiveTabChange)
+    onActiveTabChangeRef.current = onActiveTabChange
+
+    useEffect(() => {
+      onActiveTabChangeRef.current?.(activeTab)
+    }, [activeTab])
     const [previewContent, setPreviewContent] = useState('')
     const editorRef = useRef<Editor | null>(null)
     const editorNonemptyRef = useRef(false)
@@ -228,31 +237,17 @@ const PostTextarea = forwardRef<
 
     const composerPaneHeightClass = useMemo(
       () => {
-        if (kind === ExtendedKind.POLL) {
-          return fillAvailableHeight
-            ? isSmallScreen
-              ? 'flex-1 min-h-0 max-h-40'
-              : 'h-32'
-            : 'min-h-0 max-h-40 shrink-0'
-        }
-        if (kind === kinds.Highlights) {
-          return isSmallScreen
-            ? 'min-h-[4.5rem] max-h-[min(22dvh,9rem)] shrink-0'
-            : 'h-32 max-h-36 shrink-0'
-        }
         if (!fillAvailableHeight) {
           return 'flex-1 min-h-0'
         }
         return 'flex-1 min-h-[14rem]'
       },
-      [fillAvailableHeight, isSmallScreen, kind]
+      [fillAvailableHeight]
     )
 
-    const composerFillsShell =
-      fillAvailableHeight && kind !== ExtendedKind.POLL && kind !== kinds.Highlights
+    const composerFillsShell = fillAvailableHeight
 
-    const composerUsesPageShell =
-      !fillAvailableHeight && kind !== ExtendedKind.POLL && kind !== kinds.Highlights
+    const composerUsesPageShell = !fillAvailableHeight
 
     const composerBodyScrollClass = cn(
       composerPaneHeightClass,
@@ -334,7 +329,7 @@ const PostTextarea = forwardRef<
       onUpdate(props) {
         editorRef.current = props.editor
         notifyEditorNonemptyRef.current(props.editor)
-        if (activeTabRef.current === 'preview') {
+        if (activeTabRef.current === 'preview' || activeTabRef.current === 'json') {
           const live = parseEditorJsonToText(props.editor.getJSON())
           setPreviewContent(live)
           flushEditorSyncToParentRef.current()
@@ -460,10 +455,11 @@ const PostTextarea = forwardRef<
       <Tabs
         value={activeTab}
         onValueChange={(tab) => {
-          if (tab === 'preview') {
+          const next = tab as ComposerEditorTab
+          if (next === 'preview' || next === 'json') {
             syncPreviewFromEditor()
           }
-          setActiveTab(tab)
+          setActiveTab(next)
         }}
         className={cn(
           'flex flex-col gap-2 overflow-hidden',
@@ -479,8 +475,15 @@ const PostTextarea = forwardRef<
             <TabsTrigger value="preview" className="h-7 px-2.5 text-xs sm:text-sm" title={t('Preview')}>
               {t('Preview')}
             </TabsTrigger>
+            <TabsTrigger
+              value="json"
+              className="h-7 px-2.5 text-xs sm:text-sm"
+              title={t('Advanced lab json preview')}
+            >
+              {t('Advanced lab json preview')}
+            </TabsTrigger>
           </TabsList>
-          {headerActions ? (
+          {headerActions && activeTab === 'edit' ? (
             <div className="ml-auto flex min-w-0 flex-nowrap items-center justify-end gap-1 overflow-x-auto overscroll-x-contain">
               {headerActions}
             </div>
@@ -532,6 +535,28 @@ const PostTextarea = forwardRef<
               />
             </div>
           </div>
+        </TabsContent>
+        <TabsContent
+          value="json"
+          forceMount
+          className={cn(
+            'mt-0 flex flex-1 flex-col min-h-0 overflow-hidden data-[state=inactive]:hidden focus-visible:ring-0 focus-visible:ring-offset-0'
+          )}
+        >
+          <ComposerJsonPreview
+            content={previewContent}
+            kind={effectivePreviewKind}
+            highlightData={highlightData}
+            webBookmarkData={webBookmarkData}
+            pollCreateData={pollCreateData}
+            mediaImetaTags={mediaImetaTags}
+            mediaUrl={mediaUrl}
+            articleMetadata={articleMetadata}
+            musicTrackMetadata={musicTrackMetadata}
+            extraPreviewTags={extraPreviewTags}
+            addClientTag={addClientTag}
+            contentWarning={contentWarning}
+          />
         </TabsContent>
       </Tabs>
     )

@@ -2,11 +2,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { ComposerKindField, ComposerKindFieldsShell } from '@/components/Composer'
 import { TPollCreateData } from '@/types'
 import dayjs from 'dayjs'
 import { Eraser, X } from 'lucide-react'
 import { Dispatch, SetStateAction, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+
 export default function PollEditor({
   pollCreateData,
   setPollCreateData,
@@ -48,7 +50,7 @@ export default function PollEditor({
   }
 
   return (
-    <div className="space-y-4 border rounded-lg p-3">
+    <ComposerKindFieldsShell contentClassName="space-y-4">
       <div className="space-y-2">
         {options.map((option, index) => (
           <div key={index} className="flex gap-2">
@@ -83,8 +85,7 @@ export default function PollEditor({
         />
       </div>
 
-      <div className="grid gap-2">
-        <Label htmlFor="ends-at">{t('End Date (optional)')}</Label>
+      <ComposerKindField label={<Label htmlFor="ends-at">{t('End Date (optional)')}</Label>}>
         <div className="flex items-center gap-2">
           <Input
             id="ends-at"
@@ -103,8 +104,7 @@ export default function PollEditor({
             <Eraser />
           </Button>
         </div>
-      </div>
-
-    </div>
+      </ComposerKindField>
+    </ComposerKindFieldsShell>
   )
 }

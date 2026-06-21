@@ -119,7 +119,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { extractMentions } from './Mentions'
 import PollEditor from './PollEditor'
 import PostEditorAdvancedPanel from './PostEditorAdvancedPanel'
-import PostTextarea, { TPostTextareaHandle } from './PostTextarea'
+import PostTextarea, { type ComposerEditorTab, TPostTextareaHandle } from './PostTextarea'
 import {
   newNostrSpecAffectedKindRow,
   parseNostrSpecAffectedKinds,
@@ -142,6 +142,7 @@ import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 import { imageUrlLooksLikeHttpImage } from '@/lib/composer-markup-insert'
 import { useComposerController } from '@/hooks/useComposerController'
 import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
+import { ComposerKindFieldsShell } from '@/components/Composer'
 import { getComposerModeFlags } from '@/components/Composer/composer-mode-flags'
 import { useRegisterComposerAdvancedPanel } from '@/contexts/composer-session-context'
 
@@ -181,19 +182,62 @@ function fileLooksLikeMicAudioUpload(file: File): boolean {
   )
 }
 
-/** On mobile, title + kind-specific fields scroll in a capped header; the editor keeps the rest. */
+/** Title + kind-specific metadata scroll in a capped header so the editor keeps remaining space. */
 function ComposerHeaderScroll({
   enabled,
+  size = 'default',
   children
 }: {
   enabled: boolean
+  /** Tall forms (music track, citations, articles) need a bit more header room on desktop. */
+  size?: 'default' | 'tall'
   children: React.ReactNode
 }) {
   if (!enabled) return <>{children}</>
   return (
-    <div className="flex max-h-[min(36dvh,16rem)] min-h-0 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain">
+    <div
+      className={cn(
+        'flex min-h-0 shrink-0 flex-col gap-2 overflow-y-auto overscroll-y-contain popover-scroll-y',
+        size === 'tall' ? 'max-h-[min(42dvh,20rem)]' : 'max-h-[min(36dvh,16rem)]'
+      )}
+    >
       {children}
     </div>
+  )
+}
+
+function hasExtendedComposerHeaderFields(flags: {
+  isDiscussionThread: boolean
+  parentEvent?: Event
+  isMusicTrack: boolean
+  isLongFormArticle: boolean
+  isWikiArticle: boolean
+  isNostrSpecification: boolean
+  isPublicationContent: boolean
+  isCitationInternal: boolean
+  isCitationExternal: boolean
+  isCitationHardcopy: boolean
+  isCitationPrompt: boolean
+  isHighlight: boolean
+  isWebBookmark: boolean
+  isPoll: boolean
+  isPublicMessage: boolean
+}): boolean {
+  if (flags.isDiscussionThread && !flags.parentEvent) return true
+  return (
+    flags.isMusicTrack ||
+    flags.isLongFormArticle ||
+    flags.isWikiArticle ||
+    flags.isNostrSpecification ||
+    flags.isPublicationContent ||
+    flags.isCitationInternal ||
+    flags.isCitationExternal ||
+    flags.isCitationHardcopy ||
+    flags.isCitationPrompt ||
+    flags.isHighlight ||
+    flags.isWebBookmark ||
+    flags.isPoll ||
+    flags.isPublicMessage
   )
 }
 
@@ -325,6 +369,8 @@ export default function PostContent({
   }, [])
   useActivityTraceRender('PostContent', { textLen: text.length, editorHasContent })
   const textareaRef = useRef<TPostTextareaHandle>(null)
+  const [composerEditorTab, setComposerEditorTab] = useState<ComposerEditorTab>('edit')
+  const isComposerEditTab = composerEditorTab === 'edit'
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)
   const [uploadProgresses, setUploadProgresses] = useState<
@@ -830,6 +876,43 @@ export default function PostContent({
       hasParentEvent: !!parentEvent
     })
 
+  const extendedComposerHeader = hasExtendedComposerHeaderFields({
+    isDiscussionThread,
+    parentEvent,
+    isMusicTrack,
+    isLongFormArticle,
+    isWikiArticle,
+    isNostrSpecification,
+    isPublicationContent,
+    isCitationInternal,
+    isCitationExternal,
+    isCitationHardcopy,
+    isCitationPrompt,
+    isHighlight,
+    isWebBookmark,
+    isPoll,
+    isPublicMessage
+  })
+
+  const composerHeaderScrollEnabled =
+    !isPageLayout && (isSmallScreen || extendedComposerHeader)
+
+  const composerHeaderScrollSize: 'default' | 'tall' =
+    isMusicTrack ||
+    isLongFormArticle ||
+    isWikiArticle ||
+    isNostrSpecification ||
+    isPublicationContent ||
+    isCitationInternal ||
+    isCitationExternal ||
+    isCitationHardcopy ||
+    isCitationPrompt ||
+    isDiscussionThread ||
+    isHighlight ||
+    isPoll
+      ? 'tall'
+      : 'default'
+
   const publishLabelForShell = useMemo(() => {
     if (parentEvent) return t('Reply')
     if (isPublicMessage) return t('Send Public Message')
@@ -950,6 +1033,10 @@ export default function PostContent({
       textareaRef.current?.syncFromPostCache()
     }
   }, [open, pubkey])
+
+  useEffect(() => {
+    if (!open) setComposerEditorTab('edit')
+  }, [open])
 
   const rssReplyExtraPreviewTags = useMemo((): string[][] | undefined => {
     if (!parentEvent || parentEvent.kind !== ExtendedKind.RSS_THREAD_ROOT) return undefined
@@ -2178,7 +2265,6 @@ export default function PostContent({
       setIsPoll(false)
       setIsPublicMessage(false)
       setIsHighlight(false)
-      setIsWebBookmark(false)
       setIsLongFormArticle(false)
       setIsWikiArticle(false)
       setIsNostrSpecification(false)
@@ -3064,11 +3150,14 @@ export default function PostContent({
             isPageLayout
               ? 'flex flex-col gap-2'
               : isSmallScreen
-                ? cn('flex min-h-0 flex-1 flex-col gap-2', isHighlight && 'overflow-hidden')
+                ? 'flex min-h-0 flex-1 flex-col gap-2'
                 : 'flex min-h-0 flex-1 flex-col gap-2 overflow-hidden pr-1'
           )}
         >
-          <ComposerHeaderScroll enabled={(isSmallScreen && !isPageLayout) || (isDiscussionThread && !parentEvent)}>
+          <ComposerHeaderScroll
+            enabled={composerHeaderScrollEnabled}
+            size={composerHeaderScrollSize}
+          >
       {/* Dynamic Title based on mode */}
       {!isPageLayout ? (
       <div className="text-lg font-semibold">
@@ -3125,8 +3214,10 @@ export default function PostContent({
         </div>
       )}
 
+      {isComposerEditTab ? (
+      <>
       {isDiscussionThread && !parentEvent && (
-        <div className="shrink-0 space-y-3 rounded-lg border bg-muted/30 p-4">
+        <ComposerKindFieldsShell>
           <div className="space-y-2">
             <Label htmlFor="discussion-topic-input" className="text-sm font-medium">
               {t('Topic')} <span className="text-destructive">*</span>
@@ -3236,7 +3327,7 @@ export default function PostContent({
               </div>
 
               {threadShowReadingsPanel && (
-                <div className="space-y-4 rounded-lg border bg-muted/30 p-4">
+                <ComposerKindFieldsShell className="border-dashed bg-muted/15 p-3" contentClassName="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <Book className="h-4 w-4 text-primary" />
@@ -3284,16 +3375,16 @@ export default function PostContent({
                       </p>
                     </div>
                   )}
-                </div>
+                </ComposerKindFieldsShell>
               )}
             </div>
           )}
-        </div>
+        </ComposerKindFieldsShell>
       )}
       
       {/* Article metadata fields */}
       {(isLongFormArticle || isWikiArticle || isNostrSpecification || isPublicationContent) && (
-        <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+        <ComposerKindFieldsShell>
           <div className="space-y-2">
             <Label htmlFor="article-dtag" className="text-sm font-medium">
               {t('D-Tag')}
@@ -3417,11 +3508,11 @@ export default function PostContent({
               {t('A short description of the article content')}
             </p>
           </div>
-        </div>
+        </ComposerKindFieldsShell>
       )}
 
       {isMusicTrack && (
-        <div className="space-y-3 p-4 border rounded-lg bg-muted/30">
+        <ComposerKindFieldsShell>
           <div className="space-y-2">
             <Label htmlFor="music-track-dtag" className="text-sm font-medium">
               {t('D-Tag')}
@@ -3549,7 +3640,7 @@ export default function PostContent({
               defaultValue: 'Use the editor below for lyrics or notes (Markdown).'
             })}
           </p>
-        </div>
+        </ComposerKindFieldsShell>
       )}
       
       {/* Citation metadata fields */}
@@ -3557,17 +3648,18 @@ export default function PostContent({
         isCitationExternal ||
         isCitationHardcopy ||
         isCitationPrompt) && (
-        <div className="p-4 border rounded-lg bg-muted/30">
-          <div className="text-sm font-medium mb-3">
-            {isCitationInternal
+        <ComposerKindFieldsShell
+          title={
+            isCitationInternal
               ? t('Internal Citation Settings')
               : isCitationExternal
                 ? t('External Citation Settings')
                 : isCitationHardcopy
                   ? t('Hardcopy Citation Settings')
-                  : t('Prompt Citation Settings')}
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  : t('Prompt Citation Settings')
+          }
+          contentClassName="grid grid-cols-1 md:grid-cols-2 gap-3"
+        >
           {/* Prompt Citation specific fields - shown first if prompt */}
           {isCitationPrompt && (
             <>
@@ -3900,22 +3992,53 @@ export default function PostContent({
               </div>
             </>
           )}
-          </div>
-        </div>
+        </ComposerKindFieldsShell>
       )}
+
+      {isHighlight ? (
+          <HighlightEditor
+            highlightData={highlightData}
+            setHighlightData={setHighlightData}
+            setIsHighlight={setIsHighlight}
+          />
+      ) : null}
+      {isWebBookmark ? (
+          <WebBookmarkEditor webBookmarkData={webBookmarkData} setWebBookmarkData={setWebBookmarkData} />
+      ) : null}
+      {isPoll ? (
+          <PollEditor
+            pollCreateData={pollCreateData}
+            setPollCreateData={setPollCreateData}
+            setIsPoll={setIsPoll}
+          />
+      ) : null}
+      {isPublicMessage ? (
+        <ComposerKindFieldsShell title={t('Recipients')}>
+          {extractedMentions.length > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {t('Recipients detected from your message:')} {extractedMentions.length}
+              {!showMoreOptions ? (
+                <span className="block text-xs mt-1">{t('Open Advanced to adjust mention recipients')}</span>
+              ) : null}
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t('Add recipients using nostr: mentions (e.g., nostr:npub1...) or open Advanced')}
+            </p>
+          )}
+        </ComposerKindFieldsShell>
+      ) : null}
+      </>
+      ) : null}
           </ComposerHeaderScroll>
 
       <div
         className={cn(
-          'flex min-w-0 flex-col overflow-hidden',
-          isPageLayout
-            ? 'shrink-0'
-            : isHighlight || isWebBookmark
-              ? 'min-h-0 min-w-0 flex-1 gap-2'
-              : 'min-h-0 flex-1'
+          'flex min-w-0 flex-col overflow-hidden min-h-0 flex-1',
+          isPageLayout && 'shrink-0'
         )}
       >
-      <div className={cn('flex min-h-0 flex-col', !isHighlight && !isWebBookmark && !isPageLayout && 'min-h-0 flex-1')}>
+      <div className={cn('flex min-h-0 flex-1 flex-col', !isPageLayout && 'min-h-0 flex-1')}>
       <PostTextarea
           ref={textareaRef}
           fillAvailableHeight={!isPageLayout}
@@ -3943,6 +4066,7 @@ export default function PostContent({
           contentWarning={labContentWarning}
           mediaImetaTags={mediaImetaTags}
           mediaUrl={mediaUrl}
+          onActiveTabChange={setComposerEditorTab}
           headerActions={(() => {
               const ActiveIcon =
                 isLongFormArticle ? FileText :
@@ -4201,20 +4325,6 @@ export default function PostContent({
           }
         />
       </div>
-      {isHighlight ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain popover-scroll-y">
-          <HighlightEditor
-            highlightData={highlightData}
-            setHighlightData={setHighlightData}
-            setIsHighlight={setIsHighlight}
-          />
-        </div>
-      ) : null}
-      {isWebBookmark ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain popover-scroll-y">
-          <WebBookmarkEditor webBookmarkData={webBookmarkData} setWebBookmarkData={setWebBookmarkData} />
-        </div>
-      ) : null}
       </div>
       {!showMoreOptions && isNsfw ? (
         <p className="text-xs text-muted-foreground" role="status">
@@ -4223,36 +4333,12 @@ export default function PostContent({
           })}
         </p>
       ) : null}
-      {isDiscussionThread && !parentEvent && (
+      {isComposerEditTab && isDiscussionThread && !parentEvent && (
         <div className="flex min-w-0 flex-col gap-1">
           {threadErrors.content && <p className="text-sm text-destructive">{threadErrors.content}</p>}
           <p className="text-xs text-muted-foreground">
             {text.length}/5000 {t('characters')}
           </p>
-        </div>
-      )}
-      {isPoll && (
-        <PollEditor
-          pollCreateData={pollCreateData}
-          setPollCreateData={setPollCreateData}
-          setIsPoll={setIsPoll}
-        />
-      )}
-      {isPublicMessage && (
-        <div className="rounded-lg border bg-muted/40 p-3">
-          <div className="mb-2 text-sm font-medium">{t('Recipients')}</div>
-          {extractedMentions.length > 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {t('Recipients detected from your message:')} {extractedMentions.length}
-              {!showMoreOptions ? (
-                <span className="block text-xs mt-1">{t('Open Advanced to adjust mention recipients')}</span>
-              ) : null}
-            </p>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              {t('Add recipients using nostr: mentions (e.g., nostr:npub1...) or open Advanced')}
-            </p>
-          )}
         </div>
       )}
       {uploadProgresses.length > 0 &&

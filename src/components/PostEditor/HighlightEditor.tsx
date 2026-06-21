@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
+import { ComposerKindField, ComposerKindFieldsShell } from '@/components/Composer'
 import { cleanUrl } from '@/lib/url'
 import { X } from 'lucide-react'
 import { useState, useEffect } from 'react'
@@ -108,9 +109,9 @@ export default function HighlightEditor({
   }, [sourceInput, context, setHighlightData, t])
 
   return (
-    <div className="rounded-lg border bg-muted/40 p-3 sm:p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-medium">{t('Highlight Settings')}</div>
+    <ComposerKindFieldsShell
+      title={t('Highlight Settings')}
+      titleAction={
         <Button
           type="button"
           variant="ghost"
@@ -121,12 +122,16 @@ export default function HighlightEditor({
         >
           <X className="h-4 w-4" />
         </Button>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="highlight-source">
-          {t('Source')} <span className="text-destructive">*</span>
-        </Label>
+      }
+    >
+      <ComposerKindField
+        label={
+          <Label htmlFor="highlight-source">
+            {t('Source')} <span className="text-destructive">*</span>
+          </Label>
+        }
+        hint={t('Enter a Nostr event identifier (nevent, naddr, note, or hex ID) OR a web URL (https://). Not both.')}
+      >
         <Input
           id="highlight-source"
           value={sourceInput}
@@ -134,18 +139,18 @@ export default function HighlightEditor({
           placeholder={t('nevent1..., naddr1..., note1..., hex ID, or https://...')}
           className={error ? 'border-destructive' : ''}
         />
-        {error && (
-          <p className="text-sm text-destructive">{error}</p>
-        )}
-        <p className="text-xs text-muted-foreground">
-          {t('Enter a Nostr event identifier (nevent, naddr, note, or hex ID) OR a web URL (https://). Not both.')}
-        </p>
-      </div>
+        {error ? <p className="text-sm text-destructive">{error}</p> : null}
+      </ComposerKindField>
 
-      <div className="space-y-2">
-        <Label htmlFor="highlight-context">
-          {t('Full Quote/Context')} <span className="text-muted-foreground text-xs">({t('optional')})</span>
-        </Label>
+      <ComposerKindField
+        label={
+          <Label htmlFor="highlight-context">
+            {t('Full Quote/Context')}{' '}
+            <span className="text-muted-foreground text-xs">({t('optional')})</span>
+          </Label>
+        }
+        hint={t('The main editor above should contain only the text you want to highlight. This field should contain the full quote or paragraph for context.')}
+      >
         <Textarea
           id="highlight-context"
           value={context}
@@ -154,10 +159,7 @@ export default function HighlightEditor({
           rows={4}
           className="min-h-[5.5rem] max-h-48 resize-y"
         />
-        <p className="text-xs text-muted-foreground">
-          {t('The main editor above should contain only the text you want to highlight. This field should contain the full quote or paragraph for context.')}
-        </p>
-      </div>
+      </ComposerKindField>
 
       <details className="text-xs text-muted-foreground rounded border border-border/60 bg-background/50 px-3 py-2">
         <summary className="cursor-pointer font-medium text-foreground/90 select-none">
@@ -169,6 +171,6 @@ export default function HighlightEditor({
           <li>{t('Optionally, add the full quote/context to show your highlight within it')}</li>
         </ol>
       </details>
-    </div>
+    </ComposerKindFieldsShell>
   )
 }

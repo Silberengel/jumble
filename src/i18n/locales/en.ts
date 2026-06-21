@@ -2104,7 +2104,7 @@ export default {
     'Enter the author name': 'Enter the author name',
     'Enter the book title': 'Enter the book title',
     'Enter the specific text you want to highlight in the main content area above':
-      'Enter the specific text you want to highlight in the main content area above',
+      'Enter the specific text you want to highlight in the main content area below',
     'Event IDs (ids)': 'Event IDs (ids)',
     'Event appears to be invalid or corrupted': 'Event appears to be invalid or corrupted',
     'Event has no value data': 'Event has no value data',
@@ -2613,7 +2613,7 @@ export default {
     'Take a note': 'Take a note',
     'The full prompt conversation (optional)': 'The full prompt conversation (optional)',
     'The main editor above should contain only the text you want to highlight. This field should contain the full quote or paragraph for context.':
-      'The main editor above should contain only the text you want to highlight. This field should contain the full quote or paragraph for context.',
+      'The main editor below should contain only the text you want to highlight. This field should contain the full quote or paragraph for context.',
     'These relays were found from your NIP-05 identifier and signer. You can add them to your relay list.':
       'These relays were found from your NIP-05 identifier and signer. You can add them to your relay list.',
     'This GIF comes from kind 1063 (NIP-94 file metadata). Choosing it still publishes your own kind 1063 to your write relays (and fast write relays as fallback) so your relays index the URL.':
