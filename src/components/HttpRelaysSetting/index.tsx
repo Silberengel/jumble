@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button'
 import { isHttpRelayUrl, normalizeHttpRelayUrl } from '@/lib/url'
 import { useNostr } from '@/providers/NostrProvider'
 import { TMailboxRelay, TMailboxRelayScope } from '@/types'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   DndContext,
@@ -31,6 +31,8 @@ export default function HttpRelaysSetting() {
   const { pubkey, httpRelayListEvent, checkLogin } = useNostr()
   const [relays, setRelays] = useState<TMailboxRelay[]>([])
   const [hasChange, setHasChange] = useState(false)
+  const hasChangeRef = useRef(false)
+  hasChangeRef.current = hasChange
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -57,6 +59,7 @@ export default function HttpRelaysSetting() {
   }
 
   useEffect(() => {
+    if (hasChangeRef.current) return
     if (!httpRelayListEvent) {
       setRelays([])
       setHasChange(false)

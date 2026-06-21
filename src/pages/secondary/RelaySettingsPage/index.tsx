@@ -37,7 +37,6 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
   const { account, relayList, requestAccountNetworkHydrate } = useNostr()
   const [contentKey, setContentKey] = useState(0)
   const bump = useCallback(async () => {
-    setContentKey((k) => k + 1)
     const pk = account?.pubkey
     if (!pk) return
     await requestAccountNetworkHydrate()

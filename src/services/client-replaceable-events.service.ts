@@ -21,7 +21,7 @@ import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
 import { scrollActivity } from '@/lib/scroll-activity.service'
 import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
-import { getProfileFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
+import { getProfileFromEvent, getRelayListFromEvent, mergeHydratedCacheRelayListEvents, mergeHydratedHttpRelayListEvents } from '@/lib/event-metadata'
 import { LEGACY_PROFILE_BADGES_D_TAG } from '@/lib/nip58-profile-badges'
 import { formatPubkey, isValidPubkey, pubkeyToNpub, userIdToPubkey } from '@/lib/pubkey'
 import { getPubkeysFromPTags, getServersFromServerTags } from '@/lib/tag'
@@ -1856,18 +1856,26 @@ export class ReplaceableEventService {
       await Promise.allSettled(
         [...Array.from(bestByKind.values()), ...(legacyProfileBadges ? [legacyProfileBadges] : [])].map(
           async (ev) => {
+          let toStore = ev
+          if (ev.kind === ExtendedKind.CACHE_RELAYS || ev.kind === ExtendedKind.HTTP_RELAY_LIST) {
+            const existing = await indexedDb.getReplaceableEvent(pk, ev.kind).catch(() => null)
+            toStore =
+              ev.kind === ExtendedKind.CACHE_RELAYS
+                ? mergeHydratedCacheRelayListEvents([ev], existing) ?? ev
+                : mergeHydratedHttpRelayListEvents([ev], existing) ?? ev
+          }
           try {
-            await indexedDb.putReplaceableEvent(ev)
+            await indexedDb.putReplaceableEvent(toStore)
           } catch {
             /* tombstone / validation */
           }
           try {
-            await this.updateReplaceableEventCache(ev)
+            await this.updateReplaceableEventCache(toStore)
           } catch {
             /* ignore */
           }
-          if (ev.kind === kinds.Metadata) {
-            await this.indexProfile(ev)
+          if (toStore.kind === kinds.Metadata) {
+            await this.indexProfile(toStore)
           }
         })
       )

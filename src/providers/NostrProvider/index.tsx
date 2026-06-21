@@ -37,7 +37,8 @@ import {
   getHttpRelayListFromEvent,
   getProfileFromEvent,
   getRelayListFromEvent,
-  mergeHydratedCacheRelayListEvents
+  mergeHydratedCacheRelayListEvents,
+  mergeHydratedHttpRelayListEvents
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
 import { bindLightArchiveCacheRelayUrls } from '@/lib/note-persistence-policy'
@@ -270,8 +271,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
       if (emoji) setUserEmojiListEvent(emoji)
       if (interest) setInterestListEvent(interest)
-      setCacheRelayListEvent(cacheRel)
-      setHttpRelayListEvent(httpRel ?? null)
+      setCacheRelayListEvent((prev) => mergeHydratedCacheRelayListEvents(cacheRel ? [cacheRel] : [], prev))
+      setHttpRelayListEvent((prev) => {
+        if (prev === undefined) return httpRel ?? null
+        return mergeHydratedHttpRelayListEvents(httpRel ? [httpRel] : [], prev) ?? null
+      })
       if (blossom) void client.updateBlossomServerListEventCache(blossom)
       if (payment) void replaceableEventService.updateReplaceableEventCache(payment).catch(() => {})
       setRelayList(await client.peekRelayListFromStorage(pubkey))
@@ -645,9 +649,14 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         ],
         storedCacheRelayListEvent
       )
-      const httpRelayListEventFetched = pickNewestListEvent(
-        getLatestEvent(httpRelayListEvents) ?? storedHttpRelayListEvent ?? null,
-        fromWriteOutboxes.get(ExtendedKind.HTTP_RELAY_LIST) ?? null
+      const httpRelayListEventFetched = mergeHydratedHttpRelayListEvents(
+        [
+          ...httpRelayListEvents,
+          ...(fromWriteOutboxes.get(ExtendedKind.HTTP_RELAY_LIST)
+            ? [fromWriteOutboxes.get(ExtendedKind.HTTP_RELAY_LIST)!]
+            : [])
+        ],
+        storedHttpRelayListEvent
       )
       const favoriteRelaysEventFromNetwork = pickNewestListEvent(
         getLatestEvent(favoriteRelaysEvents),

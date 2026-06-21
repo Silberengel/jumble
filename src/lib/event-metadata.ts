@@ -64,6 +64,24 @@ export function mergeHydratedCacheRelayListEvents(
   return pool.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))[0]!
 }
 
+/**
+ * Merge kind-10243 (HTTP relays) from a network fetch with IndexedDB for session hydrate.
+ * Some mirrors return an empty or malformed 10243 with a newer `created_at` than good local data; prefer any
+ * candidate that still parses to at least one http(s) `r` tag, then newest by time.
+ */
+export function mergeHydratedHttpRelayListEvents(
+  fetchedEvents: Event[],
+  stored: Event | undefined | null
+): Event | null {
+  const fromFetch = fetchedEvents.length ? getLatestEvent(fetchedEvents) : undefined
+  const candidates = [fromFetch, stored ?? undefined].filter((e): e is Event => Boolean(e))
+  if (candidates.length === 0) return null
+  const relayRowCount = (e: Event) => getHttpRelayListFromEvent(e).httpOriginalRelays.length
+  const withRelays = candidates.filter((e) => relayRowCount(e) > 0)
+  const pool = withRelays.length > 0 ? withRelays : candidates
+  return pool.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))[0]!
+}
+
 export function getRelayListFromEvent(
   event?: Event | null,
   blockedRelays?: string[],

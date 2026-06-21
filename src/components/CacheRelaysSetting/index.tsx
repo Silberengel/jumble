@@ -49,6 +49,8 @@ export default function CacheRelaysSetting() {
   const [hasChange, setHasChange] = useState(false)
   const [pushing, setPushing] = useState(false)
   const justSavedRef = useRef(false)
+  const hasChangeRef = useRef(false)
+  hasChangeRef.current = hasChange
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -82,6 +84,7 @@ export default function CacheRelaysSetting() {
   }
 
   useEffect(() => {
+    if (hasChangeRef.current) return
     if (!cacheRelayListEvent) {
       setRelays([])
       setHasChange(false)
