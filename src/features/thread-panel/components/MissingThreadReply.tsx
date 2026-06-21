@@ -78,6 +78,7 @@ export default function MissingThreadReply({
           viewerPubkey: nostr?.pubkey,
           favoriteRelays,
           blockedRelays,
+          eventId: id,
           nostrLandAggrEligibilityUrls
         })
       )

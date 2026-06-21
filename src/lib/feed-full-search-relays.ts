@@ -1,3 +1,4 @@
+import { FAST_READ_RELAY_URLS } from '@/constants'
 import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
 import {
   getFavoritesFeedRelayUrls,
@@ -10,7 +11,9 @@ import {
   urlsForViewerNostrLandAggrEligibilitySync
 } from '@/lib/nostr-land-relay-eligibility'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
+import { resolveEventPointerToHex } from '@/lib/thread-context-local'
 import { normalizeUrl } from '@/lib/url'
+import client from '@/services/client.service'
 
 export type NoteLookupSearchRelayOptions = {
   viewerPubkey: string | null | undefined
@@ -84,32 +87,57 @@ export async function buildFeedFullSearchRelayUrls(options: {
 }
 
 /**
- * Wide relay stack for parent-note blurbs, thread parent/root fallback, and missing-reply search:
- * child tag hints → searchable relays (incl. aggr when eligible) → favorites → viewer inbox → comprehensive list.
+ * Search-relay fallback for note-by-id lookup (matches NotePage NotFound external search):
+ * tag/bech32 hints → seen relays → aggr-aware {@link SEARCHABLE_RELAY_URLS} → {@link FAST_READ_RELAY_URLS}.
+ */
+export function buildNoteSearchRelayFallbackUrls(options: {
+  relayHints?: readonly string[]
+  seenRelayUrls?: readonly string[]
+  nostrLandAggrEligibilityUrls?: readonly string[]
+  blockedRelays?: readonly string[]
+}): string[] {
+  const eligibility = options.nostrLandAggrEligibilityUrls ?? []
+  const layers: string[][] = []
+  if (options.relayHints?.length) {
+    layers.push([...options.relayHints])
+  }
+  if (options.seenRelayUrls?.length) {
+    layers.push([...options.seenRelayUrls])
+  }
+  layers.push(
+    getAggrAwareSearchRelayUrls(eligibility).map((u) => normalizeUrl(u) || u).filter(Boolean)
+  )
+  layers.push(
+    FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean)
+  )
+  return prependAggrNostrLandIfViewerEligible(
+    mergeRelayUrlLayers(layers, [...(options.blockedRelays ?? [])]),
+    eligibility
+  )
+}
+
+/**
+ * Wide relay stack for parent-note blurbs, thread parent/root fallback, and missing-reply search.
  */
 export async function buildNoteLookupSearchFallbackRelayUrls(
   options: NoteLookupSearchRelayOptions & {
     relayHints?: readonly string[]
+    /** Hex, note1, or nevent — used for seen-relay hints. */
+    eventId?: string | null
   }
 ): Promise<string[]> {
-  const { viewerPubkey, favoriteRelays, blockedRelays, relayHints } = options
+  const { favoriteRelays, blockedRelays, relayHints, eventId } = options
   const eligibility =
     options.nostrLandAggrEligibilityUrls ??
     urlsForViewerNostrLandAggrEligibilitySync({ favoriteRelayUrls: favoriteRelays })
-  const layers: string[][] = []
-  if (relayHints?.length) {
-    layers.push([...relayHints])
-  }
-  layers.push(
-    await buildFeedFullSearchRelayUrls({
-      viewerPubkey,
-      filterAuthorHex: undefined,
-      favoriteRelays,
-      blockedRelays,
-      nostrLandAggrEligibilityUrls: eligibility
-    })
-  )
-  return prependAggrNostrLandIfViewerEligible(mergeRelayUrlLayers(layers, blockedRelays), eligibility)
+  const hex = eventId ? resolveEventPointerToHex(eventId) : undefined
+  const seen = hex ? client.getSeenEventRelayUrls(hex) : []
+  return buildNoteSearchRelayFallbackUrls({
+    relayHints,
+    seenRelayUrls: seen,
+    nostrLandAggrEligibilityUrls: eligibility,
+    blockedRelays: blockedRelays
+  })
 }
 
 export { buildViewerNostrLandAggrEligibilityUrls }

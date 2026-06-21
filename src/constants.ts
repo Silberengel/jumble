@@ -548,7 +548,8 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://search.nos.today',
   'wss://relay.noswhere.com',
   'wss://nostr-pub.wellorder.net',
-  'wss://njump.me'
+  'wss://njump.me',
+  'wss://nos.lol'
 ]
 
 /**

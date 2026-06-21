@@ -162,6 +162,7 @@ export function useFetchThreadContextEvent(
             favoriteRelays,
             blockedRelays,
             relayHints: relayUrls,
+            eventId,
             nostrLandAggrEligibilityUrls
           })
         )

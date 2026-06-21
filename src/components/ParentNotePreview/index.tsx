@@ -1,5 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton'
 import { useFetchEvent } from '@/hooks'
+import { useFetchThreadContextEvent } from '@/hooks/useFetchThreadContextEvent'
 import { buildNoteLookupSearchFallbackRelayUrls, buildViewerNostrLandAggrEligibilityUrls } from '@/lib/feed-full-search-relays'
 import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
@@ -48,13 +49,22 @@ export default function ParentNotePreview({
     () => (relayHints?.length ? { relayHints } : undefined),
     [relayHints]
   )
-  const { event, isFetching } = useFetchEvent(eventId, undefined, fetchOpts)
+
+  const threadFetch = useFetchThreadContextEvent(
+    replyContext ? eventId : undefined,
+    replyContext,
+    'parent'
+  )
+  const plainFetch = useFetchEvent(replyContext ? undefined : eventId, undefined, fetchOpts)
+
+  const event = replyContext ? threadFetch.event : plainFetch.event
+  const isFetching = replyContext ? threadFetch.isFetching : plainFetch.isFetching
+
   const [fallbackEvent, setFallbackEvent] = useState<Event | undefined>(undefined)
   const [isFetchingFallback, setIsFetchingFallback] = useState(false)
-  /** One automatic searchable-relay attempt per eventId; without this, the effect re-fires forever after each 20s timeout. */
+  /** One automatic searchable-relay attempt per eventId; without this, the effect re-fires forever after each timeout. */
   const autoSearchableAttemptedRef = useRef(false)
 
-  // Helper function to fetch from searchable relays (hex, note1, nevent1, naddr1)
   const fetchFromSearchableRelays = useCallback(async () => {
     if (!eventId?.trim()) return
 
@@ -66,6 +76,7 @@ export default function ParentNotePreview({
           favoriteRelays,
           blockedRelays,
           relayHints,
+          eventId,
           nostrLandAggrEligibilityUrls
         })
       )
@@ -79,14 +90,23 @@ export default function ParentNotePreview({
     } finally {
       setIsFetchingFallback(false)
     }
-  }, [eventId, nostr?.pubkey, favoriteRelays, blockedRelays, relayHints, nostrLandAggrEligibilityUrls])
+  }, [
+    eventId,
+    nostr?.pubkey,
+    favoriteRelays,
+    blockedRelays,
+    relayHints,
+    nostrLandAggrEligibilityUrls
+  ])
 
   useEffect(() => {
     autoSearchableAttemptedRef.current = false
+    setFallbackEvent(undefined)
   }, [eventId])
 
-  // If the initial fetch fails, try searchable relays once (manual retry still works via onClick).
+  // Plain path only: thread path races search relays inside useFetchThreadContextEvent.
   useEffect(() => {
+    if (replyContext) return
     if (
       !isFetching &&
       !event &&
@@ -98,7 +118,15 @@ export default function ParentNotePreview({
       autoSearchableAttemptedRef.current = true
       void fetchFromSearchableRelays()
     }
-  }, [isFetching, event, eventId, fallbackEvent, isFetchingFallback, fetchFromSearchableRelays])
+  }, [
+    replyContext,
+    isFetching,
+    event,
+    eventId,
+    fallbackEvent,
+    isFetchingFallback,
+    fetchFromSearchableRelays
+  ])
 
   const finalEvent = event || fallbackEvent
   const finalIsFetching = isFetching || isFetchingFallback
@@ -120,14 +148,16 @@ export default function ParentNotePreview({
     )
   }
 
-  // Handle click for retry when event not found
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (finalEvent) {
       onClick?.(e)
     } else if (!finalEvent && !finalIsFetching && eventId) {
-      // Retry fetch from searchable relays when clicking "Note not found"
       e.stopPropagation()
-      fetchFromSearchableRelays()
+      if (replyContext) {
+        threadFetch.refetch()
+      } else {
+        void fetchFromSearchableRelays()
+      }
     }
   }
 
