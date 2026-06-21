@@ -8,6 +8,7 @@ import { filterEventsExcludingMutedAuthors, mutePubkeySetFingerprint, muteSetHas
 import { getRelayUrlsWithFavoritesFastReadAndInbox, userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { toNote } from '@/lib/link'
 import logger from '@/lib/logger'
+import { getNotePersistencePolicy } from '@/lib/note-persistence-policy'
 import {
   parseRelayThreadHeatMapCache,
   relayThreadHeatMapSettingKey,
@@ -167,12 +168,15 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       sessionEvents: sessionEv.length
     })
 
-    const archiveScan = indexedDb.scanEventArchiveByKinds({
-      kinds: HEAT_KINDS,
-      since: windowStart,
-      maxRowsScanned: ARCHIVE_HEAT_MAX_SCAN,
-      maxMatches: ARCHIVE_HEAT_MAX_MATCHES
-    })
+    const scanArchive = getNotePersistencePolicy().scanArchiveOnLocalFeed
+    const archiveScan = scanArchive
+      ? indexedDb.scanEventArchiveByKinds({
+          kinds: HEAT_KINDS,
+          since: windowStart,
+          maxRowsScanned: ARCHIVE_HEAT_MAX_SCAN,
+          maxMatches: ARCHIVE_HEAT_MAX_MATCHES
+        })
+      : Promise.resolve([] as Event[])
     const relayFetch =
       includeRelay && relayUrls.length > 0
         ? client.fetchEvents(

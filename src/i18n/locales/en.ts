@@ -992,6 +992,10 @@ export default {
       'Desktop app defaults: ~{{lru}} in-memory events, ~{{mb}} MB / {{ev}} archived events.',
     'eventArchive.defaultsDesktopWeb':
       'Desktop browser defaults: ~{{lru}} in-memory events, ~{{mb}} MB / {{ev}} archived events.',
+    'eventArchive.defaultsLightArchive':
+      'Light archive (cache relay on): ~{{lru}} in-memory events, ~{{mb}} MB / {{ev}} micro-archive for opened notes and bookmarks only.',
+    'eventArchive.modeLight': 'Light archive — cache relay active',
+    'eventArchive.modeFull': 'Full archive — no local cache relay',
     'eventArchive.enablePersist': 'Persist feed events to disk',
     'eventArchive.maxMb': 'Max archive size (MB), blank = default for this device',
     'eventArchive.maxEvents': 'Max archived events, blank = default',
@@ -2012,6 +2016,16 @@ export default {
     'Use cache relays on this device': 'Use cache relays on this device',
     'Use cache relays on this device hint':
       'Turn off on computers without a local cache relay (e.g. ws://localhost:4869). Your relay list stays saved; only this device stops connecting.',
+    'Use cache relays light archive hint':
+      'When on with at least one cache relay URL, Jumble uses light archive: notes stay in session memory and on your relay instead of a large browser database.',
+    'cacheOverview.title': 'Cache overview',
+    'cacheOverview.sessionLru': 'Session memory (LRU)',
+    'cacheOverview.noteArchive': 'Note archive (IndexedDB)',
+    'cacheOverview.timelineShards': 'Feed snapshot shards',
+    'cacheOverview.cacheRelays': 'Cache relays (kind 10432)',
+    'cacheOverview.cacheRelaysNone': 'None configured',
+    'cacheOverview.advancedStoresHint':
+      'Advanced: open a store below for raw IndexedDB rows, search, and broadcast.',
     'Cache relays must be local network URLs only (e.g., ws://localhost:4869 or ws://127.0.0.1:4869)':
       'Cache relays must be local network URLs only (e.g., ws://localhost:4869 or ws://127.0.0.1:4869)',
     'Cache relays saved': 'Cache relays saved',

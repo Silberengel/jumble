@@ -1,6 +1,7 @@
 import { ExtendedKind, isNip52CalendarCardKind, NIP71_VIDEO_KINDS } from '@/constants'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import { getEventArchiveConfig } from '@/lib/event-archive-config'
+import { getNotePersistencePolicy } from '@/lib/note-persistence-policy'
 import { isNip18RepostKind, isNip25ReactionKind, isReplaceableEvent } from '@/lib/event'
 import logger from '@/lib/logger'
 import type { Event } from 'nostr-tools'
@@ -137,6 +138,18 @@ function scheduleFlush(): void {
 
 /** Queue a non-replaceable event for IndexedDB archive (mobile + desktop web; caps differ). */
 export function queuePersistSeenEvent(ev: Event): void {
+  if (!getNotePersistencePolicy().persistFeedNotesToArchive) return
+  queuePersistEventRow(ev)
+}
+
+/** Open note / bookmark — small durable copy even in light-archive mode. */
+export function queuePersistForegroundEvent(ev: Event): void {
+  const policy = getNotePersistencePolicy()
+  if (!policy.persistFeedNotesToArchive && !policy.foregroundMicroArchive) return
+  queuePersistEventRow(ev)
+}
+
+function queuePersistEventRow(ev: Event): void {
   if (shouldSkipArchiving(ev)) return
   const id = /^[0-9a-f]{64}$/i.test(ev.id) ? ev.id.toLowerCase() : ev.id
   if (!/^[0-9a-f]{64}$/.test(id)) return
@@ -147,6 +160,22 @@ export function queuePersistSeenEvent(ev: Event): void {
   }
   pending.set(id, ev)
   scheduleFlush()
+}
+
+export function readArchiveFootprintSync(): { count: number; bytes: number } | null {
+  return footprint
+}
+
+/** Trim EVENT_ARCHIVE to current policy caps (e.g. when entering light-archive mode). */
+export async function trimEventArchiveToPolicy(): Promise<void> {
+  invalidateArchiveFootprintCache()
+  await trimArchiveIfNeeded()
+  footprint = await indexedDb.getArchiveFootprint()
+}
+
+export async function reconcileEventArchiveWithPolicy(): Promise<void> {
+  invalidateArchiveFootprintCache()
+  await trimEventArchiveToPolicy()
 }
 
 export async function loadArchivedEventForFetch(hexId: string): Promise<Event | undefined> {

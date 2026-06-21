@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-COPY index.mjs ./
+COPY index.mjs default-relays.mjs ./
 
 ENV NODE_ENV=production
 CMD ["node", "index.mjs"]

@@ -44,6 +44,7 @@ import {
   invalidateArchiveFootprintCache,
   loadArchivedEventForFetch,
   prefetchArchivedEvents,
+  queuePersistForegroundEvent,
   queuePersistSeenEvent
 } from './event-archive.service'
 import { getDefaultSessionLruMaxSync } from '@/lib/event-archive-config'
@@ -126,6 +127,9 @@ const NOTE_STATS_SESSION_PREMERGE_SCAN_MAX = 6000
 /** Max session events scanned for {@link EventService.getSessionEventsMatchingSearch} (Map order is not recency). */
 const SESSION_SEARCH_MAX_SCAN = 48_000
 
+/** Bootstrap cap before policy module graph is ready; {@link reapplySessionLruMax} applies the real limit. */
+const SESSION_EVENT_CACHE_BOOTSTRAP_MAX = 2500
+
 export class EventService {
   private queryService: QueryService
   private eventCacheMap = new Map<string, Promise<NEvent | undefined>>()
@@ -134,7 +138,7 @@ export class EventService {
    * Larger cap + no TTL so navigation and repeat fetches reuse data until reload.
    */
   /** Timelines + note-stats; cap is platform-aware (see Cache settings). */
-  private sessionEventCache = new LRUCache<string, NEvent>({ max: getDefaultSessionLruMaxSync() })
+  private sessionEventCache = new LRUCache<string, NEvent>({ max: SESSION_EVENT_CACHE_BOOTSTRAP_MAX })
   /** Latest kind-0 per pubkey from {@link sessionEventCache} for batch profile short-circuit. */
   private sessionMetadataByPubkey = new Map<string, NEvent>()
   /** Ingest coalescing: max `created_at` already queued for durable replaceable cache (coordinate → ts). */
@@ -166,6 +170,7 @@ export class EventService {
       this.fetchEventsFromBigRelays.bind(this),
       { cache: false, batchScheduleFn: (callback) => setTimeout(callback, 50) }
     )
+    this.reapplySessionLruMax()
   }
 
   /**
@@ -803,7 +808,7 @@ export class EventService {
     }
   }
 
-  /** Apply {@link StorageKey.SESSION_EVENT_LRU_MAX} without reload (copies entries into a new LRU). */
+  /** Apply session LRU cap from {@link getNotePersistencePolicy} without reload. */
   reapplySessionLruMax(): void {
     const max = getDefaultSessionLruMaxSync()
     const entries = [...this.sessionEventCache.entries()]
@@ -811,6 +816,18 @@ export class EventService {
     for (const [k, v] of entries) {
       this.sessionEventCache.set(k, v)
     }
+  }
+
+  getSessionCacheFootprint(): { count: number; max: number } {
+    return {
+      count: this.sessionEventCache.size,
+      max: this.sessionEventCache.max
+    }
+  }
+
+  promoteSessionEventToArchive(hexId: string): void {
+    const ev = this.peekHexIdNoteFromSessionCache(hexId)
+    if (ev) queuePersistForegroundEvent(ev)
   }
 
   /** Kind 0 already ingested this session (e.g. from a timeline REQ). */

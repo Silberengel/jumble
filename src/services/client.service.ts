@@ -195,7 +195,8 @@ import { AbstractRelay } from 'nostr-tools/abstract-relay'
 import indexedDb from './indexed-db.service'
 import postEditorService from './post-editor.service'
 import { preloadGifsIntoIdbCache } from './gif.service'
-import { invalidateArchiveFootprintCache } from './event-archive.service'
+import { invalidateArchiveFootprintCache, reconcileEventArchiveWithPolicy } from './event-archive.service'
+import { getNotePersistencePolicy } from '@/lib/note-persistence-policy'
 import { notifySessionInteractivePrewarmComplete } from './session-interactive-prewarm-bridge'
 import { nip66Service } from './nip66.service'
 import nostrArchivesApi from './nostr-archives-api.service'
@@ -2465,6 +2466,32 @@ class ClientService extends EventTarget {
     add(timelineRows)
     add(paymentSuperchatRows)
 
+    if (byId.size >= maxMatches) {
+      return [...byId.values()]
+        .sort(compareEventsNewestFirst)
+        .slice(0, maxMatches)
+    }
+
+    const policy = getNotePersistencePolicy()
+    if (!policy.scanArchiveOnLocalFeed) {
+      const scanReplaceableListsLight = filters.some((f) =>
+        Object.keys(f).some((k) => k === '#e' || k === '#E' || k === '#a' || k === '#A')
+      )
+      if (scanReplaceableListsLight) {
+        add(
+          await indexedDb
+            .scanReplaceableListEventsMatchingFilters(filters, {
+              maxRowsScanned: Math.min(maxRowsScanned, 12_000),
+              maxMatches: Math.min(maxMatches, 120)
+            })
+            .catch(() => [] as NEvent[])
+        )
+      }
+      return [...byId.values()]
+        .sort(compareEventsNewestFirst)
+        .slice(0, maxMatches)
+    }
+
     const [archiveRows, publicationRows] = await Promise.all([
       indexedDb
         .scanEventArchiveByFilters(filters, { maxRowsScanned, maxMatches })
@@ -2520,8 +2547,17 @@ class ClientService extends EventTarget {
 
     add(this.eventService.getSessionEventsMatchingFilters(filters, maxMatches))
 
-    const [timelineRows, archiveRows, publicationRows] = await Promise.all([
-      this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[]),
+    const timelineRows = await this.getTimelineDiskSnapshotEvents(subRequests).catch(() => [] as NEvent[])
+    add(timelineRows)
+
+    const policy = getNotePersistencePolicy()
+    if (!policy.scanArchiveOnLocalFeed) {
+      return [...byId.values()]
+        .sort(compareEventsNewestFirst)
+        .slice(0, limit)
+    }
+
+    const [archiveRows, publicationRows] = await Promise.all([
       indexedDb
         .scanEventArchiveByFilters(filters, { maxRowsScanned: 28_000, maxMatches })
         .catch(() => [] as NEvent[]),
@@ -2529,7 +2565,6 @@ class ClientService extends EventTarget {
         .scanPublicationEventsByFilters(filters, { maxRowsScanned: 18_000, maxMatches })
         .catch(() => [] as NEvent[])
     ])
-    add(timelineRows)
     add(archiveRows)
     add(publicationRows)
 
@@ -3916,6 +3951,19 @@ class ClientService extends EventTarget {
 
   reapplySessionLruFromSettings(): void {
     this.eventService.reapplySessionLruMax()
+  }
+
+  getSessionCacheFootprint(): { count: number; max: number } {
+    return this.eventService.getSessionCacheFootprint()
+  }
+
+  promoteSessionEventToArchive(hexId: string): void {
+    this.eventService.promoteSessionEventToArchive(hexId)
+  }
+
+  async applyNotePersistencePolicyChange(): Promise<void> {
+    this.reapplySessionLruFromSettings()
+    await reconcileEventArchiveWithPolicy()
   }
 
   peekSessionCachedEvent(noteId: string): NEvent | undefined {

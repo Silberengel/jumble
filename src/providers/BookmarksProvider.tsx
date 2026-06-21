@@ -60,6 +60,7 @@ export function BookmarksProvider({ children }: { children: React.ReactNode }) {
     const newBookmarkEvent = await publish(newBookmarkDraftEvent, {
       specifiedRelayUrls: comprehensiveRelays
     })
+    client.promoteSessionEventToArchive(event.id)
     await updateBookmarkListEvent(newBookmarkEvent)
   }
 

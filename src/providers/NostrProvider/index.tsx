@@ -40,7 +40,9 @@ import {
   mergeHydratedCacheRelayListEvents
 } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { bindLightArchiveCacheRelayUrls } from '@/lib/note-persistence-policy'
 import { buildAccountSessionNetworkHydrateRelayUrls } from '@/lib/relay-list-builder'
+import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import {
   parseBlockedRelayUrlsFromEvent,
@@ -175,6 +177,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const [relayList, setRelayList] = useState<TRelayList | null>(null)
   const [cacheRelayListEvent, setCacheRelayListEvent] = useState<Event | null>(null)
   const [cacheRelaysEnabled, setCacheRelaysEnabledState] = useState(() => storage.getCacheRelaysEnabled())
+  useEffect(() => {
+    bindLightArchiveCacheRelayUrls(
+      cacheRelaysEnabled ? getCacheRelayUrlsFromEvent(cacheRelayListEvent) : []
+    )
+    void client.applyNotePersistencePolicyChange()
+  }, [cacheRelayListEvent, cacheRelaysEnabled])
   const [httpRelayListEvent, setHttpRelayListEvent] = useState<Event | null | undefined>(undefined)
   const [followListEvent, setFollowListEvent] = useState<Event | null>(null)
   const [muteListEvent, setMuteListEvent] = useState<Event | null>(null)
@@ -2288,6 +2296,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     // Set local state immediately with the event we just saved
     // This will trigger the component's useEffect to update the UI immediately
     setCacheRelayListEvent(cacheRelayListEvent)
+    bindLightArchiveCacheRelayUrls(
+      storage.getCacheRelaysEnabled() ? getCacheRelayUrlsFromEvent(cacheRelayListEvent) : []
+    )
+    void client.applyNotePersistencePolicyChange()
     // Don't update relayList here - it's a computed merge of kind 10002 + 10432
     // The merged list will be computed on-the-fly when needed via fetchRelayList()
     // This ensures kind 10002 and 10432 remain separate and are only merged when publishing/using
@@ -2296,6 +2308,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const setCacheRelaysEnabled = async (enabled: boolean) => {
     storage.setCacheRelaysEnabled(enabled)
     setCacheRelaysEnabledState(enabled)
+    bindLightArchiveCacheRelayUrls(
+      enabled ? getCacheRelayUrlsFromEvent(cacheRelayListEvent) : []
+    )
+    await client.applyNotePersistencePolicyChange()
     const pk = account?.pubkey
     if (!pk) return
     client.clearRelayListCache(pk)

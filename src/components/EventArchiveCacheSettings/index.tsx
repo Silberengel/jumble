@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input'
 import { StorageKey } from '@/constants'
 import {
   EVENT_ARCHIVE_DEFAULTS,
+  eventArchiveDefaultsHintValues,
   getEventArchiveConfig
 } from '@/lib/event-archive-config'
 import { isMobileBrowserProfile } from '@/lib/client-platform'
@@ -20,17 +21,21 @@ export default function EventArchiveCacheSettings() {
   const [sessionLru, setSessionLru] = useState('')
 
   const defaultsHint = useMemo(() => {
+    const d = eventArchiveDefaultsHintValues()
+    if (d.light) {
+      return t('eventArchive.defaultsLightArchive', { lru: d.lru, mb: d.mb, ev: d.ev })
+    }
     if (isMobileBrowserProfile()) {
       return t('eventArchive.defaultsMobile', {
-        lru: EVENT_ARCHIVE_DEFAULTS.sessionLruMobile,
-        mb: EVENT_ARCHIVE_DEFAULTS.maxMbMobile,
-        ev: EVENT_ARCHIVE_DEFAULTS.maxEventsMobile
+        lru: d.lru,
+        mb: d.mb,
+        ev: d.ev
       })
     }
     return t('eventArchive.defaultsDesktopWeb', {
-      lru: EVENT_ARCHIVE_DEFAULTS.sessionLruDesktopBrowser,
-      mb: EVENT_ARCHIVE_DEFAULTS.maxMbDesktopBrowser,
-      ev: EVENT_ARCHIVE_DEFAULTS.maxEventsDesktopBrowser
+      lru: d.lru,
+      mb: d.mb,
+      ev: d.ev
     })
   }, [t])
 
@@ -61,6 +66,9 @@ export default function EventArchiveCacheSettings() {
     <div className="mt-8 space-y-4 border-t border-border pt-6">
       <h3 className="text-base font-medium">{t('eventArchive.sectionTitle')}</h3>
       <p className="text-muted-foreground text-sm">{t('eventArchive.sectionBlurb')}</p>
+      <p className="text-sm font-medium">
+        {effective.lightArchive ? t('eventArchive.modeLight') : t('eventArchive.modeFull')}
+      </p>
       <p className="text-muted-foreground text-xs">{defaultsHint}</p>
 
       <div className="grid gap-3 sm:grid-cols-2">

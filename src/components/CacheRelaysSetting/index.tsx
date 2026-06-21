@@ -215,6 +215,9 @@ export default function CacheRelaysSetting() {
           <div className="text-sm text-muted-foreground font-normal">
             {t('Use cache relays on this device hint')}
           </div>
+          <div className="text-xs text-muted-foreground font-normal mt-1">
+            {t('Use cache relays light archive hint')}
+          </div>
         </Label>
         <Switch
           id="cache-relays-enabled"

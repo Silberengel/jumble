@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
 import { toastPublishPromise } from '@/lib/publishing-feedback'
+import CacheOverviewPanel from './CacheOverviewPanel'
 
 const GLOBAL_CACHED_EVENTS_SEARCH_LIMIT = 400
 
@@ -341,7 +342,12 @@ export default function CacheBrowserDialog({
 
   const renderStoreListView = () => {
     if (Object.keys(cacheInfo).length === 0) {
-      return <div className="text-sm text-muted-foreground">{t('No cached data found.')}</div>
+      return (
+        <div className="space-y-4">
+          <CacheOverviewPanel />
+          <div className="text-sm text-muted-foreground">{t('No cached data found.')}</div>
+        </div>
+      )
     }
     const q = cachedEventsSearch.trim()
     if (q) {
@@ -435,20 +441,27 @@ export default function CacheBrowserDialog({
         </div>
       )
     }
-    return Object.entries(cacheInfo)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([storeName, count]) => (
-        <div
-          key={storeName}
-          className="cursor-pointer rounded-lg border p-3 transition-colors hover:bg-muted/50"
-          onClick={() => handleStoreClick(storeName)}
-        >
-          <div className="break-words text-sm font-semibold">{storeName}</div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            {count} {t('items')}
-          </div>
+    return (
+      <div className="space-y-4">
+        <CacheOverviewPanel />
+        <div className="space-y-2">
+          {Object.entries(cacheInfo)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([storeName, count]) => (
+              <div
+                key={storeName}
+                className="cursor-pointer rounded-lg border p-3 transition-colors hover:bg-muted/50"
+                onClick={() => handleStoreClick(storeName)}
+              >
+                <div className="break-words text-sm font-semibold">{storeName}</div>
+                <div className="mt-1 text-xs text-muted-foreground">
+                  {count} {t('items')}
+                </div>
+              </div>
+            ))}
         </div>
-      ))
+      </div>
+    )
   }
 
   const storeItemsSearch =

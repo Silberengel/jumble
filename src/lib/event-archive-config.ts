@@ -1,11 +1,11 @@
-import { StorageKey } from '@/constants'
 import { isMobileBrowserProfile } from '@/lib/client-platform'
+import { LIGHT_ARCHIVE_DEFAULTS, getNotePersistencePolicy } from '@/lib/note-persistence-policy'
 
 /** Removed from settings; strip so manual `localStorage` edits cannot flip archive behavior. */
 const LEGACY_EVENT_ARCHIVE_ENABLED_KEY = 'eventArchiveEnabled'
 let legacyEventArchiveEnabledKeyRemoved = false
 
-/** Platform defaults (overridable in Cache settings). */
+/** Platform defaults (overridable in Cache settings) when not in light-archive mode. */
 export const EVENT_ARCHIVE_DEFAULTS = {
   sessionLruMobile: 100,
   sessionLruDesktopBrowser: 2500,
@@ -20,37 +20,11 @@ export type TEventArchiveConfig = {
   maxBytes: number
   maxEvents: number
   sessionLruMax: number
-}
-
-function readPositiveInt(key: string, fallback: number): number {
-  try {
-    const v = window.localStorage.getItem(key)
-    if (v === null || v === '' || v === '0') return fallback
-    const n = Number.parseInt(v, 10)
-    return Number.isFinite(n) && n > 0 ? n : fallback
-  } catch {
-    return fallback
-  }
-}
-
-function defaultSessionLruMax(): number {
-  if (isMobileBrowserProfile()) return EVENT_ARCHIVE_DEFAULTS.sessionLruMobile
-  return EVENT_ARCHIVE_DEFAULTS.sessionLruDesktopBrowser
-}
-
-function defaultMaxMb(): number {
-  if (isMobileBrowserProfile()) return EVENT_ARCHIVE_DEFAULTS.maxMbMobile
-  return EVENT_ARCHIVE_DEFAULTS.maxMbDesktopBrowser
-}
-
-function defaultMaxEvents(): number {
-  if (isMobileBrowserProfile()) return EVENT_ARCHIVE_DEFAULTS.maxEventsMobile
-  return EVENT_ARCHIVE_DEFAULTS.maxEventsDesktopBrowser
+  lightArchive: boolean
 }
 
 /**
- * Effective archive + session LRU limits (reads Cache settings from localStorage).
- * Disk archive is always on; only caps are configurable.
+ * Effective archive + session LRU limits (Cache settings + light-archive policy from cache relays).
  */
 export function getEventArchiveConfig(): TEventArchiveConfig {
   if (typeof window !== 'undefined' && !legacyEventArchiveEnabledKeyRemoved) {
@@ -61,17 +35,52 @@ export function getEventArchiveConfig(): TEventArchiveConfig {
       // ignore
     }
   }
-  const maxMb = readPositiveInt(StorageKey.EVENT_ARCHIVE_MAX_MB, defaultMaxMb())
-  const maxEvents = readPositiveInt(StorageKey.EVENT_ARCHIVE_MAX_EVENTS, defaultMaxEvents())
-  const sessionLruMax = readPositiveInt(StorageKey.SESSION_EVENT_LRU_MAX, defaultSessionLruMax())
+  const policy = getNotePersistencePolicy()
   return {
-    maxBytes: Math.max(8, maxMb) * 1024 * 1024,
-    maxEvents: Math.max(50, maxEvents),
-    sessionLruMax: Math.max(32, Math.min(200_000, sessionLruMax))
+    maxBytes: policy.archiveMaxBytes,
+    maxEvents: policy.archiveMaxEvents,
+    sessionLruMax: policy.sessionLruMax,
+    lightArchive: policy.lightArchive
   }
 }
 
-/** Session LRU max before localStorage overrides (for EventService constructor). */
+/** Session LRU max (respects light-archive policy and manual overrides). */
 export function getDefaultSessionLruMaxSync(): number {
-  return readPositiveInt(StorageKey.SESSION_EVENT_LRU_MAX, defaultSessionLruMax())
+  return getNotePersistencePolicy().sessionLruMax
+}
+
+/** Hint text for Cache settings — platform defaults before overrides. */
+export function eventArchiveDefaultsHintValues(): {
+  lru: number
+  mb: number
+  ev: number
+  light: boolean
+} {
+  const policy = getNotePersistencePolicy()
+  if (policy.lightArchive) {
+    return {
+      light: true,
+      lru: isMobileBrowserProfile()
+        ? LIGHT_ARCHIVE_DEFAULTS.sessionLruMobile
+        : LIGHT_ARCHIVE_DEFAULTS.sessionLruDesktopBrowser,
+      mb: isMobileBrowserProfile()
+        ? LIGHT_ARCHIVE_DEFAULTS.maxMbMobile
+        : LIGHT_ARCHIVE_DEFAULTS.maxMbDesktopBrowser,
+      ev: isMobileBrowserProfile()
+        ? LIGHT_ARCHIVE_DEFAULTS.maxEventsMobile
+        : LIGHT_ARCHIVE_DEFAULTS.maxEventsDesktopBrowser
+    }
+  }
+  return {
+    light: false,
+    lru: isMobileBrowserProfile()
+      ? EVENT_ARCHIVE_DEFAULTS.sessionLruMobile
+      : EVENT_ARCHIVE_DEFAULTS.sessionLruDesktopBrowser,
+    mb: isMobileBrowserProfile()
+      ? EVENT_ARCHIVE_DEFAULTS.maxMbMobile
+      : EVENT_ARCHIVE_DEFAULTS.maxMbDesktopBrowser,
+    ev: isMobileBrowserProfile()
+      ? EVENT_ARCHIVE_DEFAULTS.maxEventsMobile
+      : EVENT_ARCHIVE_DEFAULTS.maxEventsDesktopBrowser
+  }
 }

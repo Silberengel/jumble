@@ -19,6 +19,7 @@ import {
 } from '@/hooks'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNostr } from '@/providers/NostrProvider'
+import { queuePersistForegroundEvent } from '@/services/event-archive.service'
 import noteStatsService from '@/services/note-stats.service'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import {
@@ -176,6 +177,7 @@ const NotePageBody = forwardRef(({ id, index, hideTitlebar = false, initialEvent
 
   useEffect(() => {
     if (!rootEventForStrip) return
+    queuePersistForegroundEvent(rootEventForStrip)
     void noteStatsService.fetchNoteStats(rootEventForStrip, pubkey, statsRelays, { foreground: true })
   }, [rootEventForStrip, pubkey, statsRelays, currentRelaysKey])
 
