@@ -17,7 +17,7 @@ const NoteCard = memo(function NoteCard({
   pinned = false,
   hideParentNotePreview = false,
   bottomNoteLabel,
-  fetchNoteStatsIfMissing = true,
+  fetchNoteStatsIfMissing = false,
   deferAuthorAvatar = true,
   searchListPreview = false,
   seenOnAllowlist,

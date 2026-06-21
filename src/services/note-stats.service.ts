@@ -34,21 +34,12 @@ import {
 } from '@/lib/web-bookmark-nip'
 import { eventReferencesThreadTarget, threadRootRefFromStatsRootEvent } from '@/lib/op-reference-tags'
 import type { TThreadRootRef } from '@/lib/thread-reply-root-match'
-import { filterRelaysToUserAllowlist, isRelayInUserAllowlist } from '@/lib/relay-allowlist'
-import {
-  prependAggrNostrLandIfViewerEligible,
-  stripNostrLandAggrFromRelayUrls
-} from '@/lib/nostr-land-relay-eligibility'
-import { buildComprehensiveRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
-import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
-import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
+import { buildNoteStatsRelayUrls } from '@/lib/note-stats-relay-urls'
 import {
   getEmojiInfosFromEmojiTags,
   getNip25ReactionTargetHexFromTags,
   tagNameEquals
 } from '@/lib/tag'
-import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
-import { getViewerBlockedRelayUrls } from '@/lib/viewer-blocked-relays'
 import client, { eventService, queryService } from '@/services/client.service'
 import { TEmoji } from '@/types'
 import dayjs from 'dayjs'
@@ -229,8 +220,10 @@ class NoteStatsService {
   private batchTimeout: NodeJS.Timeout | null = null
   /** Prevents overlapping processBatch runs (reentrant calls corrupted pendingEvents). */
   private processBatchRunning = false
-  /** When true (secondary panel open), skip background stats relay batches so the note panel is not starved. */
+  /** When true (primary feed obscured), skip background stats relay batches. */
   private backgroundStatsPaused = false
+  /** Aborted when navigating away from a note/thread or pausing the feed. */
+  private statsFetchAbortController = new AbortController()
   /** While greater than zero, {@link processBatch} defers so user publishes are not starved for WebSocket pool / bandwidth. */
   private publishPriorityDepth = 0
   private readonly BATCH_DELAY = 40
@@ -295,6 +288,24 @@ class NoteStatsService {
 
   setBackgroundStatsPaused(paused: boolean): void {
     this.backgroundStatsPaused = paused
+    if (paused) {
+      this.cancelInFlightStatsFetches()
+    }
+  }
+
+  /** Abort in-flight stats REQs and drop queued background work (e.g. navigate away from a thread). */
+  cancelInFlightStatsFetches(): void {
+    this.statsFetchAbortController.abort()
+    this.statsFetchAbortController = new AbortController()
+    this.pendingEvents.clear()
+    if (this.batchTimeout) {
+      clearTimeout(this.batchTimeout)
+      this.batchTimeout = null
+    }
+  }
+
+  private statsFetchSignal(): AbortSignal {
+    return this.statsFetchAbortController.signal
   }
 
   /** Coalesce scroll bursts; flush immediately when backlog is large or a foreground note was queued. */
@@ -335,6 +346,11 @@ class NoteStatsService {
       if (preFromSession.length > 0) {
         this.updateNoteStatsByEvents(preFromSession, event.pubkey, { statsRootEvent: event })
       }
+    }
+
+    /** Relay-backed stats only for the open note panel — never for timeline/feed cards. */
+    if (!foreground) {
+      return
     }
 
     const rememberRoot = () => {
@@ -403,13 +419,11 @@ class NoteStatsService {
    */
   async fetchThreadReplyNoteStatsBatch(
     replies: Event[],
-    relayUrls: string[],
+    _relayUrls: string[],
     _pubkey?: string | null,
     opts?: { foreground?: boolean; threadRootHexId?: string }
   ): Promise<void> {
-    const urls = prependAggrNostrLandIfViewerEligible(
-      appendMoneroNostrRelays(sanitizeRelayUrlsForFetch((relayUrls ?? []).filter(Boolean)))
-    )
+    const urls = buildNoteStatsRelayUrls()
     const hexReplies: Event[] = []
     const replaceableReplies: Event[] = []
     const oddIdReplies: Event[] = []
@@ -448,6 +462,11 @@ class NoteStatsService {
       }
     }
 
+    /** Relay-backed reply stats only when the note panel is open (same rule as {@link fetchNoteStats}). */
+    if (opts?.foreground !== true) {
+      return
+    }
+
     const markHexTargetsLoaded = () => {
       for (const id of hexIds) {
         this.touchStatsLoadedMarker(id)
@@ -465,7 +484,7 @@ class NoteStatsService {
             eoseTimeout: 10_000,
             globalTimeout: 28_000,
             firstRelayResultGraceMs: false as const,
-            ...(opts?.foreground ? { foreground: true as const } : {})
+            signal: this.statsFetchSignal()
           }
           await Promise.all([
             nonSocial.length > 0
@@ -696,7 +715,7 @@ class NoteStatsService {
         eoseTimeout: 10_000,
         globalTimeout: 28_000,
         firstRelayResultGraceMs: false as const,
-        ...(isForegroundFetch ? { foreground: true as const } : {})
+        signal: this.statsFetchSignal()
       }
 
       const rootHex = this.statsKey(resolvedEvent.id)
@@ -764,78 +783,12 @@ class NoteStatsService {
     }
   }
 
-  /** Stats REQs: dedupe, user-blocked strip, then prepend {@link AGGR_NOSTR_LAND_WSS} when eligible. */
-  private finalizeNoteStatsRelayUrls(urls: readonly string[]): string[] {
-    return prependAggrNostrLandIfViewerEligible(
-      appendMoneroNostrRelays(
-        sanitizeRelayUrlsForFetch(dedupeNormalizeRelayUrlsOrdered(urls))
-      )
-    )
-  }
-
-  /** {@link buildComprehensiveRelayList} for reactions/reposts/zaps on a note (thread hints, capped author NIP-65). */
   private async buildNoteStatsRelayList(
-    event: Event,
-    favoriteRelays?: readonly string[] | null,
-    relayAllowlist?: readonly string[]
+    _event: Event,
+    _favoriteRelays?: readonly string[] | null,
+    _relayAllowlist?: readonly string[]
   ): Promise<string[]> {
-    const me = client.pubkey?.trim()
-    const relayHints = [
-      ...relayHintsFromEventTags(event),
-      ...client.getSeenEventRelayUrls(event.id),
-      ...client.eventService.getSessionRelayHintsForHexTarget(event.id),
-      ...(favoriteRelays ?? [])
-    ]
-
-    if (relayAllowlist?.length) {
-      const onAllowlist = (u: string) => isRelayInUserAllowlist(u, relayAllowlist)
-      // Match home feed timeline policy: allowlisted stats must not hit aggr.nostr.land.
-      return stripNostrLandAggrFromRelayUrls(
-        appendMoneroNostrRelays(
-          sanitizeRelayUrlsForFetch(
-            dedupeNormalizeRelayUrlsOrdered(
-              filterRelaysToUserAllowlist(
-                [...relayAllowlist, ...relayHints.filter(onAllowlist)],
-                relayAllowlist
-              )
-            )
-          )
-        )
-      )
-    }
-
-    let useGlobal = true
-    if (me) {
-      try {
-        const [fav, rl] = await Promise.all([
-          client.fetchFavoriteRelays(me).catch(() => [] as string[]),
-          client.peekRelayListFromStorage(me)
-        ])
-        useGlobal = viewerUsesGlobalRelayDefaults({
-          viewerPubkey: me,
-          favoriteRelayUrls: fav,
-          relayList: rl ?? undefined
-        })
-      } catch {
-        useGlobal = true
-      }
-    }
-
-    const comprehensive = await buildComprehensiveRelayList({
-      authorPubkey: event.pubkey,
-      userPubkey: me,
-      relayHints,
-      blockedRelays: [...getViewerBlockedRelayUrls()],
-      includeUserOwnRelays: Boolean(me),
-      includeFavoriteRelays: Boolean(me),
-      includeFastReadRelays: useGlobal,
-      useGlobalRelayDefaults: useGlobal,
-      includeProfileFetchRelays: false,
-      includeSearchableRelays: false,
-      includeLocalRelays: true,
-      includeViewerHttpIndexRelays: true
-    })
-    return this.finalizeNoteStatsRelayUrls(comprehensive)
+    return buildNoteStatsRelayUrls()
   }
 
   /**
@@ -1043,11 +996,6 @@ class NoteStatsService {
     const old = this.noteStatsMap.get(key) ?? {}
     this.noteStatsMap.set(key, { ...old, archivesInteractions: counts })
     this.notifyNoteStats(key)
-  }
-
-  /** Batched prefetch via {@link queueArchivesInteractionPrefetch} (dynamic import avoids service cycle). */
-  prefetchArchivesInteractions(noteId: string): void {
-    void import('@/lib/note-stats-archives-prefetch').then((m) => m.queueArchivesInteractionPrefetch(noteId))
   }
 
   /** Same social `kinds` / tag filters as {@link fetchNoteStats} — for thread UI to load counted replies. */
@@ -1350,7 +1298,7 @@ class NoteStatsService {
           eoseTimeout: 8_000,
           globalTimeout: 18_000,
           firstRelayResultGraceMs: false,
-          foreground: true,
+          signal: this.statsFetchSignal(),
           onevent: onStatsEvent
         }
       )
@@ -1362,7 +1310,7 @@ class NoteStatsService {
   private async fetchMoneroPaymentStatsForHexTargets(
     hexIds: string[],
     onStatsEvent: (evt: Event) => void,
-    foreground = false
+    _foreground = false
   ): Promise<void> {
     const moneroUrls = appendMoneroNostrRelays([])
     if (moneroUrls.length === 0 || hexIds.length === 0) return
@@ -1378,7 +1326,7 @@ class NoteStatsService {
         eoseTimeout: 8_000,
         globalTimeout: 18_000,
         firstRelayResultGraceMs: false,
-        ...(foreground ? { foreground: true as const } : {}),
+        signal: this.statsFetchSignal(),
         onevent: onStatsEvent
       })
     } catch {
@@ -1388,14 +1336,13 @@ class NoteStatsService {
 
   private async fetchReactionsForNoteTarget(
     rootEvent: Event,
-    relayUrls: string[],
-    foreground = false
+    _relayUrls: string[],
+    _foreground = false
   ): Promise<void> {
     const rootHex = this.statsKey(rootEvent.id)
     if (!/^[0-9a-f]{64}$/i.test(rootHex)) return
 
-    const hintRelays = client.eventService.getSessionRelayHintsForHexTarget(rootHex)
-    const urls = [...new Set([...relayUrls, ...hintRelays])]
+    const urls = buildNoteStatsRelayUrls()
     if (!urls.length) return
 
     const filters: Filter[] = [
@@ -1407,7 +1354,7 @@ class NoteStatsService {
       eoseTimeout: 12_000,
       globalTimeout: 22_000,
       firstRelayResultGraceMs: false,
-      ...(foreground ? { foreground: true as const } : {}),
+      signal: this.statsFetchSignal(),
       onevent: (evt: Event) => {
         this.updateNoteStatsByEvents([evt], rootEvent.pubkey, {
           statsRootEvent: rootEvent,

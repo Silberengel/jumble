@@ -19,7 +19,7 @@ export default function RepostNoteCard({
   bottomNoteLabel,
   deferAuthorAvatar = true,
   seenOnAllowlist,
-  fetchNoteStatsIfMissing = true,
+  fetchNoteStatsIfMissing = false,
   hideEngagementChrome = false
 }: {
   event: Event

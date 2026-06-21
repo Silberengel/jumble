@@ -1752,11 +1752,8 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
     recentSecondaryPushRef.current = { url, at: now }
 
-    // Mobile overlays the feed — keep stats/live updates on the visible timeline.
-    if (!isSmallScreen) {
-      noteStatsService.setBackgroundStatsPaused(true)
-      client.interruptBackgroundQueries()
-    }
+    client.interruptBackgroundQueries({ closePooledRelayConnections: true })
+    noteStatsService.cancelInFlightStatsFetches()
 
     if (isSmallScreen && currentPrimaryPage) {
       captureMobilePrimaryFeedScroll(currentPrimaryPage)
@@ -1982,41 +1979,29 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
   const primaryFrozen = primaryObscured
 
-  /** Mobile secondary pages overlay the feed instead of unmounting it (preserves scroll + timeline). */
-  const mobileSecondaryOverlaysFeed =
-    isSmallScreen && secondaryStack.length > 0 && primaryNoteView == null
-
-  const primaryFeedStillVisible =
-    !isSmallScreen || !primaryObscured || mobileSecondaryOverlaysFeed
-
   useLayoutEffect(() => {
-    const pauseBackgroundStats = primaryObscured && !primaryFeedStillVisible
-    noteStatsService.setBackgroundStatsPaused(pauseBackgroundStats)
-    if (primaryFrozen) {
+    noteStatsService.setBackgroundStatsPaused(primaryObscured)
+    if (primaryObscured) {
       extendProfileNetworkDeferral(PROFILE_SECONDARY_PANEL_DEFER_MS)
-      if (isSmallScreen && primaryNoteView != null) {
-        client.interruptBackgroundQueries()
-      }
+      client.interruptBackgroundQueries({ closePooledRelayConnections: true })
     }
-  }, [primaryObscured, primaryFeedStillVisible, isSmallScreen, primaryNoteView])
+  }, [primaryObscured])
 
   const primaryPageContextValue = useMemo(
     (): PrimaryPageContextValue => ({
       navigate: navigatePrimaryPageStable,
       current: currentPrimaryPage,
       currentPageProps,
-      /** Desktop double-pane and mobile secondary overlay keep the feed mounted (frozen). */
-      display: !isSmallScreen || !primaryObscured || mobileSecondaryOverlaysFeed,
+      /** Feed stays mounted when obscured but timelines pause via `display` + `frozen`. */
+      display: !primaryObscured,
       frozen: primaryFrozen
     }),
     [
       navigatePrimaryPageStable,
       currentPrimaryPage,
       currentPageProps,
-      isSmallScreen,
       primaryObscured,
-      primaryFrozen,
-      mobileSecondaryOverlaysFeed
+      primaryFrozen
     ]
   )
 

@@ -17,8 +17,6 @@ import { useContentPolicy } from '@/providers/ContentPolicyProvider'
 import { useFontSize } from '@/providers/FontSizeProvider'
 import { useTheme } from '@/providers/ThemeProvider'
 import { useUserPreferences } from '@/providers/UserPreferencesProvider'
-import nostrArchivesApi from '@/services/nostr-archives-api.service'
-import storage from '@/services/local-storage.service'
 import { TMediaAutoLoadPolicy } from '@/types'
 import { SelectValue } from '@radix-ui/react-select'
 import { forwardRef, HTMLProps, useCallback, useEffect, useState } from 'react'
@@ -30,7 +28,6 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
   const [contentKey, setContentKey] = useState(0)
   const bump = useCallback(() => setContentKey((k) => k + 1), [])
   const [language, setLanguage] = useState<TLanguage>(i18n.language as TLanguage)
-  const [useNostrArchivesApi, setUseNostrArchivesApi] = useState(() => storage.getUseNostrArchivesApi())
   const { themeSetting, setThemeSetting } = useTheme()
   const { fontSize, setFontSize } = useFontSize()
   const {
@@ -195,21 +192,6 @@ const GeneralSettingsPage = forwardRef(({ index, hideTitlebar = false }: { index
             {t('Show NSFW content by default')}
           </Label>
           <Switch id="show-nsfw" checked={defaultShowNsfw} onCheckedChange={setDefaultShowNsfw} />
-        </SettingItem>
-        <SettingItem>
-          <Label htmlFor="use-nostr-archives-api" className="text-base font-normal">
-            <div>{t('Use Nostr Archives API')}</div>
-            <div className="text-muted-foreground">{t('Use Nostr Archives API hint')}</div>
-          </Label>
-          <Switch
-            id="use-nostr-archives-api"
-            checked={useNostrArchivesApi}
-            onCheckedChange={(checked) => {
-              setUseNostrArchivesApi(checked)
-              storage.setUseNostrArchivesApi(checked)
-              nostrArchivesApi.notifySettingsChanged()
-            }}
-          />
         </SettingItem>
         {/* DEPRECATED: Double-panel setting removed for technical debt reduction */}
       </div>

@@ -22,7 +22,6 @@ import storage from '@/services/local-storage.service'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
 import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
-import { fetchArchivesNotePageBundle } from '@/lib/note-page-load-pipeline'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import {
@@ -363,11 +362,6 @@ function ThreadPanel({
   const [loading, setLoading] = useState<boolean>(false)
   /** Bumped when thread relay URLs are known — re-runs stats id hydration with inbox relays. */
   const [threadRelaysRevision, setThreadRelaysRevision] = useState(0)
-  const threadSeenOnAllowlist = useMemo(
-    () =>
-      threadRelayUrlsRef.current.length > 0 ? [...threadRelayUrlsRef.current] : undefined,
-    [threadRelaysRevision]
-  )
   const [showCount, setShowCount] = useState(THREAD_REPLY_SHOW_COUNT)
   const [highlightReplyId, setHighlightReplyId] = useState<string | undefined>(undefined)
   const replyRefs = useRef<Record<string, HTMLDivElement | null>>({})
@@ -663,14 +657,6 @@ function ThreadPanel({
         logger.debug('[ThreadPanel] Local thread load failed', e)
       }
 
-      void fetchArchivesNotePageBundle(event.id, THREAD_REPLY_LIMIT).then((bundle) => {
-        if (!bundle || !threadPanelEngineRef.current.isCurrent(fetchGeneration)) return
-        if (bundle.replies.length > 0) {
-          addReplies(bundle.replies, 'archives')
-        }
-      })
-
-      // Always refetch soon so relays fill gaps; no artificial delay (was 2s and caused empty threads)
       void fetchFromRelays()
       
       async function fetchFromRelays() {
@@ -1092,6 +1078,11 @@ function ThreadPanel({
     }
 
     init()
+
+    return () => {
+      threadPanelEngineRef.current.bumpGeneration()
+      noteStatsService.cancelInFlightStatsFetches()
+    }
   }, [
     rootInfo,
     userPubkey,
@@ -1258,7 +1249,6 @@ function ThreadPanel({
                   parentEventId={event.id !== parentEventHexId ? parentEventId : undefined}
                   duplicateWebPreviewCleanedUrlHints={replyDuplicateWebPreviewHints}
                   foregroundStats={statsForeground}
-                  seenOnAllowlist={threadSeenOnAllowlist}
                   deferAuthorAvatar
                   hideEngagementChrome={!statsForeground}
                   onClickParent={() => {

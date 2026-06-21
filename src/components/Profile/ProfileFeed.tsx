@@ -141,6 +141,7 @@ const ProfileFeed = forwardRef<
                 event={event}
                 filterMutedNotes={false}
                 pinned
+                hideEngagementChrome
                 seenOnAllowlist={seenOnAllowlist.length > 0 ? seenOnAllowlist : undefined}
               />
             ))}

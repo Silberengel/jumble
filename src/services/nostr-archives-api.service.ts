@@ -14,7 +14,6 @@ import { persistArchivesPayloadEvents, persistArchivesEventsIfNew } from '@/lib/
 import { archivesJsonToVerifiedEvent } from '@/lib/nostr-archives-event'
 import logger from '@/lib/logger'
 import activityTrace from '@/lib/activity-trace'
-import storage from '@/services/local-storage.service'
 import type {
   TArchivesApiResult,
   TArchivesInteractionCounts,
@@ -82,7 +81,7 @@ class NostrArchivesApiService {
   }
 
   isEnabled(): boolean {
-    return storage.getUseNostrArchivesApi()
+    return false
   }
 
   /** False when disabled, circuit open, or recent failures — callers should hide Archives-only UI. */

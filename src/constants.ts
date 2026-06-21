@@ -514,8 +514,6 @@ export const FAST_READ_RELAY_URLS = [
   'wss://nostr.wine',
   'wss://nostr21.com',
   'wss://primus.nostr1.com',
-  'wss://relay.sovbit.host',
-  'wss://nostr.xmr.rocks'
 ]
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
@@ -553,13 +551,9 @@ export const NOSTR_ARCHIVES_API_BASE_URL = 'https://api.nostrarchives.com'
 export const NOSTR_ARCHIVES_API_RATE_LIMIT_PER_MIN = 100
 
 export const SEARCHABLE_RELAY_URLS = [
-  NOSTR_ARCHIVES_SEARCH_RELAY_URL,
   'wss://search.nos.today',
   'wss://relay.noswhere.com',
   'wss://nostr-pub.wellorder.net',
-  'wss://nos.lol',
-  'wss://relay.primal.net',
-  /** Read-only cache gateway (fiatjaf/njump) — id / naddr lookups for missing embeds & threads. */
   'wss://njump.me'
 ]
 
@@ -571,11 +565,8 @@ export const SEARCH_QUERY_DEBOUNCE_MS = 550
 
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
-  'wss://thecitadel.nostr1.com',
   'wss://indexer.coracle.social/',
-  'wss://purplepag.es',
-  'wss://nos.lol',
-  'wss://njump.me'
+  'wss://purplepag.es'
 ]
 
 export const FOLLOWS_HISTORY_RELAY_URLS = [

@@ -1,13 +1,10 @@
 import RssFeedItem from '@/components/RssFeedItem'
-import RssUrlThreadStatsBar from '@/components/RssUrlThreadStatsBar'
 import WebPreview from '@/components/WebPreview'
 import { cn } from '@/lib/utils'
-import { createRssThreadRootEvent } from '@/lib/rss-article'
 import { isHttpArticleUrl } from '@/lib/rss-web-feed'
 import type { RssFeedItem as TRssFeedItem } from '@/services/rss-feed.service'
 import { isWebOnlyFauxRssItem } from '@/services/rss-feed.service'
 import { Globe, Rss } from 'lucide-react'
-import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useSmartRssArticleNavigation } from '@/PageManager'
 
@@ -29,7 +26,6 @@ export default function RssWebFeedCard({
 }) {
   const { t } = useTranslation()
   const { navigateToRssArticle } = useSmartRssArticleNavigation()
-  const syntheticRoot = useMemo(() => createRssThreadRootEvent(canonicalUrl), [canonicalUrl])
 
   const hasRealRss = rssItems.some((i) => !isWebOnlyFauxRssItem(i))
   const showRssRows = rssItems.length > 0
@@ -95,8 +91,6 @@ export default function RssWebFeedCard({
           {t('{{count}} RSS entries for this URL', { count: rssItems.length })}
         </p>
       ) : null}
-
-      {!rssColumnReadOnly ? <RssUrlThreadStatsBar event={syntheticRoot} /> : null}
     </div>
   )
 }

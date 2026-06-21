@@ -46,7 +46,7 @@ function MainNoteCard({
   hideParentNotePreview = false,
   bottomNoteLabel,
   showFull = false,
-  fetchNoteStatsIfMissing = true,
+  fetchNoteStatsIfMissing = false,
   deferAuthorAvatar = false,
   searchListPreview = false,
   seenOnAllowlist,
@@ -166,7 +166,6 @@ function MainNoteCard({
             className={embedded ? 'mt-2 px-2 sm:px-3' : `mt-3 ${notePadX}`}
             event={event}
             fetchIfNotExisting={fetchNoteStatsIfMissing}
-            seenOnAllowlist={seenOnAllowlist}
           />
         ) : null}
         {!embedded && bottomNoteLabel ? (

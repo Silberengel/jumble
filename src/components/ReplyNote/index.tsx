@@ -301,7 +301,6 @@ export default function ReplyNote({
           event={event}
           fetchIfNotExisting
           foregroundStats={foregroundStats}
-          seenOnAllowlist={seenOnAllowlist}
           useIconOnlyLikeTrigger={isNip25ReactionKind(event.kind)}
         />
       ) : null}

@@ -108,7 +108,7 @@ class LocalStorageService {
   private defaultExpirationMonths: number = 6
   private showRssFeed: boolean = true
   /** Nostr Archives REST (discovery, stats prefetch). Default on; set `'false'` to disable. */
-  private useNostrArchivesApi: boolean = true
+  private useNostrArchivesApi: boolean = false
   /** Kind 10432 cache relays on this device. Default on; set `'false'` to skip localhost cache relays. */
   private cacheRelaysEnabled: boolean = true
   private homeFeedRelaySource: string = 'favorites'

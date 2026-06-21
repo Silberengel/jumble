@@ -1,13 +1,10 @@
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import { useNearViewport } from '@/hooks/useNearViewport'
 import { useNoteStatsRelayHints } from '@/hooks/useNoteStatsRelayHints'
 import { useNoteStatsById } from '@/hooks/useNoteStatsById'
-import { useRssUrlThreadQueryRelays } from '@/hooks/useRssUrlThreadQueryRelays'
 import noteStatsService from '@/services/note-stats.service'
 import { ExtendedKind } from '@/constants'
 import { useReplyUnderDiscussionRoot } from '@/hooks/useReplyUnderDiscussionRoot'
-import { normalizeAnyRelayUrl } from '@/lib/url'
 import { Event } from 'nostr-tools'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { LikeButtonWithStats } from './LikeButton'
@@ -41,10 +38,7 @@ export default function NoteStats({
   classNames,
   fetchIfNotExisting = false,
   foregroundStats = false,
-  deferFetchUntilNearViewport,
-  useIconOnlyLikeTrigger = false,
-  /** Home feed: stats + “Seen on” only use these relays (favorites + trending, or reply widen stack). */
-  seenOnAllowlist
+  useIconOnlyLikeTrigger = false
 }: {
   event: Event
   className?: string
@@ -52,23 +46,16 @@ export default function NoteStats({
     buttonBar?: string
   }
   fetchIfNotExisting?: boolean
-  /** Jump ahead of spell-feed backlog so counts resolve on the open note / article. */
+  /** Relay-backed stats only on the open note / article panel (`foregroundStats`). */
   foregroundStats?: boolean
-  /**
-   * When true, {@link fetchNoteStats} waits until the stats row is near the viewport.
-   * Defaults to on for feed cards (`fetchIfNotExisting` && !`foregroundStats`).
-   */
-  deferFetchUntilNearViewport?: boolean
   /**
    * Thread rows for kind-7 reactions: like control shows icon + total only (body already shows the reaction glyph).
    */
   useIconOnlyLikeTrigger?: boolean
-  seenOnAllowlist?: readonly string[]
 }) {
   const { pubkey } = useNostr()
   const noteStats = useNoteStatsById(event.id)
   const { relays: hintRelays, currentRelaysKey } = useNoteStatsRelayHints()
-  const { relayUrls: rssUrlThreadRelays, relayMergeTier } = useRssUrlThreadQueryRelays()
   const [loading, setLoading] = useState(false)
 
   // Hide boost button for discussion events and replies to discussions
@@ -77,57 +64,16 @@ export default function NoteStats({
 
   /** Synthetic RSS article root: no boost/quote/zap bar entries that normal notes have. */
   const isRssArticleRoot = event.kind === ExtendedKind.RSS_THREAD_ROOT
-  /** Match {@link RssUrlThreadStatsBar}: inbox/favorites/fast-read merge — plain hints miss many #i indexers. */
-  const statsRelays = isRssArticleRoot
-    ? rssUrlThreadRelays
-    : seenOnAllowlist?.length
-      ? seenOnAllowlist
-      : hintRelays
-  /** At most two background refetches per card: before vs after inbox/favorite hints hydrate. */
-  const seenOnAllowlistKey = seenOnAllowlist?.length
-    ? [...seenOnAllowlist]
-        .map((u) => normalizeAnyRelayUrl(u) || u.trim())
-        .filter(Boolean)
-        .sort()
-        .join('|')
-    : ''
-  /** Home favorites feed: stats are scoped to the feed allowlist — ignore hint/current-relay churn. */
-  const usesFeedStatsAllowlist = Boolean(seenOnAllowlistKey)
-  const statsRelayFetchTier = isRssArticleRoot
-    ? relayMergeTier
-    : usesFeedStatsAllowlist
-      ? 0
-      : hintRelays.length > 0
-        ? 1
-        : 0
-  const statsFetchRelayScopeKey = usesFeedStatsAllowlist
-    ? seenOnAllowlistKey
-    : `${statsRelayFetchTier}|${currentRelaysKey}`
-  const statsRelaysRef = useRef(statsRelays)
-  statsRelaysRef.current = statsRelays
-  const seenOnAllowlistRef = useRef(seenOnAllowlist)
-  seenOnAllowlistRef.current = seenOnAllowlist
-  const shouldDeferStatsFetch =
-    deferFetchUntilNearViewport ?? (fetchIfNotExisting && !foregroundStats)
-  const containerRef = useRef<HTMLDivElement>(null)
-  const isNearViewport = useNearViewport(containerRef, { enabled: shouldDeferStatsFetch })
+  const statsFetchRelayScopeKey = currentRelaysKey
+  const statsRelaysRef = useRef(hintRelays)
+  statsRelaysRef.current = hintRelays
 
   useEffect(() => {
-    if (!fetchIfNotExisting) return
-    if (shouldDeferStatsFetch && !isNearViewport) return
-    noteStatsService.prefetchArchivesInteractions(event.id)
-    /** Feed cards: Archives aggregate counts are enough for badges — skip relay REQ storms. */
-    if (!foregroundStats) return
+    if (!fetchIfNotExisting || !foregroundStats) return
     setLoading(true)
     noteStatsService
-      .fetchNoteStats(event, pubkey, statsRelaysRef.current, {
-        foreground: foregroundStats,
-        relayAllowlist: seenOnAllowlistRef.current?.length ? seenOnAllowlistRef.current : null
-      })
+      .fetchNoteStats(event, pubkey, statsRelaysRef.current, { foreground: true })
       .finally(() => setLoading(false))
-    // Intentionally omit `event` object: parent feeds often pass new references each render;
-    // id/sig/kind/created_at identify the note for refetch boundaries.
-    // `statsFetchRelayScopeKey` bundles tier + current relays, or feed allowlist only on home favorites.
   }, [
     event.id,
     event.kind,
@@ -135,8 +81,6 @@ export default function NoteStats({
     event.sig,
     fetchIfNotExisting,
     foregroundStats,
-    shouldDeferStatsFetch,
-    isNearViewport,
     pubkey,
     statsFetchRelayScopeKey
   ])
@@ -180,7 +124,6 @@ export default function NoteStats({
 
   return (
     <div
-      ref={containerRef}
       className={cn('select-none min-w-0', className)}
       data-note-stats
       onClick={(e) => e.stopPropagation()}
