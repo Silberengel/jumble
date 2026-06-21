@@ -494,10 +494,13 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         } else {
           setRelayList(baseRelayList)
         }
+        /** Before feed REQs: locals / HTTP index need personal-key policy from IDB (PWA skip-network path). */
+        await client.syncViewerPersonalRelayKeys(account.pubkey)
       } else if (!userForcedAccountNetworkHydrate) {
         /** No NIP-65 / 10432 / 10243 in IDB — still set merged defaults immediately (never wait on network). */
         const quick = await client.peekRelayListFromStorage(account.pubkey)
         setRelayList(quick)
+        await client.syncViewerPersonalRelayKeys(account.pubkey)
       }
       if (!userForcedAccountNetworkHydrate) {
         if (storedProfileEvent) {
@@ -682,7 +685,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           ? indexedDb.putReplaceableEvent(blockedRelaysEventFromNetwork).catch(() => {})
           : Promise.resolve()
       ])
-      void client.syncViewerPersonalRelayKeys(account.pubkey)
+      await client.syncViewerPersonalRelayKeys(account.pubkey)
       if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
         setCacheRelayListEvent(cacheRelayListEvent ?? storedCacheRelayListEvent ?? null)
         setHttpRelayListEvent(httpRelayListEventFetched)
@@ -1011,6 +1014,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         if (storedRelayListEvent) {
           client.updateRelayListCache(storedRelayListEvent)
         }
+        await client.syncViewerPersonalRelayKeys(account.pubkey)
         void client.runSessionPrewarm({ pubkey: account.pubkey, signal: controller.signal })
         if (!storedFollowListEvent && !freshSignupSkipNetwork) {
           const trySetFollowListSkip = (evt: Event) => {

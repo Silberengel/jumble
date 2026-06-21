@@ -1,5 +1,6 @@
 import { buildFeedSessionSnapshotKey, stableFeedKindKey } from '@/features/feed/descriptor'
 import { useFeedAttestedSuperchatIds } from '@/hooks/useFeedAttestedSuperchatIds'
+import { useViewerPersonalRelayKeysRevision } from '@/hooks/useViewerPersonalRelayKeysRevision'
 import { isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
@@ -72,6 +73,7 @@ export function useHomeFeed(): UseHomeFeedResult {
   const [scrolledFromTop, setScrolledFromTop] = useState(false)
   const engineRef = useRef<HomeFeedEngine | null>(null)
   const bundleRef = useRef<HomeFeedDescriptorBundle | null>(null)
+  const personalRelayKeysRevision = useViewerPersonalRelayKeysRevision()
   const scrolledFromTopRef = useRef(false)
   const pubkeyRef = useRef(pubkey)
   pubkeyRef.current = pubkey
@@ -226,7 +228,7 @@ export function useHomeFeed(): UseHomeFeedResult {
       engine.destroy()
       if (engineRef.current === engine) engineRef.current = null
     }
-  }, [bundle?.descriptor.key, bundle?.subscriptionKey, sessionSnapshotKey])
+  }, [bundle?.descriptor.key, bundle?.subscriptionKey, sessionSnapshotKey, personalRelayKeysRevision])
 
   useEffect(() => {
     scrolledFromTopRef.current = scrolledFromTop

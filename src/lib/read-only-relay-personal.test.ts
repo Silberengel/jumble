@@ -13,6 +13,7 @@ import {
   enterSingleRelayExplicitBrowse,
   enterSingleRelayExplicitFetchScope,
   leaveSingleRelayExplicitBrowse,
+  getViewerPersonalRelayKeysRevision,
   setViewerPersonalRelayKeys
 } from './read-only-relay-personal'
 import { setViewerBlockedRelayUrls } from './viewer-blocked-relays'
@@ -38,6 +39,18 @@ describe('read-only-relay-personal', () => {
     expect(isPersonalListRequiredReadOnlyRelay('wss://relay.damus.io/')).toBe(false)
     expect(isPersonalListRequiredReadOnlyRelay(AGGR_NOSTR_LAND_WSS)).toBe(false)
     expect(isPersonalListRequiredReadOnlyRelay('wss://search.nos.today/')).toBe(false)
+  })
+
+  it('bumps revision when personal relay keys change', () => {
+    const start = getViewerPersonalRelayKeysRevision()
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://relay.example.com/']), {
+      viewerActive: true
+    })
+    expect(getViewerPersonalRelayKeysRevision()).toBe(start + 1)
+    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(['wss://relay.example.com/']), {
+      viewerActive: true
+    })
+    expect(getViewerPersonalRelayKeysRevision()).toBe(start + 1)
   })
 
   it('strips unlisted filter.nostr.wine but keeps search indexers; aggr only when nostr.land is listed', () => {

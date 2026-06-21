@@ -21,6 +21,22 @@ const personalListRequiredKeySet = new Set(
 let viewerPersonalRelayKeys = new Set<string>()
 /** True after a logged-in viewer's personal relay keys were synced (including empty lists). */
 let viewerMetadataRelaysPolicyActive = false
+let viewerPersonalRelayKeysRevision = 0
+
+/** Fired when {@link setViewerPersonalRelayKeys} changes keys or viewer policy (feeds re-subscribe). */
+export const VIEWER_PERSONAL_RELAY_KEYS_SYNCED_EVENT = 'imwald:viewer-personal-relay-keys-synced'
+
+export function getViewerPersonalRelayKeysRevision(): number {
+  return viewerPersonalRelayKeysRevision
+}
+
+function personalRelayKeySetsEqual(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const key of a) {
+    if (!b.has(key)) return false
+  }
+  return true
+}
 /** Relay detail page mounted: explicit single-relay browse must not be blocked by strikes / user blocks / list gates. */
 let singleRelayExplicitBrowseDepth = 0
 /** In-flight authoritative single-relay timeline REQ (see {@link enterSingleRelayExplicitFetchScope}). */
@@ -176,9 +192,23 @@ export function setViewerPersonalRelayKeys(
   keys: ReadonlySet<string>,
   policy?: { viewerActive?: boolean }
 ): void {
+  const prevKeys = viewerPersonalRelayKeys
+  const prevPolicyActive = viewerMetadataRelaysPolicyActive
   viewerPersonalRelayKeys = new Set(keys)
   if (policy?.viewerActive !== undefined) {
     viewerMetadataRelaysPolicyActive = policy.viewerActive
+  }
+  const keysChanged = !personalRelayKeySetsEqual(prevKeys, viewerPersonalRelayKeys)
+  const policyChanged =
+    policy?.viewerActive !== undefined && policy.viewerActive !== prevPolicyActive
+  if (!keysChanged && !policyChanged) return
+  viewerPersonalRelayKeysRevision += 1
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent(VIEWER_PERSONAL_RELAY_KEYS_SYNCED_EVENT, {
+        detail: { revision: viewerPersonalRelayKeysRevision }
+      })
+    )
   }
 }
 

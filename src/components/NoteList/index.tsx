@@ -28,6 +28,7 @@ import {
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
 import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
+import { useViewerPersonalRelayKeysRevision } from '@/hooks/useViewerPersonalRelayKeysRevision'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { feedSeenOnAllowlistFromSubRequests } from '@/lib/feed-seen-on-allowlist'
@@ -933,6 +934,7 @@ const NoteList = forwardRef(
   ) => {
     const { t } = useTranslation()
     useActivityTraceRender('NoteList')
+    const personalRelayKeysRevision = useViewerPersonalRelayKeysRevision()
     const { startLogin, pubkey } = useNostr()
     const { mutePubkeySet } = useMuteList()
     const contentPolicy = useContentPolicyOptional()
@@ -2126,6 +2128,7 @@ const NoteList = forwardRef(
           withKindFilter ? '1' : '0',
           feedTimelineScopeKey ?? '',
           String(refreshCount),
+          String(personalRelayKeysRevision),
           relayCapabilityReady ? '1' : '0'
         ].join('\x1e'),
       [
@@ -2142,6 +2145,7 @@ const NoteList = forwardRef(
         withKindFilter,
         feedTimelineScopeKey,
         refreshCount,
+        personalRelayKeysRevision,
         relayCapabilityReady
       ]
     )
