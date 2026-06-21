@@ -314,6 +314,34 @@ export function buildDiscussionFilter(): Filter {
   }
 }
 
+/** Merge {@link FAST_WRITE_RELAY_URLS} into a thread read stack (kind 11 replies live on write-tier relays). */
+export function mergeDiscussionFastWriteReadRelays(
+  urls: readonly string[],
+  blockedRelays: readonly string[] = []
+): string[] {
+  const blocked = new Set(
+    blockedRelays
+      .map((b) => (normalizeAnyRelayUrl(b) || b.trim()).toLowerCase())
+      .filter(Boolean)
+  )
+  const allow = (u: string) => !blocked.has((normalizeAnyRelayUrl(u) || u.trim()).toLowerCase())
+  const seen = new Set(
+    urls
+      .map((u) => (normalizeAnyRelayUrl(u) || u.trim()).toLowerCase())
+      .filter(Boolean)
+  )
+  const out = dedupeNormalizeRelayUrlsOrdered([...urls])
+  for (const raw of FAST_WRITE_RELAY_URLS) {
+    const n = normalizeUrl(raw) || raw
+    if (!n || !allow(n)) continue
+    const key = (normalizeAnyRelayUrl(n) || n).toLowerCase()
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(n)
+  }
+  return out
+}
+
 /**
  * Kind 11 threads are often published to {@link FAST_WRITE_RELAY_URLS} (nos.lol, primal, …).
  * The generic faux-spell read stack only merges inbox + favorites + {@link FAST_READ_RELAY_URLS}, which

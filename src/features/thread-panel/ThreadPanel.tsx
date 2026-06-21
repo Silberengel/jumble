@@ -84,8 +84,10 @@ import {
   buildThreadPanelReplies,
   buildThreadPanelStatsMissingPartition,
   buildThreadPanelVisibleFeed,
-  isDiscussionThreadRoot
+  isDiscussionThreadRoot,
+  isDiscussionThreadPanelEvent
 } from './buildThreadPanelView'
+import { mergeDiscussionFastWriteReadRelays } from '@/pages/primary/SpellsPage/fauxSpellFeeds'
 import MissingThreadReply from './components/MissingThreadReply'
 import { useThreadRootInfo } from './useThreadRootInfo'
 import { useThreadAttestedPayments } from './thread-attested-payments'
@@ -675,13 +677,17 @@ function ThreadPanel({
           const replyBlockedRelays = [
             ...(blockedRelays || [])
           ]
-          const finalRelayUrls = await buildReplyReadRelayList(
+          let finalRelayUrls = await buildReplyReadRelayList(
             opAuthorPubkey,
             userPubkey || undefined,
             replyBlockedRelays,
             threadRelayHints,
             relayAuthoritativeRead ? { relayAuthoritative: true } : undefined
           )
+
+          if (isDiscussionThreadPanelEvent(event)) {
+            finalRelayUrls = mergeDiscussionFastWriteReadRelays(finalRelayUrls, replyBlockedRelays)
+          }
 
           // URL/article threads (NIP-22 `#i`): synthetic root has no e-tags or seen-relay hints — merge the same
           // relay stack as RSS article thread discovery so replies match feed stats.

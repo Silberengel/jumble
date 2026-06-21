@@ -1,5 +1,6 @@
 import { ExtendedKind } from '@/constants'
 import { isDiscussionDownvoteEmoji, isDiscussionUpvoteEmoji } from '@/lib/discussion-votes'
+import { getRootETag, resolveDeclaredThreadRootEventHex } from '@/lib/event'
 import {
   collectAttestedSuperchatsFromRepliesMap,
   isSuperchatKind,
@@ -10,6 +11,7 @@ import { shouldHideThreadResponseEvent } from '@/lib/thread-response-filter'
 import { isRssUrlThreadAntwortenTailKind } from '@/lib/rss-web-feed'
 import type { TRepliesMap } from '@/lib/reply-index'
 import noteStatsService from '@/services/note-stats.service'
+import client from '@/services/client.service'
 import type { Event as NEvent } from 'nostr-tools'
 import type { TRootInfo, TThreadFeedItem, TBacklinkDisplayRow, ThreadPanelSort } from './types'
 import {
@@ -396,4 +398,15 @@ export function buildThreadPanelDisplayRows(
 
 export function isDiscussionThreadRoot(event: NEvent): boolean {
   return event.kind === ExtendedKind.DISCUSSION
+}
+
+/** Kind 11 root or NIP-22 reply whose declared root is a cached kind 11 event. */
+export function isDiscussionThreadPanelEvent(event: NEvent): boolean {
+  if (event.kind === ExtendedKind.DISCUSSION) return true
+  if (event.kind !== ExtendedKind.COMMENT && event.kind !== ExtendedKind.VOICE_COMMENT) return false
+  const rootETag = getRootETag(event)
+  if (!rootETag?.[1]) return false
+  const hid = resolveDeclaredThreadRootEventHex(rootETag[1])
+  const root = client.peekSessionCachedEvent(hid)
+  return root?.kind === ExtendedKind.DISCUSSION
 }

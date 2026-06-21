@@ -4,6 +4,7 @@ import {
   buildCalendarReadRelayUrls,
   buildDiscussionsSpellRelayUrls,
   buildNotificationSpellRelayUrls,
+  mergeDiscussionFastWriteReadRelays,
   CALENDAR_READ_MAX_RELAYS,
   FAUX_SPELL_MAX_RELAYS,
   notificationMentionIndexRelayUrls
@@ -49,6 +50,22 @@ describe('buildDiscussionsSpellRelayUrls', () => {
     const blocked = ['wss://nos.lol/']
     const out = buildDiscussionsSpellRelayUrls([], blocked)
     expect(out.some((u) => u.includes('nos.lol'))).toBe(false)
+  })
+})
+
+describe('mergeDiscussionFastWriteReadRelays', () => {
+  it('appends FAST_WRITE relays not already in the stack', () => {
+    const base = ['wss://theforest.nostr1.com/']
+    const out = mergeDiscussionFastWriteReadRelays(base)
+    expect(out[0]).toContain('theforest.nostr1.com')
+    expect(out.some((u) => u.includes('thecitadel.nostr1.com'))).toBe(true)
+    expect(out.some((u) => u.includes('nos.lol'))).toBe(true)
+  })
+
+  it('respects blocked relays', () => {
+    const out = mergeDiscussionFastWriteReadRelays([], ['wss://relay.primal.net'])
+    expect(out.some((u) => u.includes('primal.net'))).toBe(false)
+    expect(out.some((u) => u.includes('thecitadel.nostr1.com'))).toBe(true)
   })
 })
 
