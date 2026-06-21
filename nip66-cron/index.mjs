@@ -149,28 +149,33 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
       ws = new WebSocket(relayUrl, { handshakeTimeout: 12000 })
       await new Promise((resolve, reject) => {
         let timeoutId
-        let resolved = false
-        const cleanup = () => {
-          if (resolved) return
-          resolved = true
-          clearTimeout(timeoutId)
+        let settled = false
+        const detachConnect = () => {
           ws.removeListener('open', onOpen)
-          ws.removeListener('error', onError)
+          ws.removeListener('error', onConnectError)
         }
         const onOpen = () => {
-          cleanup()
+          if (settled) return
+          settled = true
+          clearTimeout(timeoutId)
+          detachConnect()
           resolve()
         }
-        const onError = (err) => {
-          cleanup()
+        const onConnectError = (err) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeoutId)
+          detachConnect()
           reject(err)
         }
         timeoutId = setTimeout(() => {
-          cleanup()
+          if (settled) return
+          settled = true
+          detachConnect()
           reject(new Error('open timeout'))
         }, 15000)
         ws.once('open', onOpen)
-        ws.on('error', onError)
+        ws.once('error', onConnectError)
       })
       const events = await new Promise((resolve) => {
         const acc = []
@@ -178,17 +183,17 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
         const t = setTimeout(() => {
           finish(acc)
         }, 20000)
+        const onReqError = (err) => {
+          log('Kind 10002 WS error during REQ', { relay: relayUrl, err: err?.message })
+          finish(acc)
+        }
         function finish (result) {
           if (settled) return
           settled = true
           clearTimeout(t)
           ws.removeListener('message', onMessage)
-          ws.removeListener('error', onError)
+          ws.removeListener('error', onReqError)
           resolve(result)
-        }
-        function onError (err) {
-          log('Kind 10002 WS error during REQ', { relay: relayUrl, err: err?.message })
-          finish(acc)
         }
         function onMessage (data) {
           let msg
@@ -203,7 +208,7 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
           }
         }
         ws.on('message', onMessage)
-        ws.on('error', onError)
+        ws.once('error', onReqError)
         ws.send(JSON.stringify(['REQ', subId, filter]))
       })
 
