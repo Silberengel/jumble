@@ -2762,7 +2762,8 @@ export default {
     'Unmute thread notifications': 'Unmute thread notifications',
     'Unmuted thread notifications': 'Unmuted thread notifications',
     Values: 'Values',
-    favoriteRelaysDefaultsBanner: 'favoriteRelaysDefaultsBanner',
+    favoriteRelaysDefaultsBanner:
+      'Es ist noch keine Favoriten-Relay-Liste (Kind 10012) für dieses Konto geladen. Die Relays unten sind App-Standardwerte und lokale Relay-Sets, keine veröffentlichte Liste von deinen Relays.',
     othersRelayListEmpty: 'othersRelayListEmpty',
     othersRelayListKind10002Fallback: 'othersRelayListKind10002Fallback',
     'paytoEditor.jsonPreviewHint': 'paytoEditor.jsonPreviewHint',

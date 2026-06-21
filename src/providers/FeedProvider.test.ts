@@ -48,11 +48,11 @@ describe('home feed relay policy', () => {
     expect(merged).toContain('wss://inbox.example/')
   })
 
-  it('personal-relay policy omits wisp trending from home feed relay list', () => {
+  it('personal-relay policy still includes wisp trending on the home feed stack', () => {
     setViewerPersonalRelayKeys(new Set(['wss://relay.example.com/']), { viewerActive: true })
     const urls = buildAllFavoritesFeedRelayUrls(['wss://relay.example.com/'], [], [])
     expect(urls).toContain('wss://relay.example.com/')
-    expect(urls.some((u) => isWispTrendingNotesRelayUrl(u))).toBe(false)
+    expect(urls.some((u) => isWispTrendingNotesRelayUrl(u))).toBe(true)
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
   })
 
@@ -72,11 +72,11 @@ describe('home feed relay policy', () => {
     expect(stripped).toEqual(['wss://relay.example/'])
   })
 
-  it('falls back to DEFAULT_FAVORITE_RELAYS when favorites and extras are empty', () => {
-    setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
-    const defaultsOnly = buildHomeDefaultFavoriteRelayUrls([])
-    expect(defaultsOnly.length).toBeGreaterThan(0)
-    const urls = buildAllFavoritesFeedRelayUrls([], [], [], false)
+  it('supplements DEFAULT_FAVORITE_RELAYS when the viewer has no configured favorites', () => {
+    setViewerPersonalRelayKeys(new Set(['wss://theforest.nostr1.com/']), { viewerActive: true })
+    const urls = buildAllFavoritesFeedRelayUrls(['wss://theforest.nostr1.com/'], [], [], false, {
+      supplementDefaultFavorites: true
+    })
     const defaultHosts = new Set(
       DEFAULT_FAVORITE_RELAYS.map((u) => {
         try {
@@ -86,7 +86,6 @@ describe('home feed relay policy', () => {
         }
       }).filter(Boolean)
     )
-    expect(urls.length).toBeGreaterThan(0)
     for (const host of defaultHosts) {
       expect(
         urls.some((u) => {
@@ -101,12 +100,16 @@ describe('home feed relay policy', () => {
         })
       ).toBe(true)
     }
+    setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
   })
 
-  it('omits default-favorites fallback under personal-relay policy', () => {
+  it('does not supplement defaults without supplementDefaultFavorites under personal-relay policy', () => {
     setViewerPersonalRelayKeys(new Set(['wss://relay.example.com/']), { viewerActive: true })
-    expect(buildAllFavoritesFeedRelayUrls([], [], [], false)).toEqual([])
-    expect(buildHomeDefaultFavoriteRelayUrls([])).toEqual([])
+    const urls = buildAllFavoritesFeedRelayUrls(['wss://relay.example.com/'], [], [], false)
+    expect(urls.some((u) => u.includes('relay.example.com'))).toBe(true)
+    expect(urls.some((u) => u.includes('theforest.nostr1.com'))).toBe(false)
+    expect(urls.some((u) => u.includes('nostr.land'))).toBe(false)
+    expect(buildHomeDefaultFavoriteRelayUrls([]).length).toBeGreaterThan(0)
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
   })
 })

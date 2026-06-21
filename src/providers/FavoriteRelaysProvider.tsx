@@ -49,7 +49,7 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
         favoriteRelayUrls: next,
         relayList
       })
-      if (next.length === 0 && useGlobal) {
+      if (next.length === 0 && (useGlobal || pubkey)) {
         next = [...DEFAULT_FAVORITE_RELAYS]
       }
 

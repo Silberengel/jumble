@@ -527,10 +527,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const lastNetworkHydrateAt = storage.getAccountNetworkHydrateAt(account.pubkey)
       const hasLocalRelayAndProfile = !!storedRelayListEvent && !!storedProfileEvent
       const freshSignupSkipNetwork = shouldSkipNetworkHydrateForFreshSignup(account.pubkey)
+      const missingPublishedFavoriteRelays = !storedFavoriteRelaysEvent
       const skipNetworkHydrate =
         !userForcedAccountNetworkHydrate &&
         (freshSignupSkipNetwork ||
           (hasLocalRelayAndProfile &&
+            !missingPublishedFavoriteRelays &&
             typeof lastNetworkHydrateAt === 'number' &&
             Date.now() - lastNetworkHydrateAt < ACCOUNT_SESSION_NETWORK_HYDRATE_MIN_INTERVAL_MS))
 

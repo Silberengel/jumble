@@ -755,9 +755,14 @@ class ClientService extends EventTarget {
       httpIndexBases = []
     }
     try {
-      urls.push(...(await this.fetchFavoriteRelaysFromStorage(pubkey)))
+      const favoriteRelays = await this.fetchFavoriteRelaysFromStorage(pubkey)
+      if (favoriteRelays.length > 0) {
+        urls.push(...favoriteRelays)
+      } else {
+        urls.push(...DEFAULT_FAVORITE_RELAYS)
+      }
     } catch {
-      // ignore
+      urls.push(...DEFAULT_FAVORITE_RELAYS)
     }
     try {
       cacheRelayEvent = (await indexedDb.getReplaceableEvent(pubkey, ExtendedKind.CACHE_RELAYS)) ?? undefined

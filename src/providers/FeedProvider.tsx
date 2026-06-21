@@ -5,7 +5,8 @@ import {
   buildHomeRelaySetFeedRelayUrls,
   ensureHomeFeedRelayUrlsHaveFallback,
   ensureHomeFeedTrendingRelay,
-  stripNostrLandAggrFromRelayUrls
+  stripNostrLandAggrFromRelayUrls,
+  type HomeFeedRelayStackOptions
 } from '@/lib/home-feed-relays'
 import {
   homeFeedSourceLabel,
@@ -47,7 +48,8 @@ function buildHomeReplyFeedRelayUrls(
   inboxRelayUrls: string[],
   cacheRelayUrls: string[],
   httpRelayUrls: string[],
-  blockedRelays: string[]
+  blockedRelays: string[],
+  stackOptions?: HomeFeedRelayStackOptions
 ): string[] {
   /** Home Replies: never prepend aggr (reserved for side-panel threads, profiles, spells). */
   return ensureHomeFeedTrendingRelay(
@@ -69,7 +71,8 @@ function buildHomeReplyFeedRelayUrls(
           }
         )
       ),
-      blockedRelays
+      blockedRelays,
+      stackOptions
     )
   )
 }
@@ -197,13 +200,16 @@ export function FeedProvider({ children }: { children: ReactNode }) {
   const lastHomeFeedUrlLogRef = useRef({ primary: '', reply: '' })
   const updateFeedRelayUrls = useCallback(() => {
     const usingRelaySet = isHomeFeedRelaySetSource(effectiveHomeFeedRelaySource)
+    const supplementDefaultFavorites = !usingRelaySet && homeFeedPrimaryRelayUrls.length === 0
+    const stackOptions: HomeFeedRelayStackOptions = { supplementDefaultFavorites }
     let primaryRelays = usingRelaySet
       ? buildHomeRelaySetFeedRelayUrls(homeFeedPrimaryRelayUrls, blockedRelays)
       : buildAllFavoritesFeedRelayUrls(
           homeFeedPrimaryRelayUrls,
           blockedRelays,
           [],
-          useGlobalRelayDefaults
+          useGlobalRelayDefaults,
+          stackOptions
         )
     if (
       !usingRelaySet &&
@@ -214,7 +220,8 @@ export function FeedProvider({ children }: { children: ReactNode }) {
         replyExtraRelayLayers.inboxRelayUrls,
         blockedRelays,
         [],
-        false
+        false,
+        stackOptions
       )
     }
     const replyRelays = usingRelaySet
@@ -224,7 +231,8 @@ export function FeedProvider({ children }: { children: ReactNode }) {
           replyExtraRelayLayers.inboxRelayUrls,
           replyExtraRelayLayers.cacheRelayUrls,
           replyExtraRelayLayers.httpRelayUrls,
-          blockedRelays
+          blockedRelays,
+          stackOptions
         )
     const primaryId = relayUrlListIdentity(primaryRelays)
     const replyId = relayUrlListIdentity(replyRelays)
