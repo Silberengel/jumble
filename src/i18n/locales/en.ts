@@ -1223,7 +1223,9 @@ export default {
       'Only threads with at least five feed-filtered notes (last ~3 days) appear. Data merges this tab’s session cache, your on-device archive, and your relay stack. Bubble size and glow reflect activity. Lines connect threads when notes reference another thread’s events (`e` / `E` / `q`) or when threads share a replaceable coordinate (`a` / `A`). Threads that share a distinctive word in the preview (or start of the root note) are laid out next to each other when possible.',
     heatMapLocalOnlyBanner:
       'No read relay stack — only this session’s cache and your on-device archive are merged (add relays in settings for a live relay mix).',
-    heatMapLoading: 'Merging session cache, archive, and relays…',
+    heatMapRescanHint:
+      'Showing session cache and local archive only. Tap Rescan to fetch a fresh snapshot from relays.',
+    heatMapLoading: 'Merging session cache and archive…',
     heatMapEmpty:
       'Nothing meets the bar yet. Threads need at least five notes that pass your feed kind filter from about the last 72 hours. Browse feeds or Rescan after syncing.',
     heatMapFetchError: 'Could not load a thread snapshot from relays.',

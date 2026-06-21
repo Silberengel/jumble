@@ -27,7 +27,11 @@ import {
   normalizeHttpRelayUrl,
   normalizeUrl
 } from '@/lib/url'
-import { RelaySubscribeOpBatch, type RelayOpTerminalRow } from '@/services/relay-operation-log.service'
+import {
+  compactFilterForRelayLog,
+  RelaySubscribeOpBatch,
+  type RelayOpTerminalRow
+} from '@/services/relay-operation-log.service'
 import type { Filter, Event as NEvent } from 'nostr-tools'
 import { SimplePool, VerifiedEvent, nip19 } from 'nostr-tools'
 import type { AbstractRelay } from 'nostr-tools/abstract-relay'
@@ -471,7 +475,9 @@ export class QueryService {
     activityTrace.trace('relay', 'query.start', {
       source: options?.relayOpSource ?? 'QueryService.query',
       relayCount: urls.length,
-      filterCount: sanitizedFilters.length
+      filterCount: sanitizedFilters.length,
+      filters: sanitizedFilters.slice(0, 4).map(compactFilterForRelayLog),
+      ...(sanitizedFilters.length > 4 ? { filtersTruncated: sanitizedFilters.length - 4 } : {})
     })
     if (options?.signal?.aborted) {
       endRelayScope()
@@ -811,6 +817,16 @@ export class QueryService {
           if (events.length > 0 && !resolveTimeout) {
             resolveTimeout = setTimeout(() => resolveWithEvents(), 1000)
           }
+        },
+        onAllClose: () => {
+          if (resolved || queryFinalizing) return
+          if (events.length === 0) {
+            resolveWithEvents()
+            return
+          }
+          if (!resolveTimeout && !allEosed) {
+            resolveTimeout = setTimeout(() => resolveWithEvents(), 250)
+          }
         }
       },
         { source: options?.relayOpSource ?? 'QueryService.query', logLevel: 'debug', quiet: true, onBatchEnd: (rows) => emitReqEnd(rows, resolvedSnapshot) }
@@ -957,7 +973,9 @@ export class QueryService {
     activityTrace.trace('relay', 'subscribe.start', {
       source: opSource,
       relayCount: groupedRequests.length,
-      filterCount: filters.length
+      filterCount: filters.length,
+      filters: filters.slice(0, 3).map(compactFilterForRelayLog),
+      ...(filters.length > 3 ? { filtersTruncated: filters.length - 3 } : {})
     })
     const opBatch =
       groupedRequests.length > 0

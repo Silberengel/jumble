@@ -41,9 +41,11 @@ import { useTranslation } from 'react-i18next'
 
 const HEAT_WINDOW_SEC = 72 * 3600
 /** REQ without `since`: many relays return nothing for kind 1+`since`; we clip by `created_at` client-side. */
-const HEAT_REQ_LIMIT = 1500
+const HEAT_REQ_LIMIT = 500
 const MAX_BUBBLES = 10
 const SESSION_HEAT_LIMIT = 2500
+/** Cap relay fan-out for optional heat-map rescan (favorites-first list is already ordered). */
+const HEAT_MAP_MAX_RELAYS = 5
 /** Cap rows scanned so the heat map stays responsive on large archives. */
 const ARCHIVE_HEAT_MAX_SCAN = 30_000
 const ARCHIVE_HEAT_MAX_MATCHES = 2000
@@ -63,7 +65,7 @@ function mergeEventsById(events: Event[]): Event[] {
 const HEAT_KINDS = [kinds.ShortTextNote, ExtendedKind.DISCUSSION] as const
 
 const ARCHIVE_SCAN_TIMEOUT_MS = 22_000
-const RELAY_FETCH_TIMEOUT_MS = 28_000
+const RELAY_FETCH_TIMEOUT_MS = 18_000
 /** Load thread roots that sit outside the heat time window so hover text is the OP, not a reply. */
 const ROOT_SNIPPET_FETCH_TIMEOUT_MS = 12_000
 const TOMBSTONES_TIMEOUT_MS = 8_000
@@ -134,8 +136,8 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
           userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
           applySocialKindBlockedFilter: false
         }
-      ),
-    [favoriteRelays, blockedRelays, relayList]
+      ).slice(0, HEAT_MAP_MAX_RELAYS),
+    [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent]
   )
 
   const [rows, setRows] = useState<TRelayThreadHeatBubble[]>([])
@@ -144,7 +146,10 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
   const [loading, setLoading] = useState(true)
   const [isMerging, setIsMerging] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  /** Incremented only by the Rescan button — triggers optional relay merge (not on first paint). */
   const [rescanTick, setRescanTick] = useState(0)
+  /** True after a successful relay rescan in this session. */
+  const [relayDataFresh, setRelayDataFresh] = useState(false)
 
   const muteFingerprint = useMemo(() => mutePubkeySetFingerprint(mutePubkeySet), [mutePubkeySet])
 
@@ -156,7 +161,10 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
     [pubkey, relayUrls, followPubkeys, feedFilterKey, muteFingerprint]
   )
 
-  const mergeHeatMapData = useCallback(async (includeRelay = true): Promise<{
+  const mergeHeatMapData = useCallback(async (
+    includeRelay: boolean,
+    signal?: AbortSignal
+  ): Promise<{
     bubbles: TRelayThreadHeatBubble[]
     edges: TRelayThreadHeatEdge[]
   }> => {
@@ -182,7 +190,12 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         ? client.fetchEvents(
             relayUrls,
             { kinds: [...HEAT_KINDS], limit: HEAT_REQ_LIMIT },
-            { eoseTimeout: 8000, globalTimeout: 22000 }
+            {
+              eoseTimeout: 6000,
+              globalTimeout: RELAY_FETCH_TIMEOUT_MS,
+              relayOpSource: 'RelayThreadHeatMap.rescan',
+              signal
+            }
           )
         : Promise.resolve([] as Event[])
     const tombstonesPromise = indexedDb.getAllTombstones()
@@ -251,7 +264,12 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
           client.fetchEvents(
             relayUrls,
             { ids: stillMissing, kinds: [...HEAT_KINDS] },
-            { eoseTimeout: 6000, globalTimeout: ROOT_SNIPPET_FETCH_TIMEOUT_MS }
+            {
+              eoseTimeout: 5000,
+              globalTimeout: ROOT_SNIPPET_FETCH_TIMEOUT_MS,
+              relayOpSource: 'RelayThreadHeatMap.rootSnippet',
+              signal
+            }
           ),
           ROOT_SNIPPET_FETCH_TIMEOUT_MS,
           [] as Event[],
@@ -291,6 +309,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
 
   useEffect(() => {
     let cancelled = false
+    const abort = new AbortController()
     if (!pubkey || !cacheSettingKey) {
       setRows([])
       setEdges([])
@@ -299,6 +318,8 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       setError(null)
       return
     }
+
+    const includeRelay = rescanTick > 0
 
     void (async () => {
       setError(null)
@@ -318,7 +339,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
 
       setIsMerging(true)
       try {
-        const local = await mergeHeatMapData(false)
+        const local = await mergeHeatMapData(false, abort.signal)
         if (cancelled) return
         if (!hadEnvelope || local.bubbles.length > 0) {
           setRows(local.bubbles)
@@ -326,10 +347,16 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
           setLoading(false)
         }
 
-        const { bubbles, edges: nextEdges } = await mergeHeatMapData(true)
+        if (!includeRelay) {
+          setRelayDataFresh(false)
+          return
+        }
+
+        const { bubbles, edges: nextEdges } = await mergeHeatMapData(true, abort.signal)
         if (cancelled) return
         setRows(bubbles)
         setEdges(nextEdges)
+        setRelayDataFresh(true)
         setError(null)
         try {
           await indexedDb.setSetting(
@@ -346,6 +373,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         }
       } catch (e) {
         if (cancelled) return
+        if ((e as Error)?.name === 'AbortError') return
         logger.warn('[RelayThreadHeatMap] fetch failed', e)
         setError(t('heatMapFetchError'))
         if (!hadEnvelope) {
@@ -362,8 +390,15 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
 
     return () => {
       cancelled = true
+      abort.abort()
     }
-  }, [pubkey, cacheSettingKey, mergeHeatMapData, refreshKey, rescanTick, t])
+  }, [pubkey, cacheSettingKey, mergeHeatMapData, rescanTick, t])
+
+  useEffect(() => {
+    if (refreshKey > 0) {
+      setRescanTick((n) => n + 1)
+    }
+  }, [refreshKey])
 
   /** Pack threads that share a keyword next to each other in the flex grid (see {@link orderHeatBubblesByKeywordProximity}). */
   const layoutRows = useMemo(() => orderHeatBubblesByKeywordProximity(rows), [rows])
@@ -455,6 +490,10 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         {relayUrls.length === 0 ? (
           <p className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-950 dark:text-amber-100">
             {t('heatMapLocalOnlyBanner')}
+          </p>
+        ) : !relayDataFresh && rescanTick === 0 ? (
+          <p className="rounded-md border border-border/80 bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+            {t('heatMapRescanHint')}
           </p>
         ) : null}
         <p>{t('heatMapDescription')}</p>

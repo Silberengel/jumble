@@ -1652,6 +1652,7 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
 
   const navigatePrimaryPage = (page: TPrimaryPageName, props?: any) => {
     const resolvedPage: TPrimaryPageName = (page as string) === 'rss' ? 'feed' : page
+    const primaryPageChanging = resolvedPage !== currentPrimaryPageRef.current
     // Clear any primary note view when navigating to a new primary page
     // This ensures menu clicks always take you to the primary page, not stuck on overlays
     setPrimaryNoteView(null)
@@ -1659,6 +1660,11 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     // Always clear secondary pages when navigating to a primary page via menu
     // This ensures clicking menu items always takes you to that page, not stuck on profile/note pages
     clearSecondaryPages()
+
+    if (primaryPageChanging) {
+      client.interruptBackgroundQueries({ closePooledRelayConnections: true })
+      noteStatsService.cancelInFlightStatsFetches()
+    }
     
     // Update primary pages and current page
     setPrimaryPages((prev) => {

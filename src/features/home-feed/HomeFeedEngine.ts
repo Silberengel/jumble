@@ -53,6 +53,8 @@ export type HomeFeedEngineClient = {
     options?: {
       onRelaySubscribeWaveComplete?: (rows: RelayOpTerminalRow[]) => void
       relayAuthoritativeTimeline?: boolean
+      feedScopeKey?: string
+      mergeFeedWave?: boolean
     }
   ) => Promise<{ closer: () => void; timelineKey: string }>
   fetchEvents: (
@@ -252,6 +254,7 @@ export class HomeFeedEngine {
         },
         {
           relayAuthoritativeTimeline: bundle.relaySetFeedOnly,
+          feedScopeKey: bundle.subscriptionKey,
           onRelaySubscribeWaveComplete: (rows) => {
             if (gen !== this.generation) return
             this.relayOutcomes = rows

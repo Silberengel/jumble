@@ -29,6 +29,11 @@ import {
 } from '@/lib/event'
 import { citationPickerMatchesQuery } from '@/lib/citation-picker-search'
 import logger from '@/lib/logger'
+import {
+  legacyTimelineShardKeys,
+  selectTimelineShardKeysToEvict,
+  TIMELINE_SHARD_GC_MAX_TOTAL
+} from '@/lib/timeline-shard-gc'
 import { profileKind0MatchesSearchQuery } from '@/lib/profile-metadata-search'
 import { shouldDropEventOnIngest } from '@/lib/event-ingest-filter'
 import {
@@ -64,6 +69,15 @@ export type TTimelinePersistedPayload = {
   refs: [string, number][]
   filter: Record<string, unknown>
   urls: string[]
+  /** Logical feed identity ({@link feedSubscriptionKey}) for shard GC. */
+  feedScopeKey?: string
+}
+
+export type TTimelineStateRowMeta = {
+  key: string
+  feedScopeKey?: string
+  lastAccessAt: number
+  addedAt: number
 }
 
 export type TPiperTtsCacheValue = {
@@ -181,6 +195,7 @@ const FULL_TEXT_NOTE_SEARCH_STORES: ReadonlySet<string> = new Set([
 
 const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
 const ORPHAN_RSS_STORAGE_PURGE_KEY = 'orphanRssStoragePurgedV1'
+const TIMELINE_SHARD_LEGACY_GC_KEY = 'timelineShardLegacyGcV1'
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
 const DB_VERSION = 43
@@ -447,6 +462,9 @@ class IndexedDbService {
               void this.purgeOrphanedRssStorageOnce().catch((e) =>
                 logger.warn('[IndexedDB] Orphaned RSS storage purge failed', { e })
               )
+              void this.purgeLegacyTimelineShardsOnce().catch((e) =>
+                logger.warn('[IndexedDB] Legacy timeline shard purge failed', { e })
+              )
               resolve()
             }
             openWithStored.onupgradeneeded = () => {
@@ -468,6 +486,9 @@ class IndexedDbService {
         )
         void this.purgeOrphanedRssStorageOnce().catch((e) =>
           logger.warn('[IndexedDB] Orphaned RSS storage purge failed', { e })
+        )
+        void this.purgeLegacyTimelineShardsOnce().catch((e) =>
+          logger.warn('[IndexedDB] Legacy timeline shard purge failed', { e })
         )
         resolve()
       }
@@ -3861,7 +3882,14 @@ class IndexedDbService {
   ): Promise<void> {
     await this.initPromise
     if (!this.db?.objectStoreNames.contains(StoreNames.TIMELINE_STATE)) return
-    const row = this.formatValue(timelineKey, payload)
+    const now = Date.now()
+    const existing = await this.getTimelinePersistedStateRow(timelineKey)
+    const row: TValue<TTimelinePersistedPayload> = {
+      key: timelineKey,
+      value: payload,
+      addedAt: existing?.addedAt ?? now,
+      lastAccessAt: now
+    }
     return new Promise((resolve, reject) => {
       const tx = this.db!.transaction(StoreNames.TIMELINE_STATE, 'readwrite')
       const put = tx.objectStore(StoreNames.TIMELINE_STATE).put(row)
@@ -3876,6 +3904,150 @@ class IndexedDbService {
     })
   }
 
+  private async getTimelinePersistedStateRow(
+    timelineKey: string
+  ): Promise<(TValue<TTimelinePersistedPayload> & { lastAccessAt?: number }) | null> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.TIMELINE_STATE)) return null
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.TIMELINE_STATE, 'readonly')
+      const get = tx.objectStore(StoreNames.TIMELINE_STATE).get(timelineKey)
+      get.onsuccess = () => {
+        const row = get.result as (TValue<TTimelinePersistedPayload> & { lastAccessAt?: number }) | undefined
+        tx.commit()
+        resolve(row ?? null)
+      }
+      get.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  async touchTimelinePersistedState(timelineKey: string): Promise<void> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.TIMELINE_STATE)) return
+    const existing = await this.getTimelinePersistedStateRow(timelineKey)
+    if (!existing?.value) return
+    const row: TValue<TTimelinePersistedPayload> = {
+      ...existing,
+      lastAccessAt: Date.now()
+    }
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.TIMELINE_STATE, 'readwrite')
+      const put = tx.objectStore(StoreNames.TIMELINE_STATE).put(row)
+      put.onsuccess = () => {
+        tx.commit()
+        resolve()
+      }
+      put.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  async listTimelineStateMeta(): Promise<TTimelineStateRowMeta[]> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.TIMELINE_STATE)) return []
+    return new Promise((resolve, reject) => {
+      const out: TTimelineStateRowMeta[] = []
+      const tx = this.db!.transaction(StoreNames.TIMELINE_STATE, 'readonly')
+      const req = tx.objectStore(StoreNames.TIMELINE_STATE).openCursor()
+      req.onsuccess = () => {
+        const cursor = req.result as IDBCursorWithValue | null
+        if (!cursor) {
+          tx.commit()
+          resolve(out)
+          return
+        }
+        const row = cursor.value as TValue<TTimelinePersistedPayload> & { lastAccessAt?: number }
+        const payload = row.value
+        out.push({
+          key: row.key,
+          feedScopeKey: payload?.feedScopeKey,
+          lastAccessAt: row.lastAccessAt ?? row.addedAt ?? 0,
+          addedAt: row.addedAt ?? 0
+        })
+        cursor.continue()
+      }
+      req.onerror = (e) => {
+        tx.commit()
+        reject(idbEventToError(e))
+      }
+    })
+  }
+
+  async deleteTimelinePersistedStates(keys: readonly string[]): Promise<number> {
+    if (keys.length === 0) return 0
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.TIMELINE_STATE)) return 0
+    return new Promise((resolve, reject) => {
+      const tx = this.db!.transaction(StoreNames.TIMELINE_STATE, 'readwrite')
+      const store = tx.objectStore(StoreNames.TIMELINE_STATE)
+      let pending = keys.length
+      let deleted = 0
+      for (const key of keys) {
+        const req = store.delete(key)
+        req.onsuccess = () => {
+          deleted++
+          pending--
+          if (pending === 0) resolve(deleted)
+        }
+        req.onerror = () => {
+          pending--
+          if (pending === 0) resolve(deleted)
+        }
+      }
+      tx.onerror = (e) => reject(idbEventToError(e))
+    })
+  }
+
+  /**
+   * Drop stale leaf shards for the active feed wave and LRU-trim the global cap.
+   */
+  async gcTimelineShards(opts: {
+    feedScopeKey?: string
+    keepKeys?: ReadonlySet<string>
+    maxTotal?: number
+  }): Promise<number> {
+    const rows = await this.listTimelineStateMeta()
+    if (rows.length === 0) return 0
+    const keys = selectTimelineShardKeysToEvict(rows, {
+      feedScopeKey: opts.feedScopeKey,
+      keepKeys: opts.keepKeys,
+      maxTotal: opts.maxTotal ?? TIMELINE_SHARD_GC_MAX_TOTAL
+    })
+    if (keys.length === 0) return 0
+    const deleted = await this.deleteTimelinePersistedStates(keys)
+    if (deleted > 0) {
+      logger.info('[IndexedDB] Timeline shard GC', {
+        deleted,
+        feedScopeKey: opts.feedScopeKey?.slice(0, 48),
+        keepCount: opts.keepKeys?.size,
+        remainingBefore: rows.length
+      })
+    }
+    return deleted
+  }
+
+  /** One-time: remove untagged shards from before feed-scope GC (e.g. hundreds of orphan keys). */
+  private async purgeLegacyTimelineShardsOnce(): Promise<void> {
+    await this.initPromise
+    if (!this.db?.objectStoreNames.contains(StoreNames.TIMELINE_STATE)) return
+    const done = await this.getSetting(TIMELINE_SHARD_LEGACY_GC_KEY)
+    if (done === '1') return
+
+    const rows = await this.listTimelineStateMeta()
+    const legacy = legacyTimelineShardKeys(rows)
+    if (legacy.length > 0) {
+      const deleted = await this.deleteTimelinePersistedStates(legacy)
+      logger.info('[IndexedDB] Purged legacy timeline shards', { deleted, scanned: rows.length })
+    }
+    await this.gcTimelineShards({ maxTotal: TIMELINE_SHARD_GC_MAX_TOTAL })
+    await this.setSetting(TIMELINE_SHARD_LEGACY_GC_KEY, '1')
+  }
+
   async getTimelinePersistedState(timelineKey: string): Promise<TTimelinePersistedPayload | null> {
     await this.initPromise
     if (!this.db?.objectStoreNames.contains(StoreNames.TIMELINE_STATE)) return null
@@ -3885,6 +4057,9 @@ class IndexedDbService {
       get.onsuccess = () => {
         const row = get.result as TValue<TTimelinePersistedPayload> | undefined
         tx.commit()
+        if (row?.value) {
+          void this.touchTimelinePersistedState(timelineKey).catch(() => {})
+        }
         resolve(row?.value ?? null)
       }
       get.onerror = (e) => {

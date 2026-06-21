@@ -254,6 +254,14 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
       setFollowSetCatalogLoading(false)
       return
     }
+    const needsFollowSetCatalog =
+      spellPickerOpen ||
+      isFollowFeedFauxSpellId(selectedFauxSpell ?? '') ||
+      (selectedFauxSpell != null && isFollowSetSpellId(selectedFauxSpell))
+    if (!needsFollowSetCatalog) {
+      setFollowSetCatalogLoading(false)
+      return
+    }
     let cancelled = false
     setFollowSetCatalogLoading(true)
     void (async () => {
@@ -272,7 +280,12 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
           queryService.fetchEvents(
             feedUrls,
             { authors: [pubkey], kinds: [ExtendedKind.FOLLOW_SET], limit: 500 },
-            { eoseTimeout: 2000, globalTimeout: 15000, firstRelayResultGraceMs: false }
+            {
+              eoseTimeout: 2000,
+              globalTimeout: 15000,
+              firstRelayResultGraceMs: false,
+              relayOpSource: 'SpellsPage.followSetCatalog'
+            }
           ),
           indexedDb.getAllTombstones()
         ])
@@ -288,7 +301,19 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     return () => {
       cancelled = true
     }
-  }, [pubkey, sortedFavoriteRelaysKey, sortedBlockedRelaysKey, relayMailboxStableKey, followSetManualRefreshKey, favoriteRelays, blockedRelays, relayList])
+  }, [
+    pubkey,
+    sortedFavoriteRelaysKey,
+    sortedBlockedRelaysKey,
+    relayMailboxStableKey,
+    followSetManualRefreshKey,
+    favoriteRelays,
+    blockedRelays,
+    relayList,
+    cacheRelayListEvent,
+    spellPickerOpen,
+    selectedFauxSpell
+  ])
 
   useEffect(() => {
     const onTombstones = () => setFollowSetManualRefreshKey((k) => k + 1)
@@ -458,7 +483,8 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                 onNew: () => {} // Not needed
               },
               {
-                firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS
+                firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS,
+                feedScopeKey: 'SpellsPage.spellCatalog'
               }
             )
             if (cancelled) {

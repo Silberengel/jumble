@@ -3551,6 +3551,7 @@ const NoteList = forwardRef(
             firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS,
             relayAuthoritativeTimeline: relayAuthoritativeFeedOnlyRef.current,
             connectionSlotPriority: isProfileTimelineFeed,
+            feedScopeKey: timelineSubscriptionKey,
             onRelaySubscribeWaveComplete: (rows) => {
               if (!effectActive) return
               setFeedSubscribeRelayOutcomes(rows)
@@ -3849,7 +3850,9 @@ const NoteList = forwardRef(
               startLogin,
               needSort: !areAlgoRelays,
               firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS,
-              relayAuthoritativeTimeline: relayAuthoritativeFeedOnlyRef.current
+              relayAuthoritativeTimeline: relayAuthoritativeFeedOnlyRef.current,
+              feedScopeKey: timelineSubscriptionKey,
+              mergeFeedWave: true
             }
           )
           if (!deltaActive) {

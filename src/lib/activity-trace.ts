@@ -6,6 +6,7 @@
  *   imwaldTrace.enable({ verbose: true, debug: true })  — firehose + logger debug
  *   imwaldTrace.summary()             — print counters now
  *   imwaldTrace.recent(40)            — last N events
+ *   imwaldTrace.relaySources(15)      — top relay call sites (by source tag)
  *   imwaldTrace.disable()
  *
  * Persist: localStorage.setItem('imwald-trace', 'true') then reload.
@@ -75,6 +76,8 @@ class ActivityTraceService {
   private renderSampleMs = 400
   private bootAt = performance.now()
   private counters = new Map<string, number>()
+  /** Relay `source` tags from query/subscribe traces (e.g. `SpellsPage.followSetCatalog`). */
+  private relaySourceCounters = new Map<string, number>()
   private recentEntries: TraceEntry[] = []
   private readonly recentMax = 200
   private lastRenderLogAt = new Map<string, number>()
@@ -171,6 +174,7 @@ class ActivityTraceService {
 
   reset(): void {
     this.counters.clear()
+    this.relaySourceCounters.clear()
     this.recentEntries = []
     this.lastRenderLogAt.clear()
   }
@@ -186,10 +190,22 @@ class ActivityTraceService {
     this.counters.set(key, (this.counters.get(key) ?? 0) + amount)
   }
 
+  /** Count relay operations by caller `source` tag (shown in summary). */
+  bumpRelaySource(source: string, amount = 1): void {
+    if (!this.enabled || !source) return
+    this.relaySourceCounters.set(source, (this.relaySourceCounters.get(source) ?? 0) + amount)
+  }
+
   trace(category: ActivityCategory, event: string, detail?: unknown): void {
     if (!this.enabled) return
 
     this.bump(category, event)
+    if (category === 'relay' && detail && typeof detail === 'object' && detail !== null) {
+      const src = (detail as { source?: unknown }).source
+      if (typeof src === 'string' && src.length > 0) {
+        this.bumpRelaySource(src)
+      }
+    }
 
     const shouldLog =
       this.verbose ||
@@ -232,11 +248,23 @@ class ActivityTraceService {
       })
     }
     const top = rows.slice(0, 40)
+    const relaySources = [...this.relaySourceCounters.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 12)
     const headline = `[ActivityTrace] summary +${this.sinceBoot()}ms (${rows.length} keys, top ${top.length})`
-    const body =
-      top.length > 0
-        ? top.map((r) => `  ${r.category}:${r.event} ×${r.count}`).join('\n')
-        : '  (no events yet)'
+    const bodyParts: string[] = []
+    if (top.length > 0) {
+      bodyParts.push(top.map((r) => `  ${r.category}:${r.event} ×${r.count}`).join('\n'))
+    } else {
+      bodyParts.push('  (no events yet)')
+    }
+    if (relaySources.length > 0) {
+      bodyParts.push(
+        '  relay sources:',
+        ...relaySources.map(([src, count]) => `    ${src} ×${count}`)
+      )
+    }
+    const body = bodyParts.join('\n')
     this.emitLog(`${headline}\n${body}`, {
       style: 'color:#4ade80;font-weight:bold',
       type: 'trace'
@@ -248,8 +276,22 @@ class ActivityTraceService {
       } else {
         console.log('(no events yet)')
       }
+      if (relaySources.length > 0) {
+        console.log('relay sources (top):')
+        console.table(relaySources.map(([source, count]) => ({ source, count })))
+      }
       console.groupEnd()
     })
+  }
+
+  /** Print relay operation counts grouped by caller `source` tag. */
+  relaySources(limit = 20): { source: string; count: number }[] {
+    const rows = [...this.relaySourceCounters.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([source, count]) => ({ source, count }))
+    console.table(rows)
+    return rows
   }
 
   recent(limit = 30): TraceEntry[] {

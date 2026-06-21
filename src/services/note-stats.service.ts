@@ -237,6 +237,17 @@ class NoteStatsService {
   private pendingSyntheticRootById = new Map<string, Event>()
   /** Root event from {@link fetchNoteStats} (feed/card already has it; avoids fetchEvent miss → no stats UI). */
   private pendingStatsRootEventById = new Map<string, Event>()
+  /** Coalesce burst {@link updateNoteStatsByEvents} calls (e.g. NoteList timeline merges). */
+  private pendingStatsUpdateQueue: Array<{
+    events: Event[]
+    originalEventAuthor?: string
+    mergeOpts?: {
+      interactionTargetNoteId?: string
+      replyParentNoteId?: string
+      statsRootEvent?: Event
+    }
+  }> = []
+  private pendingStatsUpdateFlushQueued = false
 
   constructor() {
     if (!NoteStatsService.instance) {
@@ -1125,19 +1136,38 @@ class NoteStatsService {
     }
   ) {
     if (events.length === 0) return
-    activityTrace.trace('stats', 'NoteStats.updateByEvents', { count: events.length })
-    const updatedEventIdSet = new Set<string>()
+    this.pendingStatsUpdateQueue.push({ events, originalEventAuthor, mergeOpts })
+    if (this.pendingStatsUpdateFlushQueued) return
+    this.pendingStatsUpdateFlushQueued = true
+    queueMicrotask(() => {
+      this.pendingStatsUpdateFlushQueued = false
+      this.flushCoalescedNoteStatsUpdates()
+    })
+  }
 
-    // Process events in batches for better performance
-    const batchSize = 50
-    for (let i = 0; i < events.length; i += batchSize) {
-      const batch = events.slice(i, i + batchSize)
-      batch.forEach((evt) => {
-        for (const id of this.processEvent(evt, originalEventAuthor, mergeOpts)) {
-          updatedEventIdSet.add(this.statsKey(id))
-        }
-      })
+  private flushCoalescedNoteStatsUpdates(): void {
+    const queue = this.pendingStatsUpdateQueue.splice(0)
+    if (queue.length === 0) return
+
+    let eventCount = 0
+    const updatedEventIdSet = new Set<string>()
+    for (const item of queue) {
+      eventCount += item.events.length
+      const batchSize = 50
+      for (let i = 0; i < item.events.length; i += batchSize) {
+        const batch = item.events.slice(i, i + batchSize)
+        batch.forEach((evt) => {
+          for (const id of this.processEvent(evt, item.originalEventAuthor, item.mergeOpts)) {
+            updatedEventIdSet.add(this.statsKey(id))
+          }
+        })
+      }
     }
+
+    activityTrace.trace('stats', 'NoteStats.updateByEvents', {
+      count: eventCount,
+      batches: queue.length
+    })
 
     updatedEventIdSet.forEach((eventId) => {
       this.notifyNoteStats(this.statsKey(eventId))

@@ -377,6 +377,8 @@ class ClientService extends EventTarget {
         refs: TTimelineRef[]
         filter: TSubRequestFilter
         urls: string[]
+        /** Logical feed id for persisted shard GC ({@link feedSubscriptionKey}). */
+        feedScopeKey?: string
         /** When true, skip writing this shard to IndexedDB via {@link scheduleTimelinePersist} (relay-authoritative feeds). */
         disablePersist?: boolean
       }
@@ -384,6 +386,8 @@ class ClientService extends EventTarget {
     | undefined
   > = {}
   private timelinePersistTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  /** Active leaf timeline keys per feed scope (current subscribe wave). */
+  private activeTimelineLeafKeysByFeed = new Map<string, Set<string>>()
   /** In-flight {@link fetchRelayList} dedupe: key = viewer pubkey + target pubkey (sanitization depends on viewer). */
   private relayListRequestCache = new Map<string, Promise<TRelayList>>()
   /** Dedupe {@link refreshRelayListsFromNetwork} — was firing on every cached lookup and stacking REQs. */
@@ -2339,11 +2343,38 @@ class ClientService extends EventTarget {
       await indexedDb.putTimelinePersistedState(timelineKey, {
         refs: [...tl.refs],
         filter: { ...(tl.filter as object) } as Record<string, unknown>,
-        urls: [...tl.urls]
+        urls: [...tl.urls],
+        ...(tl.feedScopeKey ? { feedScopeKey: tl.feedScopeKey } : {})
       })
+      if (tl.feedScopeKey) {
+        const keepKeys = this.activeTimelineLeafKeysByFeed.get(tl.feedScopeKey)
+        if (keepKeys?.size) {
+          await indexedDb.gcTimelineShards({
+            feedScopeKey: tl.feedScopeKey,
+            keepKeys
+          })
+        }
+      } else {
+        await indexedDb.gcTimelineShards({})
+      }
     } catch (e) {
       logger.warn('[ClientService] Timeline persist failed', { timelineKey: timelineKey.slice(0, 12), e })
     }
+  }
+
+  private registerTimelineFeedWave(
+    feedScopeKey: string,
+    leafKeys: readonly string[],
+    merge = false
+  ): void {
+    const trimmed = feedScopeKey.trim()
+    if (!trimmed || leafKeys.length === 0) return
+    const prev = merge ? this.activeTimelineLeafKeysByFeed.get(trimmed) : undefined
+    const next = new Set(prev ? [...prev, ...leafKeys] : leafKeys)
+    this.activeTimelineLeafKeysByFeed.set(trimmed, next)
+    void indexedDb
+      .gcTimelineShards({ feedScopeKey: trimmed, keepKeys: next })
+      .catch((e) => logger.warn('[ClientService] Timeline shard GC failed', { feedScopeKey: trimmed, e }))
   }
 
   private generateTimelineKey(urls: string[], filter: Filter) {
@@ -2590,7 +2621,9 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs = FIRST_RELAY_RESULT_GRACE_MS,
       onRelaySubscribeWaveComplete,
       relayAuthoritativeTimeline = false,
-      connectionSlotPriority = false
+      connectionSlotPriority = false,
+      feedScopeKey,
+      mergeFeedWave = false
     }: {
       startLogin?: () => void
       needSort?: boolean
@@ -2605,6 +2638,10 @@ class ClientService extends EventTarget {
       relayAuthoritativeTimeline?: boolean
       /** Jump the global {@link QueryService.acquireGlobalRelayConnectionSlot} queue (profile timelines). */
       connectionSlotPriority?: boolean
+      /** Logical feed id — scopes persisted shard GC ({@link feedSubscriptionKey}). */
+      feedScopeKey?: string
+      /** When true, add this wave’s leaf keys to the existing set (following-feed delta). */
+      mergeFeedWave?: boolean
     } = {}
   ) {
     const timelineBatchId = `tl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`
@@ -2749,6 +2786,7 @@ class ClientService extends EventTarget {
             firstRelayResultGraceMs,
             relayAuthoritativeTimeline,
             connectionSlotPriority,
+            feedScopeKey,
             relayReqLog: {
               groupId: `${timelineBatchId}:shard${shardIndex}`,
               onBatchEnd: onShardSubscribeBatchEnd
@@ -2759,6 +2797,15 @@ class ClientService extends EventTarget {
 
     const key = this.generateMultipleTimelinesKey(subRequests)
     this.timelines[key] = subs.map((sub) => sub.timelineKey)
+
+    const scopedKey = feedScopeKey?.trim()
+    if (scopedKey) {
+      this.registerTimelineFeedWave(
+        scopedKey,
+        subs.map((sub) => sub.timelineKey),
+        mergeFeedWave
+      )
+    }
 
     return {
       closer: () => {
@@ -3195,7 +3242,8 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs = FIRST_RELAY_RESULT_GRACE_MS,
       relayReqLog,
       relayAuthoritativeTimeline = false,
-      connectionSlotPriority
+      connectionSlotPriority,
+      feedScopeKey
     }: {
       startLogin?: () => void
       needSort?: boolean
@@ -3206,6 +3254,7 @@ class ClientService extends EventTarget {
       relayAuthoritativeTimeline?: boolean
       /** See {@link ClientService.subscribeTimeline} third-arg `connectionSlotPriority`. */
       connectionSlotPriority?: boolean
+      feedScopeKey?: string
     } = {}
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
@@ -3232,6 +3281,7 @@ class ClientService extends EventTarget {
         refs: [],
         filter,
         urls: timelineUrls,
+        ...(feedScopeKey?.trim() ? { feedScopeKey: feedScopeKey.trim() } : {}),
         ...(relayAuthoritativeTimeline ? { disablePersist: true as const } : {})
       }
       timeline = this.timelines[key]
@@ -3243,6 +3293,9 @@ class ClientService extends EventTarget {
       timeline.filter = filter
       timeline.urls = timelineUrls
       timeline.refs = []
+      if (feedScopeKey?.trim()) {
+        timeline.feedScopeKey = feedScopeKey.trim()
+      }
       if (relayAuthoritativeTimeline) {
         timeline.disablePersist = true
       } else {
@@ -3780,7 +3833,9 @@ class ClientService extends EventTarget {
       firstRelayResultGraceMs,
       replaceableRace,
       immediateReturn,
-      foreground
+      foreground,
+      relayOpSource,
+      signal
     }: {
       onevent?: (evt: NEvent) => void
       cache?: boolean
@@ -3791,6 +3846,8 @@ class ClientService extends EventTarget {
       immediateReturn?: boolean
       /** When true, ignore {@link QueryService.interruptBackgroundQueries} (e.g. secondary-panel profile loads). */
       foreground?: boolean
+      relayOpSource?: string
+      signal?: AbortSignal
     } = {}
   ) {
     const originalDedupedRelays = Array.from(new Set(urls))
@@ -3836,6 +3893,8 @@ class ClientService extends EventTarget {
       replaceableRace,
       immediateReturn,
       foreground,
+      relayOpSource,
+      signal,
       httpIndexRelayBases: this.viewerHttpIndexRelayBases
     })
     if (cache) {

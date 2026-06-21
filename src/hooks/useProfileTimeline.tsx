@@ -352,7 +352,7 @@ export function useProfileTimeline({
                 flushPool()
               }
             },
-            { needSort: true }
+            { needSort: true, feedScopeKey: `profile-timeline:${pubkey}` }
           )
           registerCloser(closer)
         } catch {
