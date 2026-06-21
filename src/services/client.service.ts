@@ -719,16 +719,16 @@ class ClientService extends EventTarget {
     this.closeMetadataPolicyDisallowedRelayConnections()
     this.closeViewerBlockedRelayConnections()
 
-    const urls = [...storageUrls.all]
-    try {
-      urls.push(...(await this.fetchFavoriteRelays(pk)))
-    } catch {
-      // ignore
-    }
-    setViewerPersonalRelayKeys(buildPersonalRelayKeySet(urls), { viewerActive: true })
-    syncViewerRelayStackNostrLandAggrEligible(urls)
-    this.closeMetadataPolicyDisallowedRelayConnections()
-    this.closeViewerBlockedRelayConnections()
+    void this.fetchFavoriteRelays(pk)
+      .then((favoriteUrls) => {
+        if (favoriteUrls.length === 0) return
+        const merged = [...urls, ...favoriteUrls]
+        setViewerPersonalRelayKeys(buildPersonalRelayKeySet(merged), { viewerActive: true })
+        syncViewerRelayStackNostrLandAggrEligible(merged)
+        this.closeMetadataPolicyDisallowedRelayConnections()
+        this.closeViewerBlockedRelayConnections()
+      })
+      .catch(() => {})
   }
 
   /** NIP-65 / 10243 / 10432 / favorites (10012) from IndexedDB only — no network. */

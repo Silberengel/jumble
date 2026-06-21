@@ -1,4 +1,5 @@
 import logger from '@/lib/logger'
+import { promiseWithTimeout } from '@/lib/async-timeout'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
@@ -86,7 +87,15 @@ export async function refreshAppBrowserCache(options?: RefreshAppBrowserCacheOpt
   const pubkey = options?.pubkey?.trim()
   if (pubkey && options?.requestAccountNetworkHydrate) {
     await options.requestAccountNetworkHydrate()
-    await client.refreshAuthorPublishedReplaceablesOnProfileView(pubkey, { force: true })
+    await promiseWithTimeout(
+      client.refreshAuthorPublishedReplaceablesOnProfileView(pubkey, { force: true }),
+      20_000,
+      'refreshAuthorPublishedReplaceablesOnProfileView'
+    ).catch((error) => {
+      logger.debug('[app-cache] Author replaceables refresh after cache refresh timed out or failed', {
+        error: error instanceof Error ? error.message : String(error)
+      })
+    })
     await syncUserDeletionTombstones(pubkey, options.relayList ?? null)
   }
 }

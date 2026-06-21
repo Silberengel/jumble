@@ -2812,50 +2812,12 @@ class IndexedDbService {
   }
 
   async forceDatabaseUpgrade(): Promise<void> {
-    // Close the database first
     if (this.db) {
       this.db.close()
       this.db = null
       this.initPromise = null
     }
-    
-    // Check current version
-    const checkRequest = window.indexedDB.open('jumble')
-    let currentVersion = DB_VERSION
-    checkRequest.onsuccess = () => {
-      const db = checkRequest.result
-      currentVersion = db.version
-      db.close()
-    }
-    checkRequest.onerror = () => {
-      // If we can't check, start fresh
-      currentVersion = 14
-    }
-    await new Promise(resolve => setTimeout(resolve, 100)) // Wait for version check
-    
-    const newVersion = currentVersion + 1
-    
-    // Open with new version to trigger upgrade
-    return new Promise((resolve, reject) => {
-      const request = window.indexedDB.open('jumble', newVersion)
-      
-      request.onerror = (event) => {
-        reject(event)
-      }
-      
-      request.onsuccess = () => {
-        const db = request.result
-        // Don't close - keep it open for the service to use
-        this.db = db
-        this.initPromise = Promise.resolve()
-        resolve()
-      }
-      
-      request.onupgradeneeded = (event) => {
-        const db = (event.target as IDBOpenDBRequest).result
-        ensureMissingObjectStores(db)
-      }
-    })
+    await this.init()
   }
 
   /**

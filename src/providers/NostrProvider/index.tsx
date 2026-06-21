@@ -42,6 +42,10 @@ import {
 import logger from '@/lib/logger'
 import { bindLightArchiveCacheRelayUrls } from '@/lib/note-persistence-policy'
 import { buildAccountSessionNetworkHydrateRelayUrls } from '@/lib/relay-list-builder'
+import {
+  fetchViewerListReplaceablesFromWriteOutboxes,
+  pickNewestListEvent
+} from '@/lib/viewer-list-replaceable-fetch'
 import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { viewerUsesGlobalRelayDefaults } from '@/lib/viewer-relay-defaults'
 import {
@@ -270,7 +274,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       setHttpRelayListEvent(httpRel ?? null)
       if (blossom) void client.updateBlossomServerListEventCache(blossom)
       if (payment) void replaceableEventService.updateReplaceableEventCache(payment).catch(() => {})
-      setRelayList(await client.fetchRelayList(pubkey))
+      setRelayList(await client.peekRelayListFromStorage(pubkey))
     } catch (e) {
       logger.warn('[NostrProvider] Failed to sync account replaceables from IndexedDB', { error: e })
     }
@@ -551,20 +555,42 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           favoriteRelaysEvent: storedFavoriteRelaysEvent,
           blockedRelays
         })
+        const storedMailbox = storedRelayListEvent
+          ? getRelayListFromEvent(storedRelayListEvent, blockedRelays)
+          : { write: [] as string[], read: [] as string[] }
+
+        const relayListEvents = await queryService.fetchEvents(
+          hydrateNetworkRelays,
+          {
+            kinds: [kinds.RelayList],
+            authors: [account.pubkey]
+          },
+          hydrateFetchOpts
+        )
+        if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
+          return controller
+        }
+        const relayListEventFromBroad = getLatestEvent(relayListEvents) ?? storedRelayListEvent
+        const writeOutboxUrls = Array.from(
+          new Set([
+            ...storedMailbox.write,
+            ...(relayListEventFromBroad
+              ? getRelayListFromEvent(relayListEventFromBroad, blockedRelays).write
+              : [])
+          ])
+        )
 
         const [
-          relayListEvents,
+          fromWriteOutboxes,
           cacheRelayListEvents,
           httpRelayListEvents,
           favoriteRelaysEvents,
           blockedRelaysEvents
         ] = await Promise.all([
-          queryService.fetchEvents(
-            hydrateNetworkRelays,
-            {
-              kinds: [kinds.RelayList],
-              authors: [account.pubkey]
-            },
+          fetchViewerListReplaceablesFromWriteOutboxes(
+            queryService,
+            account.pubkey,
+            writeOutboxUrls,
             hydrateFetchOpts
           ),
           queryService.fetchEvents(
@@ -606,14 +632,31 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
         return controller
       }
-      const relayListEvent = getLatestEvent(relayListEvents) ?? storedRelayListEvent
+      const relayListEvent = pickNewestListEvent(
+        relayListEventFromBroad,
+        fromWriteOutboxes.get(kinds.RelayList)
+      )
       const cacheRelayListEvent = mergeHydratedCacheRelayListEvents(
-        cacheRelayListEvents,
+        [
+          ...cacheRelayListEvents,
+          ...(fromWriteOutboxes.get(ExtendedKind.CACHE_RELAYS)
+            ? [fromWriteOutboxes.get(ExtendedKind.CACHE_RELAYS)!]
+            : [])
+        ],
         storedCacheRelayListEvent
       )
-      const httpRelayListEventFetched = getLatestEvent(httpRelayListEvents) ?? storedHttpRelayListEvent ?? null
-      const favoriteRelaysEventFromNetwork = getLatestEvent(favoriteRelaysEvents)
-      const blockedRelaysEventFromNetwork = getLatestEvent(blockedRelaysEvents)
+      const httpRelayListEventFetched = pickNewestListEvent(
+        getLatestEvent(httpRelayListEvents) ?? storedHttpRelayListEvent ?? null,
+        fromWriteOutboxes.get(ExtendedKind.HTTP_RELAY_LIST) ?? null
+      )
+      const favoriteRelaysEventFromNetwork = pickNewestListEvent(
+        getLatestEvent(favoriteRelaysEvents),
+        fromWriteOutboxes.get(ExtendedKind.FAVORITE_RELAYS) ?? null
+      )
+      const blockedRelaysEventFromNetwork = pickNewestListEvent(
+        getLatestEvent(blockedRelaysEvents),
+        fromWriteOutboxes.get(ExtendedKind.BLOCKED_RELAYS) ?? null
+      )
       if (relayListEvent) {
         client.updateRelayListCache(relayListEvent)
       }
@@ -630,6 +673,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           ? indexedDb.putReplaceableEvent(blockedRelaysEventFromNetwork).catch(() => {})
           : Promise.resolve()
       ])
+      void client.syncViewerPersonalRelayKeys(account.pubkey)
       if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
         setCacheRelayListEvent(cacheRelayListEvent ?? storedCacheRelayListEvent ?? null)
         setHttpRelayListEvent(httpRelayListEventFetched)
@@ -658,7 +702,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           k !== ExtendedKind.BLOCKED_RELAYS
       )
       const [mergedRelayList, events] = await Promise.all([
-        client.fetchRelayList(account.pubkey),
+        client.peekRelayListFromStorage(account.pubkey),
         queryService.fetchEvents(
           fetchRelays,
           [

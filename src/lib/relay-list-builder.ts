@@ -86,9 +86,10 @@ export function buildAccountSessionNetworkHydrateRelayUrls(options: {
   for (const u of PROFILE_RELAY_URLS) push(primary, u)
   if (!options.favoriteRelaysEvent) {
     for (const u of DEFAULT_FAVORITE_RELAYS) push(secondary, u)
+    for (const u of SEARCHABLE_RELAY_URLS) push(secondary, u)
   }
 
-  const cap = options.cap ?? 24
+  const cap = options.cap ?? 32
   return [...primary, ...secondary].slice(0, cap)
 }
 

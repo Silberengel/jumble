@@ -172,7 +172,6 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
         ws.once('open', onOpen)
         ws.on('error', onError)
       })
-      ws.send(JSON.stringify(['REQ', subId, filter]))
       const events = await new Promise((resolve) => {
         const acc = []
         let settled = false
@@ -184,7 +183,12 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
           settled = true
           clearTimeout(t)
           ws.removeListener('message', onMessage)
+          ws.removeListener('error', onError)
           resolve(result)
+        }
+        function onError (err) {
+          log('Kind 10002 WS error during REQ', { relay: relayUrl, err: err?.message })
+          finish(acc)
         }
         function onMessage (data) {
           let msg
@@ -199,6 +203,8 @@ async function fetchRelayUrlsFromKind10002 (authorPubkey, queryRelayUrls) {
           }
         }
         ws.on('message', onMessage)
+        ws.on('error', onError)
+        ws.send(JSON.stringify(['REQ', subId, filter]))
       })
 
       if (!events.length) continue
@@ -316,7 +322,6 @@ async function publishToOneRelay (url, msg, eventId) {
       ws.once('open', onOpen)
       ws.on('error', onError)
     })
-    ws.send(msg)
     let accepted = false
     await new Promise((resolve) => {
       let settled = false
@@ -325,7 +330,12 @@ async function publishToOneRelay (url, msg, eventId) {
         settled = true
         clearTimeout(t)
         ws.removeListener('message', onMessage)
+        ws.removeListener('error', onError)
         resolve()
+      }
+      const onError = (err) => {
+        log('Publish WS error waiting for OK', { url, err: err?.message })
+        finish()
       }
       const onMessage = (data) => {
         try {
@@ -344,6 +354,8 @@ async function publishToOneRelay (url, msg, eventId) {
       }
       const t = setTimeout(finish, 3000)
       ws.on('message', onMessage)
+      ws.on('error', onError)
+      ws.send(msg)
     })
     return accepted ? 1 : 0
   } catch (err) {
