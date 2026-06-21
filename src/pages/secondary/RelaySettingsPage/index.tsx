@@ -19,7 +19,6 @@ import { ExtendedKind } from '@/constants'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useNostr } from '@/providers/NostrProvider'
-import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { Code, MoreVertical } from 'lucide-react'
 import { kinds } from 'nostr-tools'
@@ -42,7 +41,6 @@ const RelaySettingsPage = forwardRef(({ index, hideTitlebar = false }: { index?:
     const pk = account?.pubkey
     if (!pk) return
     await requestAccountNetworkHydrate()
-    await client.refreshAuthorPublishedReplaceablesOnProfileView(pk, { force: true })
   }, [account?.pubkey, requestAccountNetworkHydrate])
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 import logger from '@/lib/logger'
 import { syncUserDeletionTombstones } from '@/lib/sync-user-deletions'
+import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import type { TRelayList } from '@/types'
 
@@ -85,6 +86,7 @@ export async function refreshAppBrowserCache(options?: RefreshAppBrowserCacheOpt
   const pubkey = options?.pubkey?.trim()
   if (pubkey && options?.requestAccountNetworkHydrate) {
     await options.requestAccountNetworkHydrate()
+    await client.refreshAuthorPublishedReplaceablesOnProfileView(pubkey, { force: true })
     await syncUserDeletionTombstones(pubkey, options.relayList ?? null)
   }
 }

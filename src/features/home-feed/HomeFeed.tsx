@@ -3,6 +3,7 @@ import FeedFilterToolbarRow, { feedFilterRowChromeClass } from '@/components/Fee
 import type { TNoteListRef } from '@/components/NoteList'
 import { Button } from '@/components/ui/button'
 import { useFeedProfileBatchFromEvents } from '@/hooks/useFeedProfileBatchFromEvents'
+import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { HOME_FEED_RELAY_SOURCE_FAVORITES } from '@/lib/home-feed-relay-source'
 import { ensureHomeFeedTrendingRelay } from '@/lib/home-feed-relays'
 import { useKindFilterOrDefaults } from '@/providers/KindFilterProvider'
@@ -41,7 +42,7 @@ const HomeFeed = forwardRef<
   }
 >(function HomeFeed({ setSubHeader, onSubHeaderRefresh }, ref) {
   const { t } = useTranslation()
-  const { relayUrls, homeFeedRelaySource } = useFeed()
+  const { relayUrls, replyRelayUrls, homeFeedRelaySource } = useFeed()
   const { showKinds, feedKindFilterBypass } = useKindFilterOrDefaults()
   const filterMutedNotes = true
   const feedRootRef = useRef<HTMLDivElement>(null)
@@ -85,11 +86,16 @@ const HomeFeed = forwardRef<
   const showKindsKey = useMemo(() => JSON.stringify(showKinds), [showKinds])
 
   const feedRelayUrls = useMemo(() => {
+    const urls = bundle?.activeSubRequests?.length
+      ? uniqueRelayUrlsFromSubRequests(bundle.activeSubRequests)
+      : replyRelayUrls.length > 0
+        ? replyRelayUrls
+        : relayUrls
     if (homeFeedRelaySource === HOME_FEED_RELAY_SOURCE_FAVORITES) {
-      return ensureHomeFeedTrendingRelay(relayUrls)
+      return ensureHomeFeedTrendingRelay(urls)
     }
-    return relayUrls
-  }, [homeFeedRelaySource, relayUrls])
+    return urls
+  }, [bundle, homeFeedRelaySource, relayUrls, replyRelayUrls])
 
   const handleShowKindsChange = useCallback((_newShowKinds: number[]) => {
     const root = scrollRootRef.current ?? getNearestScrollableAncestor(feedRootRef.current)

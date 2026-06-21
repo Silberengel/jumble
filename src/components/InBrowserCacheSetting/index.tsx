@@ -50,7 +50,7 @@ export default function InBrowserCacheSetting() {
   const activityTraceEnabled = useActivityTraceEnabled()
   const [showConsoleLogs, setShowConsoleLogs] = useState(false)
   const [consoleLogSearch, setConsoleLogSearch] = useState('')
-  const [consoleLogFilter, setConsoleLogFilter] = useState<ConsoleLogFilter>('all')
+  const [consoleLogFilter, setConsoleLogFilter] = useState<ConsoleLogFilter>('errors-warnings')
   const [cacheRefreshBusy, setCacheRefreshBusy] = useState(false)
 
   const handleClearCache = async () => {
@@ -155,7 +155,7 @@ export default function InBrowserCacheSetting() {
   const handleShowConsoleLogs = () => {
     setShowConsoleLogs(true)
     setConsoleLogSearch('')
-    setConsoleLogFilter('all')
+    setConsoleLogFilter('errors-warnings')
   }
 
   const handleClearConsoleLogs = () => {

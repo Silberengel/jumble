@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { FAST_READ_RELAY_URLS } from '@/constants'
+import { DEFAULT_FAVORITE_RELAYS } from '@/constants'
 import { feedRelayPolicyUrls } from '@/features/feed/relay-policy'
 import { AGGR_NOSTR_LAND_WSS } from '@/lib/nostr-land-aggr'
 import {
   buildAllFavoritesFeedRelayUrls,
-  buildHomeFastReadRelayUrls,
+  buildHomeDefaultFavoriteRelayUrls,
   stripNostrLandAggrFromRelayUrls
 } from '@/lib/home-feed-relays'
 import { buildWispTrendingNotesRelayUrl, isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
@@ -72,13 +72,13 @@ describe('home feed relay policy', () => {
     expect(stripped).toEqual(['wss://relay.example/'])
   })
 
-  it('falls back to FAST_READ when favorites and extras are empty', () => {
+  it('falls back to DEFAULT_FAVORITE_RELAYS when favorites and extras are empty', () => {
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
-    const fastOnly = buildHomeFastReadRelayUrls([])
-    expect(fastOnly.length).toBeGreaterThan(0)
+    const defaultsOnly = buildHomeDefaultFavoriteRelayUrls([])
+    expect(defaultsOnly.length).toBeGreaterThan(0)
     const urls = buildAllFavoritesFeedRelayUrls([], [], [], false)
-    const fastHosts = new Set(
-      FAST_READ_RELAY_URLS.map((u) => {
+    const defaultHosts = new Set(
+      DEFAULT_FAVORITE_RELAYS.map((u) => {
         try {
           return new URL(u.replace(/^wss:\/\//i, 'https://')).hostname.toLowerCase()
         } catch {
@@ -87,24 +87,26 @@ describe('home feed relay policy', () => {
       }).filter(Boolean)
     )
     expect(urls.length).toBeGreaterThan(0)
-    expect(
-      urls.some((u) => {
-        try {
-          const host = new URL(
-            (normalizeAnyRelayUrl(u) || u).replace(/^wss:\/\//i, 'https://')
-          ).hostname.toLowerCase()
-          return fastHosts.has(host)
-        } catch {
-          return false
-        }
-      })
-    ).toBe(true)
+    for (const host of defaultHosts) {
+      expect(
+        urls.some((u) => {
+          try {
+            return (
+              new URL((normalizeAnyRelayUrl(u) || u).replace(/^wss:\/\//i, 'https://')).hostname.toLowerCase() ===
+              host
+            )
+          } catch {
+            return false
+          }
+        })
+      ).toBe(true)
+    }
   })
 
-  it('omits FAST_READ fallback under personal-relay policy', () => {
+  it('omits default-favorites fallback under personal-relay policy', () => {
     setViewerPersonalRelayKeys(new Set(['wss://relay.example.com/']), { viewerActive: true })
     expect(buildAllFavoritesFeedRelayUrls([], [], [], false)).toEqual([])
-    expect(buildHomeFastReadRelayUrls([])).toEqual([])
+    expect(buildHomeDefaultFavoriteRelayUrls([])).toEqual([])
     setViewerPersonalRelayKeys(new Set(), { viewerActive: false })
   })
 })

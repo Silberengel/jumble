@@ -5,7 +5,7 @@ export type ConsoleLogEntry = {
   timestamp: number
 }
 
-const MAX_ENTRIES = 1000
+const MAX_ENTRIES = 2000
 
 const buffer: ConsoleLogEntry[] = []
 const listeners = new Set<() => void>()

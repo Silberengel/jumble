@@ -9,7 +9,6 @@ import {
 } from '@/lib/read-only-relay-personal'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { normalizeAnyRelayUrl } from '@/lib/url'
-import { publicReadRelayFallbackUrls } from '@/lib/viewer-relay-defaults'
 import {
   ensureTrendingInFavoriteRelayList,
   isWispTrendingNotesRelayUrl
@@ -52,20 +51,11 @@ export function buildHomeRelaySetFeedRelayUrls(
   return dedupeNormalizeRelayUrlsOrdered(visible)
 }
 
-/** {@link FAST_READ_RELAY_URLS} for home timelines (aggr stripped; honors personal-relay policy). */
-export function buildHomeFastReadRelayUrls(blockedRelays: readonly string[]): string[] {
+/** {@link DEFAULT_FAVORITE_RELAYS} when the viewer has no favorites/inbox tier yet (aggr stripped). */
+export function buildHomeDefaultFavoriteRelayUrls(blockedRelays: readonly string[]): string[] {
   if (!viewerIncludeGlobalFastReadRelayLayer()) return []
   return stripNostrLandAggrFromRelayUrls(
-    feedRelayPolicyUrls(
-      [{ source: 'fast-read', urls: [...publicReadRelayFallbackUrls()] }],
-      {
-        operation: 'favorites-feed',
-        blockedRelays,
-        nostrLandAggr: 'never',
-        applySocialKindBlockedFilter: false,
-        allowThirdPartyLocalRelays: true
-      }
-    )
+    getFavoritesFeedRelayUrls([], blockedRelays, true)
   )
 }
 
@@ -81,9 +71,9 @@ export function ensureHomeFeedRelayUrlsHaveFallback(
   blockedRelays: readonly string[]
 ): string[] {
   if (!homeFeedUrlsNeedFastReadFallback(urls)) return [...urls]
-  const fast = buildHomeFastReadRelayUrls(blockedRelays)
-  if (fast.length === 0) return [...urls]
-  return dedupeNormalizeRelayUrlsOrdered([...urls, ...fast])
+  const defaults = buildHomeDefaultFavoriteRelayUrls(blockedRelays)
+  if (defaults.length === 0) return [...urls]
+  return dedupeNormalizeRelayUrlsOrdered([...urls, ...defaults])
 }
 
 export function buildAllFavoritesFeedRelayUrls(

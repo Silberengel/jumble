@@ -109,6 +109,8 @@ export type { TNostrContext } from '@/providers/nostr-context'
 /** One session-restore pass per full page load (React StrictMode remount must not re-login). */
 let nostrSessionRestoreStarted = false
 
+const VIEWER_INTEREST_LIST_KIND = 10015
+
 /** Kind 10012 `relay` tags for publish / target-relay prioritization. */
 function favoriteRelayUrlsForPublish(
   favoriteRelaysEvent: Event | null,
@@ -214,6 +216,65 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     accountForReplaceablesSyncRef.current = account
   }, [account])
+
+  /** Re-read all viewer replaceables (relay lists, favorites, etc.) from IndexedDB into React state. */
+  const syncViewerAccountReplaceablesFromIndexedDb = useCallback(async (pubkey: string) => {
+    const loadOk = async (kind: number) => {
+      const e = await indexedDb.getReplaceableEvent(pubkey, kind).catch(() => null)
+      return e && !shouldDropEventOnIngest(e) ? e : null
+    }
+    try {
+      const [
+        meta,
+        contacts,
+        mute,
+        bookmark,
+        fav,
+        blocked,
+        emoji,
+        interest,
+        cacheRel,
+        httpRel,
+        blossom,
+        payment
+      ] = await Promise.all([
+        loadOk(kinds.Metadata),
+        loadOk(kinds.Contacts),
+        loadOk(kinds.Mutelist),
+        loadOk(kinds.BookmarkList),
+        loadOk(ExtendedKind.FAVORITE_RELAYS),
+        loadOk(ExtendedKind.BLOCKED_RELAYS),
+        loadOk(kinds.UserEmojiList),
+        loadOk(VIEWER_INTEREST_LIST_KIND),
+        loadOk(ExtendedKind.CACHE_RELAYS),
+        loadOk(ExtendedKind.HTTP_RELAY_LIST),
+        loadOk(ExtendedKind.BLOSSOM_SERVER_LIST),
+        loadOk(ExtendedKind.PAYMENT_INFO)
+      ])
+      if (meta) {
+        setProfileEvent(meta)
+        setProfile(getProfileFromEvent(meta))
+        void replaceableEventService.updateReplaceableEventCache(meta).catch(() => {})
+      }
+      if (contacts) setFollowListEvent(contacts)
+      if (mute) setMuteListEvent(mute)
+      if (bookmark) setBookmarkListEvent(bookmark)
+      if (fav) setFavoriteRelaysEvent(fav)
+      if (blocked) {
+        setBlockedRelaysEvent(blocked)
+        setViewerBlockedRelayUrls(parseBlockedRelayUrlsFromEvent(blocked))
+      }
+      if (emoji) setUserEmojiListEvent(emoji)
+      if (interest) setInterestListEvent(interest)
+      setCacheRelayListEvent(cacheRel)
+      setHttpRelayListEvent(httpRel ?? null)
+      if (blossom) void client.updateBlossomServerListEventCache(blossom)
+      if (payment) void replaceableEventService.updateReplaceableEventCache(payment).catch(() => {})
+      setRelayList(await client.fetchRelayList(pubkey))
+    } catch (e) {
+      logger.warn('[NostrProvider] Failed to sync account replaceables from IndexedDB', { error: e })
+    }
+  }, [])
 
   useEffect(() => {
     if (nostrSessionRestoreStarted) return
@@ -338,7 +399,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         setNcryptsec(null)
       }
 
-      const INTEREST_LIST_KIND = 10015
+      const INTEREST_LIST_KIND = VIEWER_INTEREST_LIST_KIND
 
       const [
         storedRelayListEvent,
@@ -522,16 +583,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           ? indexedDb.putReplaceableEvent(httpRelayListEventFetched).catch(() => {})
           : Promise.resolve()
       ])
-      if (cacheRelayListEvent) {
-        setCacheRelayListEvent(cacheRelayListEvent)
-      } else {
-        setCacheRelayListEvent(null)
-      }
-      if (httpRelayListEventFetched) {
-        setHttpRelayListEvent(httpRelayListEventFetched)
-      } else {
-        setHttpRelayListEvent(null)
-      }
+      setCacheRelayListEvent(cacheRelayListEvent ?? storedCacheRelayListEvent ?? null)
+      setHttpRelayListEvent(httpRelayListEventFetched)
       // Fetch updated relay list (merges 10002, 10432, 10243)
       const mergedRelayList = await client.fetchRelayList(account.pubkey) // Keep using client for relay list merging
       if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
@@ -805,11 +858,23 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      void replaceableEventService
-        .refreshAuthorPublishedReplaceablesFromRelays(account.pubkey)
-        .catch((err) => {
-          logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })
-        })
+      try {
+        if (userForcedAccountNetworkHydrate) {
+          await replaceableEventService.refreshAuthorPublishedReplaceablesFromRelays(account.pubkey, {
+            force: true
+          })
+        } else {
+          void replaceableEventService
+            .refreshAuthorPublishedReplaceablesFromRelays(account.pubkey)
+            .catch((err) => {
+              logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })
+            })
+        }
+      } catch (err) {
+        logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })
+      }
+
+      await syncViewerAccountReplaceablesFromIndexedDb(account.pubkey)
 
         storage.setAccountNetworkHydrateAt(account.pubkey, Date.now())
         void client.runSessionPrewarm({ pubkey: account.pubkey, signal: controller.signal })
@@ -898,7 +963,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         })
         .catch(() => {})
     }
-  }, [account, accountNetworkHydrateBump])
+  }, [account, accountNetworkHydrateBump, syncViewerAccountReplaceablesFromIndexedDb])
 
   /** Clear persisted post draft when user logs out or switches accounts (not on initial load). */
   const prevAccountPubkeyRef = useRef<string | null | undefined>(undefined)
@@ -1002,55 +1067,11 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const pk = ce.detail?.pubkey?.toLowerCase()
       const acc = accountForReplaceablesSyncRef.current
       if (!pk || !acc?.pubkey || pk !== acc.pubkey.toLowerCase()) return
-
-      void (async () => {
-        const INTEREST_LIST_KIND = 10015
-        const loadOk = async (kind: number) => {
-          const e = await indexedDb.getReplaceableEvent(acc.pubkey, kind).catch(() => null)
-          return e && !shouldDropEventOnIngest(e) ? e : null
-        }
-        try {
-          const meta = await loadOk(kinds.Metadata)
-          if (meta) {
-            setProfileEvent(meta)
-            setProfile(getProfileFromEvent(meta))
-            void replaceableEventService.updateReplaceableEventCache(meta).catch(() => {})
-          }
-          const contacts = await loadOk(kinds.Contacts)
-          if (contacts) setFollowListEvent(contacts)
-          const mute = await loadOk(kinds.Mutelist)
-          if (mute) setMuteListEvent(mute)
-          const bookmark = await loadOk(kinds.BookmarkList)
-          if (bookmark) setBookmarkListEvent(bookmark)
-          const fav = await loadOk(ExtendedKind.FAVORITE_RELAYS)
-          if (fav) setFavoriteRelaysEvent(fav)
-          const blocked = await loadOk(ExtendedKind.BLOCKED_RELAYS)
-          if (blocked) setBlockedRelaysEvent(blocked)
-          const emoji = await loadOk(kinds.UserEmojiList)
-          if (emoji) setUserEmojiListEvent(emoji)
-          const interest = await loadOk(INTEREST_LIST_KIND)
-          if (interest) setInterestListEvent(interest)
-          const cacheRel = await loadOk(ExtendedKind.CACHE_RELAYS)
-          if (cacheRel) setCacheRelayListEvent(cacheRel)
-          const httpRel = await loadOk(ExtendedKind.HTTP_RELAY_LIST)
-          if (httpRel) setHttpRelayListEvent(httpRel)
-          const blossom = await loadOk(ExtendedKind.BLOSSOM_SERVER_LIST)
-          if (blossom) void client.updateBlossomServerListEventCache(blossom)
-          const payment = await loadOk(ExtendedKind.PAYMENT_INFO)
-          if (payment) {
-            void replaceableEventService.updateReplaceableEventCache(payment).catch(() => {})
-          }
-
-          const merged = await client.fetchRelayList(acc.pubkey)
-          setRelayList(merged)
-        } catch (e) {
-          logger.warn('[NostrProvider] Failed to sync account state after replaceables refresh', { error: e })
-        }
-      })()
+      void syncViewerAccountReplaceablesFromIndexedDb(acc.pubkey)
     }
     window.addEventListener(EVENT, onRefreshed)
     return () => window.removeEventListener(EVENT, onRefreshed)
-  }, [])
+  }, [syncViewerAccountReplaceablesFromIndexedDb])
 
   useEffect(() => {
     if (!account) return
