@@ -470,15 +470,6 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
             )}
             {t('heatMapRescan')}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() => navigatePrimary('spells', { spell: 'topicMap' })}
-          >
-            {t('Topic map')}
-          </Button>
           {pubkey ? (
             <Button
               type="button"

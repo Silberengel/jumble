@@ -1238,20 +1238,6 @@ export default {
     'n interactions': '{{formattedCount}} interactions',
     'outgoing interactions': '{{count}} by this profile',
     'incoming interactions': '{{count}} toward this profile',
-    'Topic map': 'Topic map',
-    topicMapDescription:
-      'Top ten labels from the last ~30 days: each counts ·t· topic tags and valid #hashtags in note text (not full-text search). Bubble size is the combined count; small faces are people who used that label. Built from session cache, on-device archive, and relays. Tap a bubble to open matching notes.',
-    topicMapLocalOnlyBanner:
-      'No read relay stack — only this session’s cache and your on-device archive are merged (add relays in settings for a live relay mix).',
-    topicMapLoading: 'Merging session cache, archive, and relays…',
-    topicMapEmpty:
-      'No topic or hashtag signals yet in the scanned window. Browse feeds or rescan after syncing.',
-    topicMapFetchError: 'Could not build the topic map from your sources.',
-    topicMapRescan: 'Rescan',
-    topicMapBubbleCounts: '{{topic}} with ·t· tag · {{kw}} with #hashtag in text',
-    topicMapOpenMergedFeed: 'Open topic feed',
-    topicMapClickHint:
-      'Opens notes that carry this ·t· tag or this #hashtag in the body.',
     Calendar: 'Calendar',
     'No subscribed interests yet.':
       'No subscribed interests yet. Add topics in settings to see them here.',

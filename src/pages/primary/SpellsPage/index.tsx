@@ -53,7 +53,6 @@ import { useTranslation } from 'react-i18next'
 import CreateSpellDialog from './CreateSpellDialog'
 import ProfileInteractionsMap from './ProfileInteractionsMap'
 import RelayThreadHeatMap from './RelayThreadHeatMap'
-import TopicKeywordHeatMap from './TopicKeywordHeatMap'
 import type { TPageRef } from '@/types'
 import {
   decodeFollowSetSpellId,
@@ -123,7 +122,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   const selectedFauxSpellRefreshRef = useRef<string | null>(null)
   selectedFauxSpellRefreshRef.current = selectedFauxSpell
   const [heatMapRefreshKey, setHeatMapRefreshKey] = useState(0)
-  const [topicMapRefreshKey, setTopicMapRefreshKey] = useState(0)
   const [profileInteractionsRefreshKey, setProfileInteractionsRefreshKey] = useState(0)
   const layoutRef = useRef<TPrimaryPageLayoutRef>(null)
   const [spellPickerOpen, setSpellPickerOpen] = useState(false)
@@ -157,7 +155,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
   /** Set when picker calls `navigatePrimary(..., { spell })` so URL effect does not log/bump token again. */
   const fauxSpellUrlSyncFromPickerRef = useRef<string | null>(null)
   useEffect(() => {
-    if (spellProp === 'favorites') {
+    if (spellProp === 'favorites' || spellProp === 'topicMap') {
       navigatePrimary('spells', { spell: 'heatMap' })
       return
     }
@@ -198,9 +196,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     }
     if (selectedFauxSpellRefreshRef.current === 'heatMap') {
       setHeatMapRefreshKey((k) => k + 1)
-    }
-    if (selectedFauxSpellRefreshRef.current === 'topicMap') {
-      setTopicMapRefreshKey((k) => k + 1)
     }
     if (isProfileInteractionsSpellId(selectedFauxSpellRefreshRef.current)) {
       setProfileInteractionsRefreshKey((k) => k + 1)
@@ -1034,10 +1029,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
           ) : selectedFauxSpell === 'heatMap' && pubkey ? (
             <div className="min-h-0 min-w-0 flex-1">
               <RelayThreadHeatMap followPubkeys={contacts} refreshKey={heatMapRefreshKey} />
-            </div>
-          ) : selectedFauxSpell === 'topicMap' ? (
-            <div className="min-h-0 min-w-0 flex-1">
-              <TopicKeywordHeatMap refreshKey={topicMapRefreshKey} />
             </div>
           ) : isProfileInteractionsSpellId(selectedFauxSpell) ? (
             <div className="min-h-0 min-w-0 flex-1">

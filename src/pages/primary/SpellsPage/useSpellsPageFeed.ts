@@ -378,8 +378,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     if (
       !selectedFauxSpell ||
       isFollowFeedFauxSpellId(selectedFauxSpell) ||
-      selectedFauxSpell === 'heatMap' ||
-      selectedFauxSpell === 'topicMap'
+      selectedFauxSpell === 'heatMap'
     )
       return []
     const fauxSpellSkipSocialKindBlocked =

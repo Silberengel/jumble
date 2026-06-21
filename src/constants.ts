@@ -1067,7 +1067,6 @@ export const FAUX_SPELL_ORDER = [
   'discussions',
   'following',
   'heatMap',
-  'topicMap',
   'followPacks',
   'media',
   'interests',
