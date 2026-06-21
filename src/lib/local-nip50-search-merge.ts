@@ -14,7 +14,16 @@ export type CollectLocalTextSearchParams = {
   sessionCap: number
   /** `limit` passed to {@link IndexedDbService.getCachedAndArchivedEventsMatchingLocalSearch}. */
   idbMergedLimit: number
+  /** Max time spent scanning {@link StoreNames.EVENT_ARCHIVE} rows. */
   archiveScanMaxMs?: number
+  /** Max cursor steps on {@link StoreNames.PUBLICATION_EVENTS} during local search. */
+  publicationScanBudget?: number
+  /** Max wall time on {@link StoreNames.PUBLICATION_EVENTS} during local search. */
+  publicationScanMaxMs?: number
+  /** Max wall time for {@link IndexedDbService.searchAllCachedEventsFullText} when enabled. */
+  fullTextScanMaxMs?: number
+  /** Hard stop for the whole local merge; returns partial hits collected so far. */
+  totalMaxMs?: number
   /**
    * When true, also scan non–event-archive stores via {@link IndexedDbService.searchAllCachedEventsFullText}
    * (same extra coverage as the mention / citation picker path).
@@ -22,6 +31,15 @@ export type CollectLocalTextSearchParams = {
   includeOtherStoresFullText?: boolean
   /** Max rows from {@link IndexedDbService.searchAllCachedEventsFullText} when enabled. */
   fullTextStoreHitCap?: number
+}
+
+function localSearchPastDeadline(deadlineMs: number | undefined): boolean {
+  return deadlineMs !== undefined && Date.now() >= deadlineMs
+}
+
+function localSearchRemainingMs(deadlineMs: number | undefined): number | undefined {
+  if (deadlineMs === undefined) return undefined
+  return Math.max(0, deadlineMs - Date.now())
 }
 
 /**
@@ -41,6 +59,10 @@ export async function collectLocalEventsForTextSearch(
   const kindSet = new Set(kindsArr)
   const seen = new Set<string>()
   const out: Event[] = []
+  const deadlineMs =
+    params.totalMaxMs !== undefined && params.totalMaxMs > 0
+      ? Date.now() + params.totalMaxMs
+      : undefined
 
   const push = (ev: Event) => {
     if (!kindSet.has(ev.kind)) return
@@ -56,10 +78,15 @@ export async function collectLocalEventsForTextSearch(
     }
   }
 
-  if (params.includeOtherStoresFullText) {
+  if (!localSearchPastDeadline(deadlineMs) && params.includeOtherStoresFullText) {
     const cap = params.fullTextStoreHitCap ?? 260
+    const remaining = localSearchRemainingMs(deadlineMs)
+    const scanMaxMs =
+      remaining !== undefined
+        ? Math.min(params.fullTextScanMaxMs ?? remaining, remaining)
+        : params.fullTextScanMaxMs
     try {
-      const hits = await indexedDb.searchAllCachedEventsFullText(q, { limit: cap })
+      const hits = await indexedDb.searchAllCachedEventsFullText(q, { limit: cap, scanMaxMs })
       for (const hit of hits) {
         if (hit.value) push(hit.value as Event)
       }
@@ -68,16 +95,29 @@ export async function collectLocalEventsForTextSearch(
     }
   }
 
-  const idbOpts =
-    params.archiveScanMaxMs !== undefined ? { archiveScanMaxMs: params.archiveScanMaxMs } : undefined
-  const fromPubArchive = await indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(
-    q,
-    params.idbMergedLimit,
-    kindsArr,
-    idbOpts
-  )
-  for (const ev of fromPubArchive) {
-    push(ev)
+  if (!localSearchPastDeadline(deadlineMs)) {
+    const remaining = localSearchRemainingMs(deadlineMs)
+    const archiveScanMaxMs =
+      remaining !== undefined
+        ? Math.min(params.archiveScanMaxMs ?? remaining, remaining)
+        : params.archiveScanMaxMs
+    const publicationScanMaxMs =
+      remaining !== undefined
+        ? Math.min(params.publicationScanMaxMs ?? remaining, remaining)
+        : params.publicationScanMaxMs
+    const fromPubArchive = await indexedDb.getCachedAndArchivedEventsMatchingLocalSearch(
+      q,
+      params.idbMergedLimit,
+      kindsArr,
+      {
+        archiveScanMaxMs,
+        publicationScanBudget: params.publicationScanBudget,
+        publicationScanMaxMs
+      }
+    )
+    for (const ev of fromPubArchive) {
+      push(ev)
+    }
   }
 
   out.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))

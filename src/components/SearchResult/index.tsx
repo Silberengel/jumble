@@ -1,16 +1,17 @@
-import { FAST_READ_RELAY_URLS, NIP_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { NIP_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { buildGeneralSearchRelayUrls } from '@/lib/general-search-relay-urls'
+import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
+import { normalizeUrl } from '@/lib/url'
+import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
+import { useNostr } from '@/providers/NostrProvider'
+import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { TSearchParams } from '@/types'
+import { useMemo } from 'react'
 import NormalFeed from '../NormalFeed'
 import FullTextSearchByRelay from './FullTextSearchByRelay'
 import Profile from '../Profile'
 import { ProfileListBySearch } from '../ProfileListBySearch'
 import Relay from '../Relay'
-import { useNostr } from '@/providers/NostrProvider'
-import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
-import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
-import { normalizeUrl } from '@/lib/url'
-import { buildAlexandriaEventsSearchUrlForTSearchParams } from '@/lib/alexandria-events-search-url'
-import { useMemo } from 'react'
 
 function relayDedupeKey(url: string): string {
   return (normalizeUrl(url) || url.trim()).toLowerCase()
@@ -20,7 +21,18 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
   const { relayList, cacheRelayListEvent } = useNostr()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
 
-  /** Index relays for hashtag search and relay dedupe (notes search is local cache only). */
+  const generalSearchRelayUrls = useMemo(
+    () =>
+      buildGeneralSearchRelayUrls({
+        relayList,
+        cacheRelayListEvent,
+        favoriteRelays,
+        blockedRelays
+      }),
+    [relayList, cacheRelayListEvent, favoriteRelays, blockedRelays]
+  )
+
+  /** Index relays for hashtag search dedupe. */
   const searchableUrls = useMemo(
     () =>
       Array.from(
@@ -34,7 +46,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     [searchableUrls]
   )
 
-  // User stack + defaults (hashtag search uses the non-searchable slice as a second shard)
+  // User stack for hashtag search (non-searchable slice as second shard)
   const combinedRelays = useMemo(() => {
     const relays: string[] = []
 
@@ -46,8 +58,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     }
 
     relays.push(...(favoriteRelays || []))
-
-    relays.push(...FAST_READ_RELAY_URLS, ...SEARCHABLE_RELAY_URLS)
+    relays.push(...SEARCHABLE_RELAY_URLS)
 
     const normalized = Array.from(
       new Set(relays.map((url) => normalizeUrl(url) || url).filter((url): url is string => !!url))
@@ -92,6 +103,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
     return (
       <FullTextSearchByRelay
         searchQuery={searchParams.search}
+        relayUrls={generalSearchRelayUrls}
         kinds={NIP_SEARCH_PAGE_KINDS}
         alexandriaEmptyHref={alexandriaEmptyHref}
       />

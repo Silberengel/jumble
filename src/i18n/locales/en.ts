@@ -2536,8 +2536,11 @@ export default {
     'Searching…': 'Searching…',
     'Full-text search merged intro':
       'Notes appear as each index relay responds (merged by card; each card shows which relays returned it). The search wave stops at the sooner of {{totalSeconds}}s from start or {{afterFirstSeconds}}s after the first results arrive from any relay (up to {{concurrency}} relays in parallel, {{relayCount}} total). This is not a live feed — results do not auto-update.',
+    'General search merged intro':
+      'Searches your local cache (up to {{localSeconds}}s), then queries your relays and search index relays (no NIP-50). Each relay returns recent notes; matches are filtered on title, summary, description, and content. Up to {{concurrency}} relays in parallel ({{relayCount}} total); the relay wave stops after {{totalSeconds}}s or {{afterFirstSeconds}}s after the first hits.',
+    'Full-text search source relays': 'Relays',
     'Notes search local intro':
-      'Searches your local cache and archive only — session memory, publication cache, and event archive on this device. Matches title, summary, description, context, content, and similar readable fields.',
+      'Searches your local cache and archive — session memory, publication cache, and event archive on this device. Matches title, summary, description, context, content, and similar readable fields.',
     'Full-text search empty local':
       'No notes matched this search in your local cache or archive.',
     'Full-text search progress relays': '{{done}} / {{total}} index relays',

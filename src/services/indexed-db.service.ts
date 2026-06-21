@@ -1814,7 +1814,7 @@ class IndexedDbService {
     query: string,
     limit: number,
     allowedKinds: number[],
-    options?: { scanBudget?: number; collectCap?: number }
+    options?: { scanBudget?: number; collectCap?: number; scanMaxMs?: number }
   ): Promise<Event[]> {
     await this.initPromise
     if (!this.db || !this.db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
@@ -1829,6 +1829,8 @@ class IndexedDbService {
       Math.max(options?.collectCap ?? Math.max(limit * 8, limit + 200, 200), limit),
       12_000
     )
+    const scanMaxMs = options?.scanMaxMs
+    const scanStart = Date.now()
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
@@ -1839,7 +1841,12 @@ class IndexedDbService {
 
       request.onsuccess = () => {
         const cursor = (request as IDBRequest<IDBCursorWithValue>).result
-        if (!cursor || scanned >= scanBudget || results.length >= collectCap) {
+        if (
+          !cursor ||
+          scanned >= scanBudget ||
+          results.length >= collectCap ||
+          (scanMaxMs !== undefined && Date.now() - scanStart >= scanMaxMs)
+        ) {
           transaction.commit()
           results.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
           resolve(results.slice(0, limit))
@@ -1978,12 +1985,17 @@ class IndexedDbService {
     query: string,
     limit: number,
     allowedKinds: number[],
-    options?: { archiveScanMaxMs?: number }
+    options?: {
+      archiveScanMaxMs?: number
+      publicationScanBudget?: number
+      publicationScanMaxMs?: number
+    }
   ): Promise<Event[]> {
     const pubCap = Math.min(900, Math.max(limit * 6, limit + 280, 220))
     const fromPub = await this.getCachedEventsForSearch(query, pubCap, allowedKinds, {
-      scanBudget: 70_000,
-      collectCap: Math.min(10_000, pubCap * 12)
+      scanBudget: options?.publicationScanBudget ?? 70_000,
+      collectCap: Math.min(10_000, pubCap * 12),
+      scanMaxMs: options?.publicationScanMaxMs
     })
     if (fromPub.length >= pubCap) {
       return fromPub.slice(0, limit)
@@ -2482,11 +2494,13 @@ class IndexedDbService {
    */
   async searchAllCachedEventsFullText(
     query: string,
-    options?: { limit?: number }
+    options?: { limit?: number; scanMaxMs?: number }
   ): Promise<TCachedEventSearchHit[]> {
     await this.initPromise
     const qLower = query.trim().toLowerCase()
     const limit = Math.min(Math.max(options?.limit ?? 400, 1), 2000)
+    const scanMaxMs = options?.scanMaxMs
+    const scanStart = Date.now()
     if (!qLower || !this.db) {
       return []
     }
@@ -2502,6 +2516,7 @@ class IndexedDbService {
 
     for (const storeName of storeNames) {
       if (results.length >= limit) break
+      if (scanMaxMs !== undefined && Date.now() - scanStart >= scanMaxMs) break
 
       try {
         await new Promise<void>((resolve, reject) => {
@@ -2514,6 +2529,11 @@ class IndexedDbService {
           const cursorReq = store.openCursor()
 
           cursorReq.onsuccess = () => {
+            if (scanMaxMs !== undefined && Date.now() - scanStart >= scanMaxMs) {
+              transaction.commit()
+              resolve()
+              return
+            }
             const cursor = cursorReq.result as IDBCursorWithValue | null
             if (!cursor) {
               transaction.commit()
