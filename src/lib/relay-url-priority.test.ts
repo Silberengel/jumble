@@ -158,4 +158,22 @@ describe('buildProfilePageReadRelayUrls', () => {
     )
     expect(hasFastRead).toBe(true)
   })
+
+  it('pins viewer HTTP inbox when favorites would fill the profile feed cap', () => {
+    syncViewerRelayStackNostrLandAggrEligible([])
+    const out = buildProfilePageReadRelayUrls(
+      Array.from({ length: 12 }, (_, i) => `wss://fav-${i}.example/`),
+      [],
+      {
+        read: Array.from({ length: 8 }, (_, i) => `wss://author-inbox-${i}.example/`),
+        write: ['wss://author-outbox.example/']
+      },
+      true,
+      false,
+      [1],
+      true,
+      ['https://viewer-http-index.example/']
+    )
+    expect(out.some((u) => u.includes('viewer-http-index.example'))).toBe(true)
+  })
 })

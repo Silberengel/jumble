@@ -238,7 +238,9 @@ export function buildProfilePageReadRelayUrls(
   /** When the timeline includes document kinds (30023, 30040, …), add document index relays and raise the cap. */
   profileKindsHint?: readonly number[],
   /** When false, omit global FAST_READ / profile-fetch widening for logged-in users with their own relay stack. */
-  useGlobalRelayBootstrap?: boolean
+  useGlobalRelayBootstrap?: boolean,
+  /** Logged-in viewer read inbox (10432 + 10243 + 10002) — same stack as home feed REQ widening. */
+  viewerInboxReadRelays: readonly string[] = []
 ): string[] {
   const useGlobal = useGlobalRelayBootstrap !== false
   const wantsDocumentLayer = profileKindsHint?.some((k) => isDocumentRelayKind(k)) ?? false
@@ -256,10 +258,12 @@ export function buildProfilePageReadRelayUrls(
     : []
   const authorWriteLayer = relayUrlsLocalsFirst(authorWrite)
   const authorReadLayer = relayUrlsLocalsFirst(authorRead)
+  const viewerReadLayer = relayUrlsLocalsFirst(dedupeNormalizeRelayUrlsOrdered([...viewerInboxReadRelays]))
   const urls = feedRelayPolicyUrls(
     [
       { source: 'author-write', urls: authorWriteLayer },
       { source: 'author-read', urls: authorReadLayer },
+      { source: 'viewer-read', urls: viewerReadLayer },
       { source: 'favorites', urls: favorites },
       { source: 'fast-read', urls: fastReadLayer }
     ],
@@ -268,11 +272,17 @@ export function buildProfilePageReadRelayUrls(
       blockedRelays,
       maxRelays,
       applySocialKindBlockedFilter: kindsIncludeSocialBlockedKind,
-      socialKindBlockedExemptRelays: [...authorWriteLayer, ...authorReadLayer],
+      socialKindBlockedExemptRelays: [...authorWriteLayer, ...authorReadLayer, ...viewerReadLayer],
       allowThirdPartyLocalRelays: true
     }
   )
   const pinFastReadForRemote = useGlobal && !includeAuthorLocalRelays
+  const pinViewerMailbox = (merged: string[], cap: number) =>
+    pinViewerMailboxReadRelaysInRelayCap(
+      relaySessionStrikes.filterReadHttpUrls(merged),
+      viewerInboxReadRelays,
+      cap
+    )
 
   /** Authors without kind 10002: widen REQ targets so notes/metadata are still discoverable on index relays. */
   if (authorHasNoNip65) {
@@ -280,22 +290,28 @@ export function buildProfilePageReadRelayUrls(
     const profileFetchLayer = profileSource.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
     const cap = maxRelays + 8
     const merged = mergeRelayUrlLayers([urls, profileFetchLayer], blockedRelays).slice(0, cap)
-    return pinFastReadForRemote
-      ? pinFastReadForRemoteProfileFeed(merged, fastReadLayer, blockedRelays, cap)
-      : merged
+    return pinViewerMailbox(
+      pinFastReadForRemote
+        ? pinFastReadForRemoteProfileFeed(merged, fastReadLayer, blockedRelays, cap)
+        : merged,
+      cap
+    )
   }
   if (wantsDocumentLayer) {
     const docLayer = DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean) as string[]
     const cap = maxRelays + 6
     const merged = mergeRelayUrlLayers([urls, docLayer], blockedRelays).slice(0, cap)
-    return pinFastReadForRemote
-      ? pinFastReadForRemoteProfileFeed(merged, fastReadLayer, blockedRelays, cap)
-      : merged
+    return pinViewerMailbox(
+      pinFastReadForRemote
+        ? pinFastReadForRemoteProfileFeed(merged, fastReadLayer, blockedRelays, cap)
+        : merged,
+      cap
+    )
   }
   const merged = pinFastReadForRemote
     ? pinFastReadForRemoteProfileFeed(urls, fastReadLayer, blockedRelays, maxRelays)
     : urls
-  return relaySessionStrikes.filterReadHttpUrls(merged)
+  return pinViewerMailbox(merged, maxRelays)
 }
 
 /**

@@ -4,7 +4,7 @@ import {
   METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS
 } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
-import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { buildProfilePageReadRelayUrls, userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import { appendMoneroNostrRelays } from '@/lib/monero-nostr-relays'
 import { getReplaceableCoordinate } from '@/lib/event'
 import {
@@ -34,6 +34,7 @@ import {
 import { isValidPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
 import type { TSubRequestFilter } from '@/types'
 import { useDeletedEventSafe } from '@/providers/DeletedEventProvider'
 import client, { replaceableEventService } from '@/services/client.service'
@@ -261,8 +262,13 @@ function relayListsContentKey(favoriteRelays: string[], blockedRelays: string[])
 }
 
 export function useProfileWall(pubkey: string, profileEventId: string | undefined) {
+  const nostr = useNostrOptional()
   const { favoriteRelays, blockedRelays } = useFavoriteRelays()
   const useGlobalRelayBootstrap = useGlobalRelayBootstrapDefaults()
+  const viewerInboxUrls = useMemo(
+    () => userReadInboxUrls(nostr?.relayList, nostr?.cacheRelayListEvent),
+    [nostr?.relayList, nostr?.cacheRelayListEvent]
+  )
   const { isEventDeleted } = useDeletedEventSafe()
   const isEventDeletedRef = useRef(isEventDeleted)
   isEventDeletedRef.current = isEventDeleted
@@ -307,13 +313,20 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
   )
 
   const relayListsKey = useMemo(
-    () => relayListsContentKey(favoriteRelays, blockedRelays),
-    [favoriteRelays, blockedRelays]
+    () =>
+      `${relayListsContentKey(favoriteRelays, blockedRelays)}\u0000${[...viewerInboxUrls]
+        .map((u) => normalizeAnyRelayUrl(u) || u)
+        .filter(Boolean)
+        .sort()
+        .join('\u0001')}`,
+    [favoriteRelays, blockedRelays, viewerInboxUrls]
   )
   const favoriteRelaysRef = useRef(favoriteRelays)
   const blockedRelaysRef = useRef(blockedRelays)
+  const viewerInboxUrlsRef = useRef(viewerInboxUrls)
   favoriteRelaysRef.current = favoriteRelays
   blockedRelaysRef.current = blockedRelays
+  viewerInboxUrlsRef.current = viewerInboxUrls
   const useGlobalRelayBootstrapRef = useRef(useGlobalRelayBootstrap)
   useGlobalRelayBootstrapRef.current = useGlobalRelayBootstrap
   const runGenRef = useRef(0)
@@ -465,7 +478,8 @@ export function useProfileWall(pubkey: string, profileEventId: string | undefine
               ExtendedKind.MONERO_TIP_DISCLOSURE,
               ExtendedKind.MONERO_TIP_RECEIPT
             ],
-            useGlobalRelayBootstrapRef.current
+            useGlobalRelayBootstrapRef.current,
+            viewerInboxUrlsRef.current
           )
         )
 

@@ -1,7 +1,7 @@
 import { ExtendedKind, FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
 import type { ProfileTimelineRelayUrlsBuilder } from '@/hooks/useProfileTimeline'
-import { buildProfilePageReadRelayUrls, mergeRelayUrlLayers } from '@/lib/favorites-feed-relays'
+import { buildProfilePageReadRelayUrls, mergeRelayUrlLayers, userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import { isNip56ReportEvent } from '@/lib/event'
 import { isReportAuthoredBy, reportTargetsPubkey } from '@/lib/nip56-reports'
 import { normalizeHexPubkey } from '@/lib/pubkey'
@@ -115,17 +115,29 @@ export function useProfileReportsEvents({
     }
   }, [nostr?.pubkey, pubkey])
 
+  const viewerInboxUrls = useMemo(
+    () => userReadInboxUrls(nostr?.relayList, nostr?.cacheRelayListEvent),
+    [nostr?.relayList, nostr?.cacheRelayListEvent]
+  )
+
   const relayListsKey = useMemo(
-    () => relayListsContentKey(favoriteRelays, blockedRelays),
-    [favoriteRelays, blockedRelays]
+    () =>
+      `${relayListsContentKey(favoriteRelays, blockedRelays)}\u0000${[...viewerInboxUrls]
+        .map((u) => normalizeAnyRelayUrl(u) || u)
+        .filter(Boolean)
+        .sort()
+        .join('\u0001')}`,
+    [favoriteRelays, blockedRelays, viewerInboxUrls]
   )
 
   const relayUrlsBuilderRef = useRef(relayUrlsBuilder)
   relayUrlsBuilderRef.current = relayUrlsBuilder
   const favoriteRelaysRef = useRef(favoriteRelays)
   const blockedRelaysRef = useRef(blockedRelays)
+  const viewerInboxUrlsRef = useRef(viewerInboxUrls)
   favoriteRelaysRef.current = favoriteRelays
   blockedRelaysRef.current = blockedRelays
+  viewerInboxUrlsRef.current = viewerInboxUrls
   const useGlobalRelayBootstrapRef = useRef(useGlobalRelayBootstrap)
   useGlobalRelayBootstrapRef.current = useGlobalRelayBootstrap
   const runGenRef = useRef(0)
@@ -143,7 +155,8 @@ export function useProfileReportsEvents({
         false,
         includeAuthorLocal,
         [...REPORT_KINDS],
-        useGlobalRelayBootstrapRef.current
+        useGlobalRelayBootstrapRef.current,
+        viewerInboxUrlsRef.current
       )
       const custom = relayUrlsBuilderRef.current
       const fromCustom = custom
@@ -162,7 +175,8 @@ export function useProfileReportsEvents({
         false,
         includeAuthorLocal,
         [...REPORT_KINDS],
-        useGlobalRelayBootstrapRef.current
+        useGlobalRelayBootstrapRef.current,
+        viewerInboxUrlsRef.current
       )
     },
     []

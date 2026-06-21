@@ -134,9 +134,10 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
         userReadInboxUrls(relayList, cacheRelayListEvent),
         {
           userWriteRelays: userWriteOutboxUrls(relayList, cacheRelayListEvent),
-          applySocialKindBlockedFilter: false
+          applySocialKindBlockedFilter: false,
+          maxRelays: HEAT_MAP_MAX_RELAYS
         }
-      ).slice(0, HEAT_MAP_MAX_RELAYS),
+      ),
     [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent]
   )
 
@@ -167,6 +168,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
   ): Promise<{
     bubbles: TRelayThreadHeatBubble[]
     edges: TRelayThreadHeatEdge[]
+    relayEventCount: number
   }> => {
     const windowStart = Math.floor(Date.now() / 1000) - HEAT_WINDOW_SEC
     const sessionEv = eventService.listSessionEventsByKinds(HEAT_KINDS, { limit: SESSION_HEAT_LIMIT })
@@ -193,6 +195,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
             {
               eoseTimeout: 6000,
               globalTimeout: RELAY_FETCH_TIMEOUT_MS,
+              foreground: true,
               relayOpSource: 'RelayThreadHeatMap.rescan',
               signal
             }
@@ -267,6 +270,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
             {
               eoseTimeout: 5000,
               globalTimeout: ROOT_SNIPPET_FETCH_TIMEOUT_MS,
+              foreground: true,
               relayOpSource: 'RelayThreadHeatMap.rootSnippet',
               signal
             }
@@ -304,7 +308,7 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
       afterFeedFilter: feedNotes.length,
       edges: edges.length
     })
-    return { bubbles, edges }
+    return { bubbles, edges, relayEventCount: relayRaw.length }
   }, [relayUrls, followSet, showKinds, showKind1OPs, showKind1Replies, showKind1111, mutePubkeySet])
 
   useEffect(() => {
@@ -323,63 +327,80 @@ export default function RelayThreadHeatMap({ followPubkeys, refreshKey }: Props)
 
     void (async () => {
       setError(null)
-      let hadEnvelope = false
 
-      const raw = await indexedDb.getSetting(cacheSettingKey)
-      if (cancelled) return
-      const cached = parseRelayThreadHeatMapCache(raw)
-      if (cached) {
-        hadEnvelope = true
-        setRows(cached.bubbles)
-        setEdges(cached.edges ?? [])
-        setLoading(false)
-      } else {
-        setLoading(true)
+      if (!includeRelay) {
+        let hadEnvelope = false
+        const raw = await indexedDb.getSetting(cacheSettingKey)
+        if (cancelled) return
+        const cached = parseRelayThreadHeatMapCache(raw)
+        if (cached) {
+          hadEnvelope = true
+          setRows(cached.bubbles)
+          setEdges(cached.edges ?? [])
+          setLoading(false)
+        } else {
+          setLoading(true)
+        }
+
+        setIsMerging(true)
+        try {
+          const local = await mergeHeatMapData(false, abort.signal)
+          if (cancelled) return
+          if (!hadEnvelope || local.bubbles.length > 0) {
+            setRows(local.bubbles)
+            setEdges(local.edges)
+          }
+          setRelayDataFresh(false)
+        } catch (e) {
+          if (cancelled) return
+          if ((e as Error)?.name === 'AbortError') return
+          logger.warn('[RelayThreadHeatMap] local merge failed', e)
+          setError(t('heatMapFetchError'))
+          if (!hadEnvelope) {
+            setRows([])
+            setEdges([])
+          }
+        } finally {
+          if (!cancelled) {
+            setIsMerging(false)
+            setLoading(false)
+          }
+        }
+        return
       }
 
       setIsMerging(true)
       try {
-        const local = await mergeHeatMapData(false, abort.signal)
+        const { bubbles, edges: nextEdges, relayEventCount } = await mergeHeatMapData(true, abort.signal)
         if (cancelled) return
-        if (!hadEnvelope || local.bubbles.length > 0) {
-          setRows(local.bubbles)
-          setEdges(local.edges)
-          setLoading(false)
+        if (relayEventCount > 0 || bubbles.length > 0) {
+          setRows(bubbles)
+          setEdges(nextEdges)
         }
-
-        if (!includeRelay) {
-          setRelayDataFresh(false)
-          return
-        }
-
-        const { bubbles, edges: nextEdges } = await mergeHeatMapData(true, abort.signal)
-        if (cancelled) return
-        setRows(bubbles)
-        setEdges(nextEdges)
-        setRelayDataFresh(true)
-        setError(null)
-        try {
-          await indexedDb.setSetting(
-            cacheSettingKey,
-            serializeRelayThreadHeatMapCache({
-              v: 1,
-              builtAtMs: Date.now(),
-              bubbles,
-              edges: nextEdges
-            })
-          )
-        } catch (persistErr) {
-          logger.warn('[RelayThreadHeatMap] cache persist failed', persistErr)
+        if (relayEventCount > 0) {
+          setRelayDataFresh(true)
+          setError(null)
+          try {
+            await indexedDb.setSetting(
+              cacheSettingKey,
+              serializeRelayThreadHeatMapCache({
+                v: 1,
+                builtAtMs: Date.now(),
+                bubbles,
+                edges: nextEdges
+              })
+            )
+          } catch (persistErr) {
+            logger.warn('[RelayThreadHeatMap] cache persist failed', persistErr)
+          }
+        } else {
+          setError(t('heatMapFetchError'))
         }
       } catch (e) {
         if (cancelled) return
         if ((e as Error)?.name === 'AbortError') return
-        logger.warn('[RelayThreadHeatMap] fetch failed', e)
+        logger.warn('[RelayThreadHeatMap] rescan failed', e)
         setError(t('heatMapFetchError'))
-        if (!hadEnvelope) {
-          setRows([])
-          setEdges([])
-        }
       } finally {
         if (!cancelled) {
           setIsMerging(false)

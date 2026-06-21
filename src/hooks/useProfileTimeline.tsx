@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Event, kinds as nostrKinds, type Filter } from 'nostr-tools'
 import { CALENDAR_EVENT_KINDS, ExtendedKind, isDocumentRelayKind, isSocialKindBlockedKind } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
-import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { buildProfilePageReadRelayUrls, userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import type { ProfileReportsRelayList } from '@/lib/profile-reports-relays'
 import { hexPubkeysEqual, normalizeHexPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl, subtractNormalizedRelayUrls } from '@/lib/url'
@@ -130,9 +130,18 @@ export function useProfileTimeline({
   }, [nostr?.pubkey, pubkey])
   /** Own profile: honor viewer relay prefs. Other profiles: always widen with FAST_READ / profile index relays. */
   const useGlobalRelayBootstrap = viewerUsesGlobalBootstrap || !includeAuthorLocalRelays
+  const viewerInboxUrls = useMemo(
+    () => userReadInboxUrls(nostr?.relayList, nostr?.cacheRelayListEvent),
+    [nostr?.relayList, nostr?.cacheRelayListEvent]
+  )
   const relayListsKey = useMemo(
-    () => relayListsContentKey(favoriteRelays, blockedRelays),
-    [favoriteRelays, blockedRelays]
+    () =>
+      `${relayListsContentKey(favoriteRelays, blockedRelays)}\u0000${[...viewerInboxUrls]
+        .map((u) => normalizeAnyRelayUrl(u) || u)
+        .filter(Boolean)
+        .sort()
+        .join('\u0001')}`,
+    [favoriteRelays, blockedRelays, viewerInboxUrls]
   )
   const { isEventDeleted, tombstoneEpoch } = useDeletedEventSafe()
   const isEventDeletedRef = useRef(isEventDeleted)
@@ -152,7 +161,8 @@ export function useProfileTimeline({
       authorRelayList: ProfileReportsRelayList,
       includeAuthorLocalRelaysArg: boolean,
       kindsArg: number[],
-      useGlobalRelayBootstrapArg: boolean
+      useGlobalRelayBootstrapArg: boolean,
+      viewerInboxReadRelays: readonly string[]
     ) => {
       const custom = relayUrlsBuilderRef.current
       if (custom) {
@@ -166,7 +176,8 @@ export function useProfileTimeline({
         socialKinds,
         includeAuthorLocalRelaysArg,
         kindsArg,
-        useGlobalRelayBootstrapArg
+        useGlobalRelayBootstrapArg,
+        viewerInboxReadRelays
       )
     },
     []
@@ -330,7 +341,8 @@ export function useProfileTimeline({
         emptyAuthor,
         includeAuthorLocalRelays,
         kinds,
-        useGlobalRelayBootstrap
+        useGlobalRelayBootstrap,
+        viewerInboxUrls
       )
 
       const startWave = async (subRequests: ReturnType<typeof buildSubRequests>) => {
@@ -425,7 +437,8 @@ export function useProfileTimeline({
           authorRl,
           includeAuthorLocalRelays,
           kinds,
-          useGlobalRelayBootstrap
+          useGlobalRelayBootstrap,
+          viewerInboxUrls
         )
         const deltaUrls = subtractNormalizedRelayUrls(fullFeedUrls, provisionalFeedUrls)
         if (cancelled || deltaUrls.length === 0) return
@@ -467,6 +480,7 @@ export function useProfileTimeline({
     relayListsKey,
     includeAuthorLocalRelays,
     useGlobalRelayBootstrap,
+    viewerInboxUrls,
     resolveFeedUrls
   ])
 

@@ -1,7 +1,7 @@
 import { buildProfileAuthorSubRequestsFromUrlGroups } from '@/lib/profile-author-subrequests'
 import { isSocialKindBlockedKind } from '@/constants'
 import { useGlobalRelayBootstrapDefaults } from '@/hooks/use-global-relay-bootstrap-defaults'
-import { buildProfilePageReadRelayUrls } from '@/lib/favorites-feed-relays'
+import { buildProfilePageReadRelayUrls, userReadInboxUrls } from '@/lib/favorites-feed-relays'
 import { hexPubkeysEqual, isValidPubkey, normalizeHexPubkey, userIdToPubkey } from '@/lib/pubkey'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -65,9 +65,15 @@ export function useProfileAuthorFeedSubRequests({
   /** Own profile: honor viewer relay prefs. Other profiles: always widen with FAST_READ / profile index relays. */
   const useGlobalRelayBootstrap = viewerUsesGlobalBootstrap || !includeAuthorLocalRelays
 
+  const viewerInboxUrls = useMemo(
+    () => userReadInboxUrls(nostr?.relayList, nostr?.cacheRelayListEvent),
+    [nostr?.relayList, nostr?.cacheRelayListEvent]
+  )
+
   const relayListsKey = useMemo(
-    () => relayListsContentKey(favoriteRelays, blockedRelays),
-    [favoriteRelays, blockedRelays]
+    () =>
+      `${relayListsContentKey(favoriteRelays, blockedRelays)}\u0000${relayUrlListKey(viewerInboxUrls)}`,
+    [favoriteRelays, blockedRelays, viewerInboxUrls]
   )
 
   const kindsKey = useMemo(() => [...kinds].join(','), [kinds])
@@ -103,7 +109,8 @@ export function useProfileAuthorFeedSubRequests({
         socialKinds,
         includeAuthorLocalRelays,
         kinds,
-        useGlobalRelayBootstrap
+        useGlobalRelayBootstrap,
+        viewerInboxUrls
       )
       if (urls.length === 0) return
       const key = relayUrlListKey(urls)
@@ -135,7 +142,7 @@ export function useProfileAuthorFeedSubRequests({
     return () => {
       cancelled = true
     }
-  }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, includeAuthorLocalRelays, useGlobalRelayBootstrap])
+  }, [pubkey, relayListsKey, kindsKey, kinds, refreshToken, includeAuthorLocalRelays, useGlobalRelayBootstrap, viewerInboxUrls])
 
   const subRequests = useMemo(() => {
     if (!relayUrls?.length || !authorHex) return [] as TFeedSubRequest[]

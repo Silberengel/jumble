@@ -76,7 +76,7 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
           applySocialKindBlockedFilter: false
         }
       ),
-    [favoriteRelays, blockedRelays, relayList]
+    [favoriteRelays, blockedRelays, relayList, cacheRelayListEvent]
   )
 
   const openProfile = useCallback((partnerPubkey: string) => {
@@ -95,9 +95,11 @@ export default function ProfileInteractionsMap({ pubkey, refreshKey }: Props) {
         filters.map((filter) =>
           client.fetchEvents(relayUrls, filter, {
             cache: true,
+            foreground: true,
             eoseTimeout: 4500,
             globalTimeout: 16_000,
-            firstRelayResultGraceMs: false
+            firstRelayResultGraceMs: false,
+            relayOpSource: 'ProfileInteractionsMap.rescan'
           })
         )
       )
