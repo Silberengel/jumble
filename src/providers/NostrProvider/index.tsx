@@ -382,7 +382,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       /** Abort + bounded time on hydrate REQs so tab close / account switch does not leave hung subs. */
       const hydrateFetchOpts = {
         signal: controller.signal,
-        globalTimeout: 28_000,
+        globalTimeout: 14_000,
+        eoseTimeout: 4_000,
         foreground: true as const,
         firstRelayResultGraceMs: false as const
       }
@@ -551,21 +552,57 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           blockedRelays
         })
 
-        const [relayListEvents, cacheRelayListEvents, httpRelayListEvents] = await Promise.all([
-        queryService.fetchEvents(hydrateNetworkRelays, {
-          kinds: [kinds.RelayList],
-          authors: [account.pubkey]
-        }, hydrateFetchOpts),
-        queryService.fetchEvents(hydrateNetworkRelays, {
-          kinds: [ExtendedKind.CACHE_RELAYS],
-          authors: [account.pubkey]
-        }, hydrateFetchOpts),
-        queryService.fetchEvents(hydrateNetworkRelays, {
-          kinds: [ExtendedKind.HTTP_RELAY_LIST],
-          authors: [account.pubkey],
-          limit: 1
-        }, hydrateFetchOpts)
-      ])
+        const [
+          relayListEvents,
+          cacheRelayListEvents,
+          httpRelayListEvents,
+          favoriteRelaysEvents,
+          blockedRelaysEvents
+        ] = await Promise.all([
+          queryService.fetchEvents(
+            hydrateNetworkRelays,
+            {
+              kinds: [kinds.RelayList],
+              authors: [account.pubkey]
+            },
+            hydrateFetchOpts
+          ),
+          queryService.fetchEvents(
+            hydrateNetworkRelays,
+            {
+              kinds: [ExtendedKind.CACHE_RELAYS],
+              authors: [account.pubkey]
+            },
+            hydrateFetchOpts
+          ),
+          queryService.fetchEvents(
+            hydrateNetworkRelays,
+            {
+              kinds: [ExtendedKind.HTTP_RELAY_LIST],
+              authors: [account.pubkey],
+              limit: 1
+            },
+            hydrateFetchOpts
+          ),
+          queryService.fetchEvents(
+            hydrateNetworkRelays,
+            {
+              kinds: [ExtendedKind.FAVORITE_RELAYS],
+              authors: [account.pubkey],
+              limit: 1
+            },
+            hydrateFetchOpts
+          ),
+          queryService.fetchEvents(
+            hydrateNetworkRelays,
+            {
+              kinds: [ExtendedKind.BLOCKED_RELAYS],
+              authors: [account.pubkey],
+              limit: 1
+            },
+            hydrateFetchOpts
+          )
+        ])
       if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
         return controller
       }
@@ -575,6 +612,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         storedCacheRelayListEvent
       )
       const httpRelayListEventFetched = getLatestEvent(httpRelayListEvents) ?? storedHttpRelayListEvent ?? null
+      const favoriteRelaysEventFromNetwork = getLatestEvent(favoriteRelaysEvents)
+      const blockedRelaysEventFromNetwork = getLatestEvent(blockedRelaysEvents)
       if (relayListEvent) {
         client.updateRelayListCache(relayListEvent)
       }
@@ -583,33 +622,58 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         cacheRelayListEvent ? indexedDb.putReplaceableEvent(cacheRelayListEvent).catch(() => {}) : Promise.resolve(),
         httpRelayListEventFetched
           ? indexedDb.putReplaceableEvent(httpRelayListEventFetched).catch(() => {})
+          : Promise.resolve(),
+        favoriteRelaysEventFromNetwork
+          ? indexedDb.putReplaceableEvent(favoriteRelaysEventFromNetwork).catch(() => {})
+          : Promise.resolve(),
+        blockedRelaysEventFromNetwork
+          ? indexedDb.putReplaceableEvent(blockedRelaysEventFromNetwork).catch(() => {})
           : Promise.resolve()
       ])
-      setCacheRelayListEvent(cacheRelayListEvent ?? storedCacheRelayListEvent ?? null)
-      setHttpRelayListEvent(httpRelayListEventFetched)
-      // Fetch updated relay list (merges 10002, 10432, 10243)
-      const mergedRelayList = await client.fetchRelayList(account.pubkey) // Keep using client for relay list merging
-      if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
-        return controller
+      if (hydrationGenForThisRun === accountHydrationGenerationRef.current) {
+        setCacheRelayListEvent(cacheRelayListEvent ?? storedCacheRelayListEvent ?? null)
+        setHttpRelayListEvent(httpRelayListEventFetched)
+        if (favoriteRelaysEventFromNetwork) {
+          setFavoriteRelaysEvent(favoriteRelaysEventFromNetwork)
+        }
+        if (blockedRelaysEventFromNetwork) {
+          setBlockedRelaysEvent(blockedRelaysEventFromNetwork)
+          setViewerBlockedRelayUrls(parseBlockedRelayUrlsFromEvent(blockedRelaysEventFromNetwork))
+        }
       }
-      setRelayList(mergedRelayList)
 
       const fetchRelays = buildAccountSessionNetworkHydrateRelayUrls({
         relayListEvent: relayListEvent ?? storedRelayListEvent,
         cacheRelayListEvent: cacheRelayListEvent ?? storedCacheRelayListEvent,
         httpRelayListEvent: httpRelayListEventFetched ?? storedHttpRelayListEvent ?? null,
-        favoriteRelaysEvent: storedFavoriteRelaysEvent,
+        favoriteRelaysEvent: favoriteRelaysEventFromNetwork ?? storedFavoriteRelaysEvent,
         blockedRelays
       })
-      const events = await queryService.fetchEvents(fetchRelays, [
-        {
-          kinds: [...AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS],
-          authors: [account.pubkey]
-        }
-      ], hydrateFetchOpts)
+      const profileBatchKinds = AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS.filter(
+        (k) =>
+          k !== kinds.RelayList &&
+          k !== ExtendedKind.CACHE_RELAYS &&
+          k !== ExtendedKind.HTTP_RELAY_LIST &&
+          k !== ExtendedKind.FAVORITE_RELAYS &&
+          k !== ExtendedKind.BLOCKED_RELAYS
+      )
+      const [mergedRelayList, events] = await Promise.all([
+        client.fetchRelayList(account.pubkey),
+        queryService.fetchEvents(
+          fetchRelays,
+          [
+            {
+              kinds: [...profileBatchKinds],
+              authors: [account.pubkey]
+            }
+          ],
+          hydrateFetchOpts
+        )
+      ])
       if (hydrationGenForThisRun !== accountHydrationGenerationRef.current) {
         return controller
       }
+      setRelayList(mergedRelayList)
       const sortedEvents = events.sort((a, b) => b.created_at - a.created_at)
     const profileEvent = sortedEvents.find((e) => e.kind === kinds.Metadata)
     const paymentInfoEvent = sortedEvents
@@ -619,8 +683,12 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       const muteListEvent = sortedEvents.find((e) => e.kind === kinds.Mutelist)
       const bookmarkListEvent = sortedEvents.find((e) => e.kind === kinds.BookmarkList)
       const interestListEvent = sortedEvents.find((e) => e.kind === INTEREST_LIST_KIND)
-      const favoriteRelaysEvent = sortedEvents.find((e) => e.kind === ExtendedKind.FAVORITE_RELAYS)
-      const blockedRelaysEvent = sortedEvents.find((e) => e.kind === ExtendedKind.BLOCKED_RELAYS)
+      const favoriteRelaysEvent =
+        favoriteRelaysEventFromNetwork ??
+        sortedEvents.find((e) => e.kind === ExtendedKind.FAVORITE_RELAYS)
+      const blockedRelaysEvent =
+        blockedRelaysEventFromNetwork ??
+        sortedEvents.find((e) => e.kind === ExtendedKind.BLOCKED_RELAYS)
       const blossomServerListEvent = sortedEvents.find(
         (e) => e.kind === ExtendedKind.BLOSSOM_SERVER_LIST
       )
@@ -861,17 +929,14 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        if (userForcedAccountNetworkHydrate) {
-          await replaceableEventService.refreshAuthorPublishedReplaceablesFromRelays(account.pubkey, {
-            force: true
+        void replaceableEventService
+          .refreshAuthorPublishedReplaceablesFromRelays(
+            account.pubkey,
+            userForcedAccountNetworkHydrate ? { force: true } : undefined
+          )
+          .catch((err) => {
+            logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })
           })
-        } else {
-          void replaceableEventService
-            .refreshAuthorPublishedReplaceablesFromRelays(account.pubkey)
-            .catch((err) => {
-              logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })
-            })
-        }
       } catch (err) {
         logger.debug('[NostrProvider] Author replaceables refresh after hydrate failed', { error: err })
       }

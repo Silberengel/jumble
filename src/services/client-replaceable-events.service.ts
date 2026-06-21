@@ -291,8 +291,17 @@ export class ReplaceableEventService {
         }
       }
 
-      // Kind 3 / NIP-65 / 10133: IndexedDB + session LRU before DataLoader (newest wins); then background network refresh.
-      if (!d && (kind === kinds.Contacts || kind === kinds.RelayList || kind === ExtendedKind.PAYMENT_INFO)) {
+      // Kind 3 / NIP-65 / list kinds: IndexedDB + session LRU before DataLoader (newest wins); then background refresh.
+      const idbFirstReplaceableKinds = new Set<number>([
+        kinds.Contacts,
+        kinds.RelayList,
+        ExtendedKind.PAYMENT_INFO,
+        ExtendedKind.FAVORITE_RELAYS,
+        ExtendedKind.BLOCKED_RELAYS,
+        ExtendedKind.CACHE_RELAYS,
+        ExtendedKind.HTTP_RELAY_LIST
+      ])
+      if (!d && idbFirstReplaceableKinds.has(kind)) {
         let idbEv: NEvent | undefined | null
         try {
           idbEv = await indexedDb.getReplaceableEvent(pubkey, kind, d)
@@ -561,7 +570,15 @@ export class ReplaceableEventService {
       }
     }
 
-    if (needsIndexedDb.length > 0 && (kind === kinds.Contacts || kind === kinds.RelayList)) {
+    if (
+      needsIndexedDb.length > 0 &&
+      (kind === kinds.Contacts ||
+        kind === kinds.RelayList ||
+        kind === ExtendedKind.FAVORITE_RELAYS ||
+        kind === ExtendedKind.BLOCKED_RELAYS ||
+        kind === ExtendedKind.CACHE_RELAYS ||
+        kind === ExtendedKind.HTTP_RELAY_LIST)
+    ) {
       for (const { pubkey, index } of needsIndexedDb) {
         if (results[index] !== undefined) continue
         const hits = client.eventService.listSessionEventsAuthoredBy(pubkey, {
@@ -702,7 +719,11 @@ export class ReplaceableEventService {
       if (
         m.kind !== kinds.Contacts &&
         m.kind !== kinds.RelayList &&
-        m.kind !== ExtendedKind.PAYMENT_INFO
+        m.kind !== ExtendedKind.PAYMENT_INFO &&
+        m.kind !== ExtendedKind.FAVORITE_RELAYS &&
+        m.kind !== ExtendedKind.BLOCKED_RELAYS &&
+        m.kind !== ExtendedKind.CACHE_RELAYS &&
+        m.kind !== ExtendedKind.HTTP_RELAY_LIST
       ) {
         continue
       }
@@ -773,6 +794,16 @@ export class ReplaceableEventService {
           }
         } else if (kind === ExtendedKind.FAVORITE_RELAYS) {
           relayUrls = await buildExploreProfileAndUserRelayList(client.pubkey)
+        } else if (
+          kind === ExtendedKind.BLOCKED_RELAYS ||
+          kind === ExtendedKind.CACHE_RELAYS ||
+          kind === ExtendedKind.HTTP_RELAY_LIST
+        ) {
+          try {
+            relayUrls = await buildProfileAndUserRelayList(client.pubkey)
+          } catch {
+            relayUrls = [...PROFILE_RELAY_URLS]
+          }
         } else if (kind === 10001) {
           // Pin lists (NIP-51): same pitfall as profile media — FAST_READ alone misses aggr / profile mirrors,
           // and 100ms EOSE loses the race when several relays are down.
@@ -834,7 +865,11 @@ export class ReplaceableEventService {
           kind === kinds.Contacts ||
           kind === kinds.RelayList ||
           kind === kinds.Mutelist ||
-          kind === kinds.BookmarkList
+          kind === kinds.BookmarkList ||
+          kind === ExtendedKind.FAVORITE_RELAYS ||
+          kind === ExtendedKind.BLOCKED_RELAYS ||
+          kind === ExtendedKind.CACHE_RELAYS ||
+          kind === ExtendedKind.HTTP_RELAY_LIST
         const multiAuthorBatch = pubkeys.length > 1
         // replaceableRace + default grace closes the REQ shortly after the first EVENT. For batched kind-0
         // (many `authors` in one filter) that stops the subscription while most profiles are still in flight.

@@ -119,25 +119,8 @@ export default function ContentPreview({
     [event, mutePubkeySet]
   )
 
-  if (!event) {
-    return <div className={cn('pointer-events-none', className)}>{`[${t('Note not found')}]`}</div>
-  }
-
-  if (isMuted) {
-    return (
-      <div className={cn('pointer-events-none', className)}>[{t('This user has been muted')}]</div>
-    )
-  }
-
-  if (isMentioningMuted) {
-    return (
-      <div className={cn('pointer-events-none', className)}>
-        [{t('This note mentions a user you muted')}]
-      </div>
-    )
-  }
-
   const previewEvent = useMemo(() => {
+    if (!event) return null
     let base = event
     if (event.kind === kinds.ShortTextNote) {
       if (forParentReplyBlurb) {
@@ -158,13 +141,33 @@ export default function ContentPreview({
     shortNoteEditState?.latestAuthorEdit
   ])
 
+  if (!event) {
+    return <div className={cn('pointer-events-none', className)}>{`[${t('Note not found')}]`}</div>
+  }
+
+  if (isMuted) {
+    return (
+      <div className={cn('pointer-events-none', className)}>[{t('This user has been muted')}]</div>
+    )
+  }
+
+  if (isMentioningMuted) {
+    return (
+      <div className={cn('pointer-events-none', className)}>
+        [{t('This note mentions a user you muted')}]
+      </div>
+    )
+  }
+
+  const resolvedPreviewEvent = previewEvent ?? event
+
   const { outer: previewOuter, body: previewBody } = splitPreviewLayoutClasses(className)
 
   const withKindRow = (node: React.ReactNode) => (
     <div className={cn('flex min-w-0 flex-col gap-1', previewOuter)}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <NoteKindLabel kind={previewEvent.kind} event={previewEvent} size="small" />
-        <EventPowLabel event={previewEvent} />
+        <NoteKindLabel kind={resolvedPreviewEvent.kind} event={resolvedPreviewEvent} size="small" />
+        <EventPowLabel event={resolvedPreviewEvent} />
       </div>
       <div className={cn('min-w-0', previewBody)}>{node}</div>
     </div>
@@ -179,11 +182,11 @@ export default function ContentPreview({
     } else if (event.kind === ExtendedKind.POLL_RESPONSE) {
       line = t('Notification poll vote summary')
     } else if (event.kind === ExtendedKind.POLL) {
-      line = parentReplyPollQuestionBlurb(previewEvent.content ?? '') || t('Poll')
+      line = parentReplyPollQuestionBlurb(resolvedPreviewEvent.content ?? '') || t('Poll')
     } else {
       line =
-        getParentReplyBlurbDisplayText(previewEvent) ||
-        getParentReplyBlurbFallbackLabel(previewEvent)
+        getParentReplyBlurbDisplayText(resolvedPreviewEvent) ||
+        getParentReplyBlurbFallbackLabel(resolvedPreviewEvent)
     }
     return (
       <div className={cn('pointer-events-none min-w-0 text-muted-foreground', previewOuter)}>
@@ -202,68 +205,68 @@ export default function ContentPreview({
       ExtendedKind.PUBLIC_MESSAGE
     ].includes(event.kind)
   ) {
-    return withKindRow(<NormalContentPreview event={previewEvent} />)
+    return withKindRow(<NormalContentPreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.DISCUSSION) {
     return (
       <div className={cn('flex min-w-0 flex-col gap-1', previewOuter)}>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <NoteKindLabel kind={previewEvent.kind} event={previewEvent} size="small" />
-          <EventPowLabel event={previewEvent} />
+          <NoteKindLabel kind={resolvedPreviewEvent.kind} event={resolvedPreviewEvent} size="small" />
+          <EventPowLabel event={resolvedPreviewEvent} />
         </div>
         <div className={cn('min-w-0', previewBody)}>
-          <DiscussionNote event={previewEvent} size="small" />
+          <DiscussionNote event={resolvedPreviewEvent} size="small" />
         </div>
       </div>
     )
   }
 
   if (event.kind === kinds.Highlights) {
-    return withKindRow(<HighlightPreview event={previewEvent} />)
+    return withKindRow(<HighlightPreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.WEB_BOOKMARK) {
-    const href = getWebBookmarkArticleUrl(previewEvent)
-    const title = previewEvent.tags.find((t) => t[0] === 'title')?.[1]?.trim()
+    const href = getWebBookmarkArticleUrl(resolvedPreviewEvent)
+    const title = resolvedPreviewEvent.tags.find((t) => t[0] === 'title')?.[1]?.trim()
     const line = title?.trim() || href?.trim() || t('Web bookmark')
     return withKindRow(<div className={cn('min-w-0 truncate text-sm', previewBody)}>{line}</div>)
   }
 
   if (event.kind === ExtendedKind.POLL) {
-    return withKindRow(<PollPreview event={previewEvent} hideOptions={hidePollOptions} />)
+    return withKindRow(<PollPreview event={resolvedPreviewEvent} hideOptions={hidePollOptions} />)
   }
 
   if (event.kind === kinds.LongFormArticle) {
-    return withKindRow(<LongFormCard event={previewEvent} interactive={false} />)
+    return withKindRow(<LongFormCard event={resolvedPreviewEvent} interactive={false} />)
   }
 
   if (isNip71StyleVideoKind(event.kind)) {
-    return withKindRow(<VideoNotePreview event={previewEvent} />)
+    return withKindRow(<VideoNotePreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.MUSIC_TRACK) {
-    return withKindRow(<MusicTrackNotePreview event={previewEvent} />)
+    return withKindRow(<MusicTrackNotePreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.PICTURE) {
-    return withKindRow(<PictureNotePreview event={previewEvent} />)
+    return withKindRow(<PictureNotePreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.GROUP_METADATA) {
-    return withKindRow(<GroupMetadataPreview event={previewEvent} />)
+    return withKindRow(<GroupMetadataPreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === kinds.CommunityDefinition) {
-    return withKindRow(<CommunityDefinitionPreview event={previewEvent} />)
+    return withKindRow(<CommunityDefinitionPreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === kinds.LiveEvent) {
-    return withKindRow(<LiveEventPreview event={previewEvent} />)
+    return withKindRow(<LiveEventPreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.ZAP_REQUEST) {
-    return withKindRow(<ZapPreview event={previewEvent} />)
+    return withKindRow(<ZapPreview event={resolvedPreviewEvent} />)
   }
 
   if (
@@ -279,32 +282,32 @@ export default function ContentPreview({
       if (previewDensity === 'compact') {
         return (
           <div className={cn('min-w-0', previewOuter)}>
-            <MoneroTip event={previewEvent} className={previewBody} />
+            <MoneroTip event={resolvedPreviewEvent} className={previewBody} />
           </div>
         )
       }
-      return withKindRow(<MoneroTip event={previewEvent} variant="thread" />)
+      return withKindRow(<MoneroTip event={resolvedPreviewEvent} variant="thread" />)
     }
     if (previewDensity === 'compact') {
       return (
         <div className={cn('min-w-0', previewOuter)}>
-          <Zap event={previewEvent} className={previewBody} />
+          <Zap event={resolvedPreviewEvent} className={previewBody} />
         </div>
       )
     }
-    return withKindRow(<ZapPreview event={previewEvent} />)
+    return withKindRow(<ZapPreview event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.APPLICATION_HANDLER_INFO) {
-    return withKindRow(<ApplicationHandlerInfo event={previewEvent} />)
+    return withKindRow(<ApplicationHandlerInfo event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.APPLICATION_HANDLER_RECOMMENDATION) {
-    return withKindRow(<ApplicationHandlerRecommendation event={previewEvent} />)
+    return withKindRow(<ApplicationHandlerRecommendation event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.FOLLOW_PACK) {
-    return withKindRow(<FollowPackPreview event={previewEvent} />)
+    return withKindRow(<FollowPackPreview event={resolvedPreviewEvent} />)
   }
 
   if (
@@ -312,11 +315,11 @@ export default function ContentPreview({
     event.kind === ExtendedKind.GIT_ISSUE ||
     event.kind === ExtendedKind.GIT_RELEASE
   ) {
-    return withKindRow(<GitRepublicEventCard variant="compact" event={previewEvent} />)
+    return withKindRow(<GitRepublicEventCard variant="compact" event={resolvedPreviewEvent} />)
   }
 
   if (event.kind === ExtendedKind.LEARNING_RESOURCE) {
-    return withKindRow(<LearningResourceCard variant="compact" event={previewEvent} />)
+    return withKindRow(<LearningResourceCard variant="compact" event={resolvedPreviewEvent} />)
   }
 
   if (isNip25ReactionKind(event.kind)) {
@@ -331,7 +334,7 @@ export default function ContentPreview({
             {DISCUSSION_DOWNVOTE_DISPLAY}
           </span>
         ) : (
-          <ReactionEmojiDisplay event={previewEvent} maxRawLength={24} variant="compact" />
+          <ReactionEmojiDisplay event={resolvedPreviewEvent} maxRawLength={24} variant="compact" />
         )}
         {t(notificationReactionSummaryKey(reactionDisplay))}
       </div>
@@ -352,5 +355,5 @@ export default function ContentPreview({
     )
   }
 
-  return withKindRow(<div>[{t('Cannot handle event of kind k', { k: previewEvent.kind })}]</div>)
+  return withKindRow(<div>[{t('Cannot handle event of kind k', { k: resolvedPreviewEvent.kind })}]</div>)
 }

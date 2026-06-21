@@ -4249,7 +4249,7 @@ export default function PostContent({
                 isMediaNoteComposerMode ? t('Media Note') :
                 t('Short Note')
               return (
-                <div className="flex flex-nowrap items-center justify-end gap-1">
+                <div className="flex w-full flex-wrap items-center gap-1 sm:flex-nowrap sm:justify-end">
                   {enableAdvancedEditor ? (
                     <Button
                       type="button"
