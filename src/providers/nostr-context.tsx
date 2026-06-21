@@ -33,7 +33,6 @@ export type TNostrContext = {
   favoriteRelaysEvent: Event | null
   blockedRelaysEvent: Event | null
   userEmojiListEvent: Event | null
-  rssFeedListEvent: Event | null
   account: TAccountPointer | null
   accounts: TAccountPointer[]
   nsec: string | null
@@ -81,7 +80,6 @@ export type TNostrContext = {
   updateInterestListEvent: (interestListEvent: Event) => Promise<void>
   updateFavoriteRelaysEvent: (favoriteRelaysEvent: Event) => Promise<void>
   updateBlockedRelaysEvent: (blockedRelaysEvent: Event) => Promise<void>
-  updateRssFeedListEvent: (rssFeedListEvent: Event) => Promise<void>
   updateUserEmojiListEvent: (userEmojiListEvent: Event) => Promise<void>
   /**
    * Re-run the full account network hydrate (relay lists + replaceable merge + prewarm), bypassing the

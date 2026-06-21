@@ -684,7 +684,7 @@ function ThreadPanel({
           )
 
           // URL/article threads (NIP-22 `#i`): synthetic root has no e-tags or seen-relay hints — merge the same
-          // relay stack as RSS+Web discovery / {@link RssUrlThreadStatsBar} so replies match feed stats.
+          // relay stack as RSS article thread discovery so replies match feed stats.
           if (rootInfo.type === 'I') {
             const rssLayer = await buildRssWebNostrQueryRelayUrls({
               accountPubkey: userPubkey ?? null,

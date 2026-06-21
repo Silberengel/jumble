@@ -8,6 +8,7 @@ import {
 import { kinds } from 'nostr-tools'
 import { isSameAccount } from '@/lib/account'
 import { mergeAccountSecrets } from '@/lib/account-secrets'
+import { purgeObsoleteIndexedDbSettings, purgeObsoleteLocalStorageKeys } from '@/lib/obsolete-storage-cleanup'
 import { mergeSettingsRecordWithLocalStorage } from '@/lib/settings-storage-merge'
 import { DEFAULT_ZAP_SATS } from '@/lib/lightning'
 import { isPaytoCategory } from '@/lib/payto-category-display'
@@ -19,7 +20,6 @@ import {
   TFontSize,
   TMediaAutoLoadPolicy,
   TMediaUploadServiceConfig,
-  TNoteListMode,
   TRelaySet,
   TTheme,
   TThemeSetting,
@@ -38,7 +38,6 @@ const SETTINGS_KEYS = [
   StorageKey.ADD_CLIENT_TAG,
   StorageKey.FONT_SIZE,
   StorageKey.APP_LANGUAGE,
-  StorageKey.NOTE_LIST_MODE,
   StorageKey.ACCOUNTS,
   StorageKey.CURRENT_ACCOUNT,
   StorageKey.DEFAULT_ZAP_SATS,
@@ -59,14 +58,12 @@ const SETTINGS_KEYS = [
   StorageKey.HIDE_CONTENT_MENTIONING_MUTED_USERS,
   StorageKey.MEDIA_AUTO_LOAD_POLICY,
   StorageKey.SHOWN_CREATE_WALLET_GUIDE_TOAST_PUBKEYS,
-  StorageKey.SHOW_RECOMMENDED_RELAYS_PANEL,
   StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH,
   StorageKey.SHOW_PUBLISH_SUCCESS_TOASTS,
   StorageKey.SHOW_DETAILED_PUBLISH_TOASTS,
   StorageKey.SHOW_LIVE_ACTIVITIES_BANNER,
   StorageKey.DEFAULT_EXPIRATION_ENABLED,
   StorageKey.DEFAULT_EXPIRATION_MONTHS,
-  StorageKey.USE_NOSTR_ARCHIVES_API,
   StorageKey.CACHE_RELAYS_ENABLED,
   StorageKey.HOME_FEED_RELAY_SOURCE
 ] as const
@@ -82,13 +79,11 @@ class LocalStorageService {
   private appLanguage: string | null = null
   private accounts: TAccount[] = []
   private currentAccount: TAccount | null = null
-  private noteListMode: TNoteListMode = 'postsAndReplies'
   private defaultZapSats: number = DEFAULT_ZAP_SATS
   private defaultZapComment: string = 'Zap!'
   private preferredPaytoCategory: PaytoCategory | null = null
   private quickZap: boolean = false
   private includePublicZapReceipt: boolean = true
-  private mediaUploadService: string = DEFAULT_NIP_96_SERVICE
   private autoplay: boolean = true
   private mediaUploadServiceConfigMap: Record<string, TMediaUploadServiceConfig> = {}
   private defaultShowNsfw: boolean = false
@@ -101,12 +96,9 @@ class LocalStorageService {
   private feedKindFilterBypass: boolean = false
   private hideContentMentioningMutedUsers: boolean = false
   private mediaAutoLoadPolicy: TMediaAutoLoadPolicy = MEDIA_AUTO_LOAD_POLICY.FOLLOWS_ONLY
-  private showRecommendedRelaysPanel: boolean = false
   private shownCreateWalletGuideToastPubkeys: Set<string> = new Set()
   private defaultExpirationEnabled: boolean = false
   private defaultExpirationMonths: number = 6
-  /** Nostr Archives REST (discovery, stats prefetch). Default on; set `'false'` to disable. */
-  private useNostrArchivesApi: boolean = false
   /** Kind 10432 cache relays on this device. Default on; set `'false'` to skip localhost cache relays. */
   private cacheRelaysEnabled: boolean = true
   private homeFeedRelaySource: string = 'favorites'
@@ -144,11 +136,6 @@ class LocalStorageService {
       this.currentAccount = null
       window.localStorage.setItem(StorageKey.CURRENT_ACCOUNT, JSON.stringify(null))
     }
-    const noteListModeStr = window.localStorage.getItem(StorageKey.NOTE_LIST_MODE)
-    this.noteListMode =
-      noteListModeStr && ['posts', 'postsAndReplies', 'media'].includes(noteListModeStr)
-        ? (noteListModeStr as TNoteListMode)
-        : 'posts'
     const relaySetsStr = window.localStorage.getItem(StorageKey.RELAY_SETS)
     if (!relaySetsStr) {
       let relaySets: TRelaySet[] = []
@@ -191,10 +178,7 @@ class LocalStorageService {
       this.includePublicZapReceipt = includeReceiptStr !== 'false'
     }
 
-    // deprecated
-    this.mediaUploadService =
-      window.localStorage.getItem(StorageKey.MEDIA_UPLOAD_SERVICE) ?? DEFAULT_NIP_96_SERVICE
-
+    // deprecated legacy global NIP-96 URL — migrated into mediaUploadServiceConfigMap on boot
     this.autoplay = window.localStorage.getItem(StorageKey.AUTOPLAY) !== 'false'
 
     const mediaUploadServiceConfigMapStr = window.localStorage.getItem(
@@ -208,9 +192,6 @@ class LocalStorageService {
 
     this.dismissedTooManyRelaysAlert =
       window.localStorage.getItem(StorageKey.DISMISSED_TOO_MANY_RELAYS_ALERT) === 'true'
-
-    const storedValue = window.localStorage.getItem(StorageKey.SHOW_RECOMMENDED_RELAYS_PANEL)
-    this.showRecommendedRelaysPanel = storedValue === 'true' // Default to false if not explicitly set to true
 
     const showKindsStr = window.localStorage.getItem(StorageKey.SHOW_KINDS)
     if (!showKindsStr) {
@@ -422,15 +403,42 @@ class LocalStorageService {
     const cacheRelaysEnabledStr = window.localStorage.getItem(StorageKey.CACHE_RELAYS_ENABLED)
     this.cacheRelaysEnabled = cacheRelaysEnabledStr !== 'false'
 
-    // Clean up deprecated data
-    window.localStorage.removeItem(StorageKey.ACCOUNT_PROFILE_EVENT_MAP)
-    window.localStorage.removeItem(StorageKey.ACCOUNT_FOLLOW_LIST_EVENT_MAP)
-    window.localStorage.removeItem(StorageKey.ACCOUNT_RELAY_LIST_EVENT_MAP)
-    window.localStorage.removeItem(StorageKey.ACCOUNT_MUTE_LIST_EVENT_MAP)
-    window.localStorage.removeItem(StorageKey.ACCOUNT_MUTE_DECRYPTED_TAGS_MAP)
-    window.localStorage.removeItem(StorageKey.ACTIVE_RELAY_SET_ID)
-    window.localStorage.removeItem(StorageKey.FEED_TYPE)
-    window.localStorage.removeItem(StorageKey.RESTRICT_RELAYS_TO_METADATA_LISTS)
+    this.migrateLegacyMediaUploadService()
+    purgeObsoleteLocalStorageKeys()
+  }
+
+  /**
+   * One-time: copy deprecated global `mediaUploadService` localStorage into per-account
+   * {@link mediaUploadServiceConfigMap} rows, then drop the legacy key on purge.
+   */
+  private migrateLegacyMediaUploadService(): void {
+    let legacy: string | null = null
+    try {
+      legacy = window.localStorage.getItem('mediaUploadService')
+    } catch {
+      return
+    }
+    if (!legacy?.trim()) return
+
+    const pubkeys = new Set<string>()
+    for (const account of this.accounts) {
+      if (account.pubkey) pubkeys.add(account.pubkey)
+    }
+    if (this.currentAccount?.pubkey) pubkeys.add(this.currentAccount.pubkey)
+    if (pubkeys.size === 0) return
+
+    let changed = false
+    for (const pubkey of pubkeys) {
+      if (this.mediaUploadServiceConfigMap[pubkey]) continue
+      this.mediaUploadServiceConfigMap[pubkey] = { type: 'nip96', service: legacy.trim() }
+      changed = true
+    }
+    if (changed) {
+      this.persistSetting(
+        StorageKey.MEDIA_UPLOAD_SERVICE_CONFIG_MAP,
+        JSON.stringify(this.mediaUploadServiceConfigMap)
+      )
+    }
   }
 
   /** Persist a setting. SETTINGS_KEYS mirror to localStorage + IndexedDB; others use localStorage only. */
@@ -483,8 +491,11 @@ class LocalStorageService {
         if (legacyLanguage) merged[StorageKey.APP_LANGUAGE] = legacyLanguage
       }
       this.applySettings(merged)
+      this.migrateLegacyMediaUploadService()
       await this.persistSettingsKeysDiffToIdb(idbBefore, merged)
       this.syncSettingsToLocalStorage(merged)
+      purgeObsoleteLocalStorageKeys()
+      await purgeObsoleteIndexedDbSettings((key) => idb.deleteSetting(key))
     })()
     return this.initPromise
   }
@@ -548,10 +559,6 @@ class LocalStorageService {
     if (appLanguageStr != null) {
       this.appLanguage = appLanguageStr
     }
-    const noteListModeStr = get(StorageKey.NOTE_LIST_MODE)
-    if (noteListModeStr != null && ['posts', 'postsAndReplies', 'media'].includes(noteListModeStr)) {
-      this.noteListMode = noteListModeStr as TNoteListMode
-    }
     const accountsStr = get(StorageKey.ACCOUNTS)
     if (accountsStr != null) this.accounts = JSON.parse(accountsStr) as TAccount[]
     const currentAccountStr = get(StorageKey.CURRENT_ACCOUNT)
@@ -588,7 +595,6 @@ class LocalStorageService {
     if (mediaConfigStr != null) this.mediaUploadServiceConfigMap = JSON.parse(mediaConfigStr) as Record<string, TMediaUploadServiceConfig>
     this.defaultShowNsfw = get(StorageKey.DEFAULT_SHOW_NSFW) === 'true'
     this.dismissedTooManyRelaysAlert = get(StorageKey.DISMISSED_TOO_MANY_RELAYS_ALERT) === 'true'
-    this.showRecommendedRelaysPanel = get(StorageKey.SHOW_RECOMMENDED_RELAYS_PANEL) === 'true'
     const addRandomRelaysStr = get(StorageKey.ADD_RANDOM_RELAYS_TO_PUBLISH)
     if (addRandomRelaysStr != null) this.addRandomRelaysToPublish = addRandomRelaysStr === 'true'
     const showPublishSuccessStr = get(StorageKey.SHOW_PUBLISH_SUCCESS_TOASTS)
@@ -620,8 +626,6 @@ class LocalStorageService {
       const num = parseInt(defaultExpirationMonthsStr)
       if (!isNaN(num) && num >= 0) this.defaultExpirationMonths = num
     }
-    const archivesApiStr = get(StorageKey.USE_NOSTR_ARCHIVES_API)
-    if (archivesApiStr != null) this.useNostrArchivesApi = archivesApiStr !== 'false'
     const cacheRelaysEnabledStr = get(StorageKey.CACHE_RELAYS_ENABLED)
     if (cacheRelaysEnabledStr != null) this.cacheRelaysEnabled = cacheRelaysEnabledStr !== 'false'
     const homeFeedRelaySourceStr = get(StorageKey.HOME_FEED_RELAY_SOURCE)
@@ -682,15 +686,6 @@ class LocalStorageService {
   setAppLanguage(language: string) {
     this.appLanguage = language
     this.persistSetting(StorageKey.APP_LANGUAGE, language)
-  }
-
-  getNoteListMode() {
-    return this.noteListMode
-  }
-
-  setNoteListMode(mode: TNoteListMode) {
-    this.persistSetting(StorageKey.NOTE_LIST_MODE, mode)
-    this.noteListMode = mode
   }
 
   getHomeFeedRelaySource() {
@@ -839,7 +834,7 @@ class LocalStorageService {
 
 
   getMediaUploadServiceConfig(pubkey?: string | null): TMediaUploadServiceConfig {
-    const defaultConfig = { type: 'nip96', service: this.mediaUploadService } as const
+    const defaultConfig = { type: 'nip96', service: DEFAULT_NIP_96_SERVICE } as const
     if (!pubkey) {
       return defaultConfig
     }
@@ -885,15 +880,6 @@ class LocalStorageService {
   setDismissedTooManyRelaysAlert(dismissed: boolean) {
     this.dismissedTooManyRelaysAlert = dismissed
     this.persistSetting(StorageKey.DISMISSED_TOO_MANY_RELAYS_ALERT, dismissed.toString())
-  }
-
-  getShowRecommendedRelaysPanel() {
-    return this.showRecommendedRelaysPanel
-  }
-
-  setShowRecommendedRelaysPanel(show: boolean) {
-    this.showRecommendedRelaysPanel = show
-    this.persistSetting(StorageKey.SHOW_RECOMMENDED_RELAYS_PANEL, show.toString())
   }
 
   getAddRandomRelaysToPublish(): boolean {
@@ -1011,15 +997,6 @@ class LocalStorageService {
       this.defaultExpirationMonths = months
       this.persistSetting(StorageKey.DEFAULT_EXPIRATION_MONTHS, months.toString())
     }
-  }
-
-  getUseNostrArchivesApi(): boolean {
-    return this.useNostrArchivesApi
-  }
-
-  setUseNostrArchivesApi(enabled: boolean) {
-    this.useNostrArchivesApi = enabled
-    this.persistSetting(StorageKey.USE_NOSTR_ARCHIVES_API, enabled ? 'true' : 'false')
   }
 
   getCacheRelaysEnabled(): boolean {

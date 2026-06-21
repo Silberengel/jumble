@@ -348,7 +348,6 @@ export const StorageKey = {
   ACCOUNTS: 'accounts',
   CURRENT_ACCOUNT: 'currentAccount',
   ADD_CLIENT_TAG: 'addClientTag',
-  NOTE_LIST_MODE: 'noteListMode',
   NOTIFICATION_TYPE: 'notificationType',
   DEFAULT_ZAP_SATS: 'defaultZapSats',
   DEFAULT_ZAP_COMMENT: 'defaultZapComment',
@@ -374,11 +373,8 @@ export const StorageKey = {
   HIDE_CONTENT_MENTIONING_MUTED_USERS: 'hideContentMentioningMutedUsers',
   MEDIA_AUTO_LOAD_POLICY: 'mediaAutoLoadPolicy',
   SHOWN_CREATE_WALLET_GUIDE_TOAST_PUBKEYS: 'shownCreateWalletGuideToastPubkeys',
-  SHOW_RECOMMENDED_RELAYS_PANEL: 'showRecommendedRelaysPanel',
   DEFAULT_EXPIRATION_ENABLED: 'defaultExpirationEnabled',
   DEFAULT_EXPIRATION_MONTHS: 'defaultExpirationMonths',
-  /** When not `'false'`, allow Nostr Archives REST for discovery/stats (default on). */
-  USE_NOSTR_ARCHIVES_API: 'useNostrArchivesApi',
   ADD_RANDOM_RELAYS_TO_PUBLISH: 'addRandomRelaysToPublish',
   /** @deprecated Removed — personal-relay read policy is always on when logged in. */
   RESTRICT_RELAYS_TO_METADATA_LISTS: 'restrictRelaysToMetadataLists',
@@ -396,7 +392,6 @@ export const StorageKey = {
   SESSION_EVENT_LRU_MAX: 'sessionEventLruMax',
   /** Temporary draft cache: new notes and replies. Persisted after 30s idle; restored on refresh; cleared on logout/switch. */
   POST_EDITOR_DRAFT: 'postEditorDraft',
-  MEDIA_UPLOAD_SERVICE: 'mediaUploadService', // deprecated
   HIDE_UNTRUSTED_EVENTS: 'hideUntrustedEvents', // deprecated
   ACCOUNT_RELAY_LIST_EVENT_MAP: 'accountRelayListEventMap', // deprecated
   ACCOUNT_FOLLOW_LIST_EVENT_MAP: 'accountFollowListEventMap', // deprecated
@@ -622,7 +617,6 @@ export const ExtendedKind = {
   CITATION_EXTERNAL: 31,
   CITATION_HARDCOPY: 32,
   CITATION_PROMPT: 33,
-  RSS_FEED_LIST: 10895,
   /** Client-only synthetic "parent" for RSS article threads; never published to relays */
   RSS_THREAD_ROOT: 99999,
   /**
@@ -727,8 +721,7 @@ export const AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS: readonly number[] = [
   ExtendedKind.PAYMENT_INFO,
   kinds.UserEmojiList,
   ExtendedKind.CACHE_RELAYS,
-  ExtendedKind.HTTP_RELAY_LIST,
-  ExtendedKind.RSS_FEED_LIST
+  ExtendedKind.HTTP_RELAY_LIST
 ]
 
 /**
@@ -1152,5 +1145,3 @@ export const MEDIA_AUTO_LOAD_POLICY = {
   WIFI_ONLY: 'wifi-only',
   NEVER: 'never'
 } as const
-
-export const DEFAULT_RSS_FEEDS = ['https://divineoffice.org/feed/']

@@ -134,6 +134,7 @@ const CACHE_BROWSER_EVENT_SEARCH_EXCLUDED_STORES: ReadonlySet<string> = new Set(
   StoreNames.TIMELINE_STATE,
   StoreNames.PUBLIC_LIVELY_RELAYS,
   StoreNames.RSS_FEED_ITEMS,
+  StoreNames.RSS_FEED_LIST_EVENTS,
   StoreNames.FOLLOWING_FAVORITE_RELAYS,
   StoreNames.RELAY_SETS,
   StoreNames.MUTE_DECRYPTED_TAGS,
@@ -167,7 +168,6 @@ const REPLACEABLE_METADATA_EVENT_STORES: ReadonlySet<string> = new Set([
   StoreNames.BLOCKED_RELAYS_EVENTS,
   StoreNames.CACHE_RELAYS_EVENTS,
   StoreNames.HTTP_RELAY_LIST_EVENTS,
-  StoreNames.RSS_FEED_LIST_EVENTS,
   StoreNames.PAYMENT_INFO_EVENTS,
   StoreNames.BADGE_DEFINITION_EVENTS,
   StoreNames.SPELL_EVENTS
@@ -180,6 +180,7 @@ const FULL_TEXT_NOTE_SEARCH_STORES: ReadonlySet<string> = new Set([
 ])
 
 const ARCHIVE_CALENDAR_PURGE_SETTING_KEY = 'archiveCalendarPurgedV37'
+const ORPHAN_RSS_STORAGE_PURGE_KEY = 'orphanRssStoragePurgedV1'
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
 const DB_VERSION = 43
@@ -443,6 +444,9 @@ class IndexedDbService {
               void this.purgeLegacyArchivedCalendarEventsOnce().catch((e) =>
                 logger.warn('[IndexedDB] Legacy calendar archive purge failed', { e })
               )
+              void this.purgeOrphanedRssStorageOnce().catch((e) =>
+                logger.warn('[IndexedDB] Orphaned RSS storage purge failed', { e })
+              )
               resolve()
             }
             openWithStored.onupgradeneeded = () => {
@@ -461,6 +465,9 @@ class IndexedDbService {
         this.scheduleNextCleanUp(IndexedDbService.CLEANUP_INITIAL_DELAY_MS)
         void this.purgeLegacyArchivedCalendarEventsOnce().catch((e) =>
           logger.warn('[IndexedDB] Legacy calendar archive purge failed', { e })
+        )
+        void this.purgeOrphanedRssStorageOnce().catch((e) =>
+          logger.warn('[IndexedDB] Orphaned RSS storage purge failed', { e })
         )
         resolve()
       }
@@ -1301,7 +1308,7 @@ class IndexedDbService {
 
   private getReplaceableEventKeyFromEvent(event: Event): string {
     // Events that are replaceable by pubkey only (no d-tag)
-    // PAYMENT_INFO (10133), RSS_FEED_LIST (10895), etc. are in the 10000-20000 range
+    // PAYMENT_INFO (10133), parameterized replaceable kinds, etc. are in the 10000-20000 range
     if (
       [kinds.Metadata, kinds.Contacts, ExtendedKind.PAYMENT_INFO].includes(event.kind) ||
       (event.kind >= 10000 && event.kind < 20000 && event.kind !== ExtendedKind.PUBLICATION && event.kind !== ExtendedKind.PUBLICATION_CONTENT && event.kind !== ExtendedKind.WIKI_ARTICLE && event.kind !== ExtendedKind.NOSTR_SPECIFICATION && event.kind !== kinds.LongFormArticle)
@@ -1357,8 +1364,6 @@ class IndexedDbService {
         return StoreNames.CACHE_RELAYS_EVENTS
       case ExtendedKind.HTTP_RELAY_LIST:
         return StoreNames.HTTP_RELAY_LIST_EVENTS
-      case ExtendedKind.RSS_FEED_LIST:
-        return StoreNames.RSS_FEED_LIST_EVENTS
       case kinds.UserEmojiList:
         return StoreNames.USER_EMOJI_LIST_EVENTS
       case kinds.Emojisets:
@@ -2759,7 +2764,6 @@ class IndexedDbService {
     if (storeName === StoreNames.BLOCKED_RELAYS_EVENTS) return ExtendedKind.BLOCKED_RELAYS
       if (storeName === StoreNames.CACHE_RELAYS_EVENTS) return ExtendedKind.CACHE_RELAYS
       if (storeName === StoreNames.HTTP_RELAY_LIST_EVENTS) return ExtendedKind.HTTP_RELAY_LIST
-      if (storeName === StoreNames.RSS_FEED_LIST_EVENTS) return ExtendedKind.RSS_FEED_LIST
       if (storeName === StoreNames.USER_EMOJI_LIST_EVENTS) return kinds.UserEmojiList
       if (storeName === StoreNames.EMOJI_SET_EVENTS) return kinds.Emojisets
       if (storeName === StoreNames.PAYMENT_INFO_EVENTS) return ExtendedKind.PAYMENT_INFO
@@ -2782,8 +2786,7 @@ class IndexedDbService {
       kind === ExtendedKind.BLOCKED_RELAYS ||
       kind === ExtendedKind.CACHE_RELAYS ||
       kind === ExtendedKind.HTTP_RELAY_LIST ||
-      kind === ExtendedKind.BLOSSOM_SERVER_LIST ||
-      kind === ExtendedKind.RSS_FEED_LIST
+      kind === ExtendedKind.BLOSSOM_SERVER_LIST
     )
   }
 
@@ -2884,6 +2887,26 @@ class IndexedDbService {
     }
   }
 
+  /** One-time wipe of RSS feed page caches (RSS+Web primary page removed; article panel is web-only). */
+  private async purgeOrphanedRssStorageOnce(): Promise<void> {
+    await this.initPromise
+    const done = await this.getSetting(ORPHAN_RSS_STORAGE_PURGE_KEY)
+    if (done === '1') return
+
+    for (const storeName of [StoreNames.RSS_FEED_ITEMS, StoreNames.RSS_FEED_LIST_EVENTS] as const) {
+      if (!this.db?.objectStoreNames.contains(storeName)) continue
+      await new Promise<void>((resolve, reject) => {
+        const tx = this.db!.transaction(storeName, 'readwrite')
+        tx.objectStore(storeName).clear()
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+      })
+    }
+
+    await this.setSetting(ORPHAN_RSS_STORAGE_PURGE_KEY, '1')
+    logger.info('[IndexedDB] Purged orphaned RSS feed storage')
+  }
+
   private scheduleNextCleanUp(delayMs: number): void {
     if (typeof window === 'undefined') return
     if (this.cleanupTimer !== null) {
@@ -2977,139 +3000,6 @@ class IndexedDbService {
         this.scheduleNextCleanUp(IndexedDbService.CLEANUP_INTERVAL_MS)
       }
     }
-  }
-
-  /**
-   * Store RSS feed items in IndexedDB
-   */
-  async putRssFeedItems(items: import('./rss-feed.service').RssFeedItem[]): Promise<void> {
-    await this.initPromise
-    const storeName = StoreNames.RSS_FEED_ITEMS
-    
-    if (!this.db || !this.db.objectStoreNames.contains(storeName)) {
-      logger.warn('[IndexedDB] RSS feed items store not found', { storeName })
-      return
-    }
-
-    return new Promise((resolve) => {
-      const transaction = this.db!.transaction(storeName, 'readwrite')
-      const store = transaction.objectStore(storeName)
-      
-      let completed = 0
-      let errors = 0
-      
-      items.forEach((item) => {
-        // Create a unique key from feedUrl and guid
-        const key = `${item.feedUrl}:${item.guid}`
-        // Store in TValue format for consistency with other stores
-        const value: TValue<import('./rss-feed.service').RssFeedItem> = {
-          key,
-          value: item,
-          addedAt: Date.now()
-        }
-        
-        const request = store.put(value)
-        request.onsuccess = () => {
-          completed++
-          if (completed + errors === items.length) {
-            resolve()
-          }
-        }
-        request.onerror = () => {
-          errors++
-          if (completed + errors === items.length) {
-            resolve() // Don't reject, just log
-          }
-        }
-      })
-      
-      if (items.length === 0) {
-        resolve()
-      }
-    })
-  }
-
-  /**
-   * Get all RSS feed items from IndexedDB
-   */
-  async getRssFeedItems(): Promise<import('./rss-feed.service').RssFeedItem[]> {
-    await this.initPromise
-    const storeName = StoreNames.RSS_FEED_ITEMS
-    
-    if (!this.db || !this.db.objectStoreNames.contains(storeName)) {
-      logger.warn('[IndexedDB] RSS feed items store not found', { storeName })
-      return []
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, 'readonly')
-      const store = transaction.objectStore(storeName)
-      const request = store.getAll()
-      
-      request.onsuccess = () => {
-        const items = request.result.map((entry: TValue<import('./rss-feed.service').RssFeedItem> | any) => {
-          let item: import('./rss-feed.service').RssFeedItem | null = null
-          
-          // Handle new format (with value property)
-          if (entry.value) {
-            item = entry.value
-          }
-          // Fallback for old format (with item property)
-          else if ((entry as any).item) {
-            item = (entry as any).item as import('./rss-feed.service').RssFeedItem
-          }
-          
-          if (!item) {
-            return null
-          }
-          
-          // Ensure pubDate is properly handled (IndexedDB may serialize Date as string)
-          if (item.pubDate && typeof item.pubDate === 'string') {
-            item.pubDate = new Date(item.pubDate)
-          } else if (item.pubDate && typeof item.pubDate === 'number') {
-            item.pubDate = new Date(item.pubDate)
-          }
-          
-          return item
-        }).filter((item): item is import('./rss-feed.service').RssFeedItem => item !== null)
-        
-        logger.debug('[IndexedDB] Retrieved RSS feed items', { 
-          totalRetrieved: request.result.length,
-          validItems: items.length 
-        })
-        resolve(items)
-      }
-      
-      request.onerror = () => {
-        reject(request.error)
-      }
-    })
-  }
-
-  /**
-   * Clear RSS feed items from IndexedDB
-   */
-  async clearRssFeedItems(): Promise<void> {
-    await this.initPromise
-    const storeName = StoreNames.RSS_FEED_ITEMS
-
-    if (!this.db || !this.db.objectStoreNames.contains(storeName)) {
-      return
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db!.transaction(storeName, 'readwrite')
-      const store = transaction.objectStore(storeName)
-      const request = store.clear()
-
-      request.onsuccess = () => {
-        resolve()
-      }
-
-      request.onerror = () => {
-        reject(request.error)
-      }
-    })
   }
 
   private static readonly GIF_CACHE_KEY = 'gifList'
@@ -3300,6 +3190,20 @@ class IndexedDbService {
       const transaction = this.db!.transaction(StoreNames.SETTINGS, 'readwrite')
       const store = transaction.objectStore(StoreNames.SETTINGS)
       store.put({ key, value })
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+    })
+  }
+
+  async deleteSetting(key: string): Promise<void> {
+    await this.initPromise
+    if (!this.db || !this.db.objectStoreNames.contains(StoreNames.SETTINGS)) {
+      return
+    }
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(StoreNames.SETTINGS, 'readwrite')
+      const store = transaction.objectStore(StoreNames.SETTINGS)
+      store.delete(key)
       transaction.oncomplete = () => resolve()
       transaction.onerror = () => reject(transaction.error)
     })

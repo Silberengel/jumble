@@ -4,32 +4,15 @@ import RssArticleWebBookmarks from '@/components/RssArticleWebBookmarks'
 import RssFeedItem from '@/components/RssFeedItem'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
-import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
-import indexedDb from '@/services/indexed-db.service'
-import type { RssFeedItem as TRssFeedItem } from '@/services/rss-feed.service'
-import {
-  createWebOnlyRssFeedItem,
-  isWebOnlyFauxRssItem
-} from '@/services/rss-feed.service'
+import type { RssFeedItem as TRssFeedItem } from '@/lib/rss-feed-item'
+import { createWebOnlyRssFeedItem } from '@/lib/rss-feed-item'
 import { isHttpArticleUrl, promoteRssArticleForNostrThread } from '@/lib/rss-web-feed'
 import SecondaryPageLayout from '@/layouts/SecondaryPageLayout'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
-import { useNostr } from '@/providers/NostrProvider'
 import { decodeRssArticlePathSegment, createRssThreadRootEvent, canonicalizeRssArticleUrl } from '@/lib/rss-article'
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-
-function normalizeFeedUrl(url: string): string {
-  return url.trim().replace(/\/$/, '')
-}
 
 const RssArticlePage = forwardRef(
   (
@@ -57,14 +40,10 @@ const RssArticlePage = forwardRef(
     const [threadUnlocked, setThreadUnlocked] = useState(false)
     const [promotingThread, setPromotingThread] = useState(false)
     const showNostrThread = !rssFeedReadOnly || threadUnlocked
-    const { rssFeedListEvent } = useNostr()
     const { registerPrimaryPanelRefresh } = usePrimaryNoteView()
     const [contentKey, setContentKey] = useState(0)
     const [threadRefreshToken, setThreadRefreshToken] = useState(0)
     const bumpThreadRefresh = useCallback(() => setThreadRefreshToken((n) => n + 1), [])
-    const [allCachedItems, setAllCachedItems] = useState<TRssFeedItem[]>([])
-    const [loading, setLoading] = useState(true)
-    const [selectedSource, setSelectedSource] = useState<'all' | string>('all')
 
     const articleUrl = useMemo(() => {
       try {
@@ -99,119 +78,36 @@ const RssArticlePage = forwardRef(
       return () => window.removeEventListener('popstate', sync)
     }, [])
 
-    const subscribedFeedUrls = useMemo(() => {
-      if (!rssFeedListEvent?.tags?.length) return new Set<string>()
-      const s = new Set<string>()
-      for (const t of rssFeedListEvent.tags) {
-        if (t[0] === 'u' && t[1]) s.add(normalizeFeedUrl(String(t[1])))
+    const displayItem = useMemo(() => {
+      if (!articleUrl) return null
+      if (initialItem && canonicalizeRssArticleUrl(initialItem.link) === canonicalizeRssArticleUrl(articleUrl)) {
+        return initialItem
       }
-      return s
-    }, [rssFeedListEvent])
-
-    const matchingItems = useMemo(() => {
-      if (!articleUrl) return []
-      const canon = canonicalizeRssArticleUrl(articleUrl)
-      const fromDb = allCachedItems.filter((i) => canonicalizeRssArticleUrl(i.link) === canon)
-      let result =
-        subscribedFeedUrls.size === 0
-          ? fromDb
-          : fromDb.filter((i) => subscribedFeedUrls.has(normalizeFeedUrl(i.feedUrl)))
-      if (initialItem && canonicalizeRssArticleUrl(initialItem.link) === canon) {
-        const norm = normalizeFeedUrl(initialItem.feedUrl)
-        const has = result.some(
-          (i) => normalizeFeedUrl(i.feedUrl) === norm && i.guid === initialItem.guid
-        )
-        if (!has) result = [initialItem, ...result]
+      if (isHttpArticleUrl(articleUrl)) {
+        return createWebOnlyRssFeedItem(articleUrl)
       }
-      if (!loading && result.length === 0 && isHttpArticleUrl(articleUrl)) {
-        return [createWebOnlyRssFeedItem(articleUrl)]
-      }
-      return result
-    }, [allCachedItems, articleUrl, subscribedFeedUrls, initialItem, loading])
-
-    const sourceOptions = useMemo(() => {
-      const m = new Map<string, string>()
-      for (const i of matchingItems) {
-        const u = normalizeFeedUrl(i.feedUrl)
-        if (!m.has(u)) {
-          m.set(
-            u,
-            isWebOnlyFauxRssItem(i) ? t('Web page') : (i.feedTitle?.trim() || u)
-          )
-        }
-      }
-      return [...m.entries()].map(([url, title]) => ({ url, title }))
-    }, [matchingItems, t])
-
-    const itemsToRender = useMemo(() => {
-      if (matchingItems.length === 0) return []
-      if (matchingItems.length === 1 || selectedSource === 'all') return matchingItems
-      return matchingItems.filter((i) => normalizeFeedUrl(i.feedUrl) === selectedSource)
-    }, [matchingItems, selectedSource])
-
-    useEffect(() => {
-      if (sourceOptions.length <= 1) {
-        if (selectedSource !== 'all') setSelectedSource('all')
-        return
-      }
-      if (
-        selectedSource !== 'all' &&
-        !sourceOptions.some((o) => o.url === selectedSource)
-      ) {
-        setSelectedSource('all')
-      }
-    }, [sourceOptions, selectedSource])
-
-    useEffect(() => {
-      if (!articleUrl) {
-        setLoading(false)
-        return
-      }
-      let cancelled = false
-      ;(async () => {
-        setLoading(true)
-        try {
-          const items = await indexedDb.getRssFeedItems()
-          if (cancelled) return
-          setAllCachedItems(items)
-        } finally {
-          if (!cancelled) setLoading(false)
-        }
-      })()
-      return () => {
-        cancelled = true
-      }
-    }, [articleUrl])
+      return null
+    }, [articleUrl, initialItem])
 
     const syntheticRoot = useMemo(
       () => (articleUrl ? createRssThreadRootEvent(articleUrl) : null),
       [articleUrl]
     )
 
-    const primaryRssItem = itemsToRender[0] ?? null
-
     useEffect(() => {
       if (hideTitlebar) {
-        sessionStorage.setItem('notePageTitle', primaryRssItem ? t('RSS article') : t('Web page'))
+        sessionStorage.setItem('notePageTitle', displayItem ? t('RSS article') : t('Web page'))
       }
       return () => {
         if (hideTitlebar) {
           sessionStorage.removeItem('notePageTitle')
         }
       }
-    }, [hideTitlebar, t, primaryRssItem])
+    }, [hideTitlebar, t, displayItem])
 
-    const refreshArticle = useCallback(async () => {
+    const refreshArticle = useCallback(() => {
       setContentKey((k) => k + 1)
-      if (!articleUrl) return
-      setLoading(true)
-      try {
-        const items = await indexedDb.getRssFeedItems()
-        setAllCachedItems(items)
-      } finally {
-        setLoading(false)
-      }
-    }, [articleUrl])
+    }, [])
 
     const onPromoteForNostrThread = useCallback(async () => {
       if (!articleUrl || !isHttpArticleUrl(articleUrl)) return
@@ -230,12 +126,12 @@ const RssArticlePage = forwardRef(
         return
       }
       registerPrimaryPanelRefresh(() => {
-        void refreshArticle()
+        refreshArticle()
       })
       return () => registerPrimaryPanelRefresh(null)
     }, [hideTitlebar, registerPrimaryPanelRefresh, refreshArticle])
 
-    const refreshControls = hideTitlebar ? undefined : <RefreshButton onClick={() => void refreshArticle()} />
+    const refreshControls = hideTitlebar ? undefined : <RefreshButton onClick={refreshArticle} />
 
     if (!articleUrl) {
       return (
@@ -252,22 +148,54 @@ const RssArticlePage = forwardRef(
       )
     }
 
-    if (loading && matchingItems.length === 0) {
-      return (
-        <SecondaryPageLayout
-          ref={ref}
-          index={index}
-          title={hideTitlebar ? undefined : t('RSS article')}
-          controls={refreshControls}
-        >
-          <div key={contentKey} className="px-4 py-6 text-sm text-muted-foreground">
-            {t('Loading…')}
+    const threadBlock = (
+      <>
+        {rssFeedReadOnly && !threadUnlocked ? (
+          <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">{t('RSS read-only thread hint')}</p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={promotingThread || !isHttpArticleUrl(articleUrl)}
+              onClick={() => void onPromoteForNostrThread()}
+            >
+              {t('Respond to this RSS entry')}
+            </Button>
           </div>
-        </SecondaryPageLayout>
-      )
-    }
+        ) : null}
+        {isHttpArticleUrl(articleUrl) ? (
+          <div className="pt-2">
+            <RssArticleWebBookmarks articleUrl={articleUrl} onPublished={bumpThreadRefresh} />
+          </div>
+        ) : null}
+        {showNostrThread && syntheticRoot ? (
+          <div className="px-0 w-full">
+            <NoteStats
+              className="mt-2"
+              event={syntheticRoot}
+              fetchIfNotExisting
+              foregroundStats
+            />
+          </div>
+        ) : null}
+        {showNostrThread ? <Separator /> : null}
+        <div className="w-full">
+          {showNostrThread && syntheticRoot ? (
+            <NoteInteractions
+              key={`rss-interactions-${syntheticRoot.id}`}
+              pageIndex={index}
+              event={syntheticRoot}
+              showQuotes={false}
+              statsForeground
+              refreshToken={threadRefreshToken}
+            />
+          ) : null}
+        </div>
+      </>
+    )
 
-    if (matchingItems.length === 0) {
+    if (!displayItem) {
       return (
         <SecondaryPageLayout
           ref={ref}
@@ -280,48 +208,7 @@ const RssArticlePage = forwardRef(
             <p className="text-xs text-muted-foreground">
               {t('Opened by URL — not from your RSS list. Nostr thread is still tied to this link.')}
             </p>
-            {rssFeedReadOnly && !threadUnlocked ? (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">{t('RSS read-only thread hint')}</p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={promotingThread}
-                  onClick={() => void onPromoteForNostrThread()}
-                >
-                  {t('Respond to this RSS entry')}
-                </Button>
-              </div>
-            ) : null}
-            {isHttpArticleUrl(articleUrl) ? (
-              <div className="w-full pt-1">
-                <RssArticleWebBookmarks articleUrl={articleUrl} onPublished={bumpThreadRefresh} />
-              </div>
-            ) : null}
-            {showNostrThread && syntheticRoot ? (
-              <div className="px-0 w-full">
-                <NoteStats
-                  className="mt-2"
-                  event={syntheticRoot}
-                  fetchIfNotExisting
-                  foregroundStats
-                />
-              </div>
-            ) : null}
-            {showNostrThread ? <Separator /> : null}
-            <div className="w-full">
-              {showNostrThread && syntheticRoot ? (
-                <NoteInteractions
-                  key={`rss-interactions-${syntheticRoot.id}`}
-                  pageIndex={index}
-                  event={syntheticRoot}
-                  showQuotes={false}
-                  statsForeground
-                  refreshToken={threadRefreshToken}
-                />
-              ) : null}
-            </div>
+            {threadBlock}
           </div>
         </SecondaryPageLayout>
       )
@@ -337,86 +224,12 @@ const RssArticlePage = forwardRef(
       >
         <div key={contentKey} className="min-w-0">
           <div className="px-4 pt-3 w-full space-y-3">
-            {rssFeedReadOnly && !threadUnlocked ? (
-              <div className="space-y-2 rounded-lg border border-border bg-muted/30 p-3">
-                <p className="text-xs text-muted-foreground">{t('RSS read-only thread hint')}</p>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={promotingThread || !isHttpArticleUrl(articleUrl)}
-                  onClick={() => void onPromoteForNostrThread()}
-                >
-                  {t('Respond to this RSS entry')}
-                </Button>
-              </div>
-            ) : null}
-            {sourceOptions.length > 1 ? (
-              <div className="space-y-1.5">
-                <Label htmlFor="rss-thread-feed-source" className="text-xs text-muted-foreground">
-                  {t('RSS feed source')}
-                </Label>
-                <Select
-                  value={selectedSource}
-                  onValueChange={(v) => setSelectedSource(v === 'all' ? 'all' : v)}
-                >
-                  <SelectTrigger id="rss-thread-feed-source" className="h-9 w-full max-w-md text-sm">
-                    <SelectValue placeholder={t('RSS feed source')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{t('All feed sources')}</SelectItem>
-                    {sourceOptions.map(({ url, title }) => (
-                      <SelectItem key={url} value={url}>
-                        {title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            ) : null}
-            <div
-              className={
-                itemsToRender.length > 1 ? 'divide-y divide-border rounded-lg border border-border overflow-hidden' : ''
-              }
-            >
-              {itemsToRender.map((it) => (
-                <RssFeedItem
-                  key={`${it.feedUrl}-${it.guid}`}
-                  item={it}
-                  layout="detail"
-                  className={itemsToRender.length > 1 ? 'rounded-none border-0' : ''}
-                  readOnlyHighlights={rssFeedReadOnly && !threadUnlocked}
-                />
-              ))}
-            </div>
-            {isHttpArticleUrl(articleUrl) ? (
-              <div className="pt-2">
-                <RssArticleWebBookmarks articleUrl={articleUrl} onPublished={bumpThreadRefresh} />
-              </div>
-            ) : null}
-          </div>
-          {showNostrThread && syntheticRoot ? (
-            <div className="px-4 w-full">
-              <NoteStats
-                className="mt-3"
-                event={syntheticRoot}
-                fetchIfNotExisting
-                foregroundStats
-              />
-            </div>
-          ) : null}
-          {showNostrThread ? <Separator className="mt-4" /> : null}
-          <div className="px-4 pb-4 w-full">
-            {showNostrThread && syntheticRoot ? (
-              <NoteInteractions
-                key={`rss-interactions-${syntheticRoot.id}`}
-                pageIndex={index}
-                event={syntheticRoot}
-                showQuotes={false}
-                statsForeground
-                refreshToken={threadRefreshToken}
-              />
-            ) : null}
+            <RssFeedItem
+              item={displayItem}
+              layout="detail"
+              readOnlyHighlights={rssFeedReadOnly && !threadUnlocked}
+            />
+            {threadBlock}
           </div>
         </div>
       </SecondaryPageLayout>

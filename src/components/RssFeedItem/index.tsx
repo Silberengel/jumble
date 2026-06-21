@@ -1,7 +1,7 @@
 import {
   RssFeedItem as TRssFeedItem,
   isWebOnlyFauxRssItem
-} from '@/services/rss-feed.service'
+} from '@/lib/rss-feed-item'
 import WebPreview from '../WebPreview'
 import { FormattedTimestamp } from '../FormattedTimestamp'
 import { ExternalLink, Globe, Highlighter, Rss } from 'lucide-react'
@@ -16,8 +16,6 @@ import MediaPlayer from '@/components/MediaPlayer'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useSmartRssArticleNavigation } from '@/PageManager'
-import { getStandardRssFeedProfile } from '@/lib/standard-rss-feed-url'
-import { useRssFeedDisplayPrefs } from '@/components/RssFeedList/RssFeedDisplayPrefsContext'
 import { isClawstrDotComHttpHref } from '@/lib/rss-article'
 import { isHttpArticleUrl, promoteRssArticleForNostrThread } from '@/lib/rss-web-feed'
 
@@ -70,7 +68,7 @@ export default function RssFeedItem({
   onAfterPromoteRss?: () => void
 }) {
   const { t } = useTranslation()
-  const { suppressClawstrLinks } = useRssFeedDisplayPrefs()
+  const suppressClawstrLinks = true
   const { pubkey, checkLogin } = useNostr()
   const { isSmallScreen } = useScreenSize()
   const { navigateToRssArticle } = useSmartRssArticleNavigation()
@@ -427,26 +425,15 @@ export default function RssFeedItem({
     setSelectedText('')
   }
 
-  const standardFeedProfile = useMemo(
-    () => (isWebFaux ? null : getStandardRssFeedProfile(item.feedUrl)),
-    [item.feedUrl, isWebFaux]
-  )
-
-  // Format feed source name from URL (known shapes get a translated label)
   const feedSourceName = useMemo(() => {
     if (isWebFaux) return ''
-    if (standardFeedProfile) {
-      return t(standardFeedProfile.labelKey, {
-        defaultValue: standardFeedProfile.defaultLabel
-      })
-    }
     try {
       const url = new URL(item.feedUrl)
       return url.hostname.replace(/^www\./, '')
     } catch {
       return item.feedTitle || 'RSS Feed'
     }
-  }, [item.feedUrl, item.feedTitle, isWebFaux, standardFeedProfile, t])
+  }, [item.feedUrl, item.feedTitle, isWebFaux])
 
   // Clean and parse HTML description safely
   // Decode HTML entities and remove any XML artifacts that might have leaked through
@@ -636,10 +623,9 @@ export default function RssFeedItem({
               <h3 className="font-semibold text-sm truncate">
                 {isWebFaux ? t('Web page') : item.feedTitle || feedSourceName}
               </h3>
-              {!isWebFaux && standardFeedProfile && item.feedTitle ? (
+              {!isWebFaux && item.feedTitle && feedSourceName ? (
                 <p className="text-xs text-muted-foreground mt-0.5 truncate">
                   {feedSourceName}
-                  {standardFeedProfile.detail ? ` · ${standardFeedProfile.detail}` : ''}
                 </p>
               ) : null}
               {item.feedDescription && (

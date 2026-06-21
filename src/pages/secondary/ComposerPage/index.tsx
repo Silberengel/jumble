@@ -41,7 +41,6 @@ import {
   type ComposerContentProps
 } from '@/components/Composer/ComposerModes'
 import type { TDiscussionDynamicTopics } from '@/lib/discussion-thread-composer'
-import { cn } from '@/lib/utils'
 
 export type ComposerPageProps = {
   replySegment?: string
@@ -62,9 +61,6 @@ function ComposerPageInner({
   const publishRef = useRef<(() => void) | null>(null)
   const clearRef = useRef<(() => void) | null>(null)
   const [pickerPortalContainer, setPickerPortalContainer] = useState<HTMLElement | null>(null)
-  const advancedLabPortalRef = useRef<HTMLElement | null>(null)
-  const [advancedLabPortalContainer, setAdvancedLabPortalContainer] = useState<HTMLElement | null>(null)
-  const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
   const [parentEvent, setParentEvent] = useState<Event | undefined>()
   const [loadingParent, setLoadingParent] = useState(Boolean(replySegment))
   const [title, setTitle] = useState(t('New Note'))
@@ -185,18 +181,6 @@ function ComposerPageInner({
         className="pointer-events-none absolute inset-0 z-[300] overflow-visible"
         aria-hidden={false}
       />
-      <div
-        ref={(el) => {
-          advancedLabPortalRef.current = el
-          setAdvancedLabPortalContainer(el)
-        }}
-        data-advanced-lab-shell
-        className={cn(
-          'fixed inset-0 z-[400] h-[100dvh] w-[100vw] max-h-[100dvh] max-w-[100vw]',
-          advancedLabOpen ? 'pointer-events-auto' : 'pointer-events-none'
-        )}
-        aria-hidden={!advancedLabOpen}
-      />
       <ComposerShell
         pinFooterToViewport
         titlebar={
@@ -269,9 +253,6 @@ function ComposerPageInner({
             onPublishSuccess={close}
             discussionDynamicTopics={discussionDynamicTopics}
             pickerPortalContainer={pickerPortalContainer}
-            advancedLabPortalContainer={advancedLabPortalContainer}
-            advancedLabPortalRef={advancedLabPortalRef}
-            onAdvancedLabOpenChange={setAdvancedLabOpen}
             layoutMode="page"
             onOpenOptions={onOpenOptions}
             onPublishRequestRef={publishRef}

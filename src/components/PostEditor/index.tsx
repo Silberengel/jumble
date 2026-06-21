@@ -215,6 +215,7 @@ export default function PostEditor({
       advancedLabPortalContainer={advancedLabPortalContainer}
       advancedLabPortalRef={advancedLabPortalRef}
       onAdvancedLabOpenChange={handleAdvancedLabOpenChange}
+      enableAdvancedEditor={!parentEvent}
     />
   )
 
@@ -234,7 +235,7 @@ export default function PostEditor({
     typeof document !== 'undefined' ? createPortal(advancedLabPortalEl, document.body) : null
 
   if (isSmallScreen) {
-    return advancedLabPortal
+    return null
   }
 
   return (

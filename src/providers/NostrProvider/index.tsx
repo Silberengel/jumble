@@ -183,7 +183,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const [favoriteRelaysEvent, setFavoriteRelaysEvent] = useState<Event | null>(null)
   const [blockedRelaysEvent, setBlockedRelaysEvent] = useState<Event | null>(null)
   const [userEmojiListEvent, setUserEmojiListEvent] = useState<Event | null>(null)
-  const [rssFeedListEvent, setRssFeedListEvent] = useState<Event | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
   const [isAccountSessionHydrating, setIsAccountSessionHydrating] = useState(false)
   /** Bumps on each account hydration run so stale async completions cannot clear {@link isAccountSessionHydrating}. */
@@ -273,7 +272,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         setFollowListEvent(null)
         setMuteListEvent(null)
         setBookmarkListEvent(null)
-        setRssFeedListEvent(null)
         setCacheRelayListEvent(null)
         setHttpRelayListEvent(undefined)
         return undefined
@@ -302,7 +300,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         setFollowListEvent(null)
         setMuteListEvent(null)
         setBookmarkListEvent(null)
-        setRssFeedListEvent(null)
         setCacheRelayListEvent(null)
         setHttpRelayListEvent(undefined)
       }
@@ -345,7 +342,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         storedFavoriteRelaysEvent,
         storedBlockedRelaysEvent,
         storedUserEmojiListEvent,
-        storedRssFeedListEvent,
         storedInterestListEvent,
         storedBlossomServerListEvent,
         storedHttpRelayListEvent
@@ -359,7 +355,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         indexedDb.getReplaceableEvent(account.pubkey, ExtendedKind.FAVORITE_RELAYS),
         indexedDb.getReplaceableEvent(account.pubkey, ExtendedKind.BLOCKED_RELAYS),
         indexedDb.getReplaceableEvent(account.pubkey, kinds.UserEmojiList),
-        indexedDb.getReplaceableEvent(account.pubkey, ExtendedKind.RSS_FEED_LIST),
         indexedDb.getReplaceableEvent(account.pubkey, INTEREST_LIST_KIND),
         indexedDb.getReplaceableEvent(account.pubkey, ExtendedKind.BLOSSOM_SERVER_LIST),
         indexedDb.getReplaceableEvent(account.pubkey, ExtendedKind.HTTP_RELAY_LIST)
@@ -446,13 +441,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         if (storedUserEmojiListEvent) {
           setUserEmojiListEvent(storedUserEmojiListEvent)
         }
-        if (storedRssFeedListEvent) {
-          setRssFeedListEvent(storedRssFeedListEvent)
-          logger.debug('[NostrProvider] Loaded RSS feed list event from cache', {
-            eventId: storedRssFeedListEvent.id,
-            created_at: storedRssFeedListEvent.created_at
-          })
-        }
         if (storedInterestListEvent) {
           setInterestListEvent(storedInterestListEvent)
         }
@@ -491,60 +479,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           favoriteRelaysEvent: storedFavoriteRelaysEvent,
           blockedRelays
         })
-
-        // Fetch RSS feed list from relays if cache is missing or stale (older than 1 hour)
-        const rssFeedListStale =
-          !storedRssFeedListEvent ||
-          dayjs().unix() - storedRssFeedListEvent.created_at > 3600 // 1 hour
-
-        if (rssFeedListStale) {
-          logger.debug('[NostrProvider] RSS feed list cache is missing or stale, fetching from relays', {
-            hasCache: !!storedRssFeedListEvent,
-            cacheAge: storedRssFeedListEvent ? dayjs().unix() - storedRssFeedListEvent.created_at : 'N/A'
-          })
-
-          queryService
-            .fetchEvents(hydrateNetworkRelays, {
-              kinds: [ExtendedKind.RSS_FEED_LIST],
-              authors: [account.pubkey],
-              limit: 1
-            }, hydrateFetchOpts)
-            .then((events) => {
-              const latestEvent = getLatestEvent(events)
-              if (latestEvent) {
-                if (!storedRssFeedListEvent || latestEvent.created_at > storedRssFeedListEvent.created_at) {
-                  logger.debug('[NostrProvider] Found newer RSS feed list event from relays', {
-                    eventId: latestEvent.id,
-                    created_at: latestEvent.created_at,
-                    wasCached: !!storedRssFeedListEvent
-                  })
-                  indexedDb
-                    .putReplaceableEvent(latestEvent)
-                    .then(() => {
-                      setRssFeedListEvent(latestEvent)
-                      logger.debug('[NostrProvider] Updated RSS feed list event in cache and state')
-                    })
-                    .catch((err) => {
-                      logger.error('[NostrProvider] Failed to cache RSS feed list event', { error: err })
-                    })
-                } else {
-                  logger.debug('[NostrProvider] Cached RSS feed list event is up to date', {
-                    cachedCreatedAt: storedRssFeedListEvent.created_at,
-                    fetchedCreatedAt: latestEvent.created_at
-                  })
-                }
-              } else if (!storedRssFeedListEvent) {
-                logger.debug(
-                  '[NostrProvider] No RSS feed list event found on relays (user may not have created one yet)'
-                )
-              }
-            })
-            .catch((err) => {
-              logger.error('[NostrProvider] Failed to fetch RSS feed list from relays', { error: err })
-            })
-        } else {
-          logger.debug('[NostrProvider] RSS feed list cache is fresh, using cached value')
-        }
 
         const [relayListEvents, cacheRelayListEvents, httpRelayListEvents] = await Promise.all([
         queryService.fetchEvents(hydrateNetworkRelays, {
@@ -1088,8 +1022,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
           if (emoji) setUserEmojiListEvent(emoji)
           const interest = await loadOk(INTEREST_LIST_KIND)
           if (interest) setInterestListEvent(interest)
-          const rss = await loadOk(ExtendedKind.RSS_FEED_LIST)
-          if (rss) setRssFeedListEvent(rss)
           const cacheRel = await loadOk(ExtendedKind.CACHE_RELAYS)
           if (cacheRel) setCacheRelayListEvent(cacheRel)
           const httpRel = await loadOk(ExtendedKind.HTTP_RELAY_LIST)
@@ -1202,7 +1134,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     setMuteListEvent(null)
     setBookmarkListEvent(null)
     setInterestListEvent(null)
-    setRssFeedListEvent(null)
     setCacheRelayListEvent(null)
     setHttpRelayListEvent(undefined)
     setBlockedRelaysEvent(null)
@@ -2513,13 +2444,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     setBlockedRelaysEvent(newBlockedRelaysEvent)
   }
 
-  const updateRssFeedListEvent = async (rssFeedListEvent: Event) => {
-    const newRssFeedListEvent = await indexedDb.putReplaceableEvent(rssFeedListEvent)
-    if (newRssFeedListEvent.id !== rssFeedListEvent.id) return
-
-    setRssFeedListEvent(newRssFeedListEvent)
-  }
-
   const requestAccountNetworkHydrate = useCallback(() => {
     if (!account) return Promise.resolve()
     forceNextAccountNetworkHydrateRef.current = true
@@ -2565,7 +2489,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const updateUserEmojiListEventStable = useEventCallback(updateUserEmojiListEvent)
   const updateFavoriteRelaysEventStable = useEventCallback(updateFavoriteRelaysEvent)
   const updateBlockedRelaysEventStable = useEventCallback(updateBlockedRelaysEvent)
-  const updateRssFeedListEventStable = useEventCallback(updateRssFeedListEvent)
 
   const nostrContextValue = useMemo(
     (): TNostrContext => ({
@@ -2586,7 +2509,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       favoriteRelaysEvent,
       blockedRelaysEvent,
       userEmojiListEvent,
-      rssFeedListEvent,
       account,
       accounts,
       canSignEvents: canAccountSignEvents(account),
@@ -2626,7 +2548,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       updateUserEmojiListEvent: updateUserEmojiListEventStable,
       updateFavoriteRelaysEvent: updateFavoriteRelaysEventStable,
       updateBlockedRelaysEvent: updateBlockedRelaysEventStable,
-      updateRssFeedListEvent: updateRssFeedListEventStable,
       requestAccountNetworkHydrate
     }),
     [
@@ -2663,7 +2584,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       discardLocalPrivateKeyStable,
       removeAccountStable,
       requestAccountNetworkHydrate,
-      rssFeedListEvent,
       signEventStable,
       signHttpAuthStable,
       startLogin,
@@ -2682,7 +2602,6 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       updateMuteListEventStable,
       updateProfileEventStable,
       updateRelayListEventStable,
-      updateRssFeedListEventStable,
       updateUserEmojiListEventStable,
       userEmojiListEvent
     ]

@@ -998,23 +998,6 @@ export function spellEventToDraftParams(event: Event): TSpellDraftParams {
   }
 }
 
-export function createRssFeedListDraftEvent(feedUrls: string[]): TDraftEvent {
-  // Validate and sanitize feed URLs
-  const validUrls = feedUrls
-    .map(url => typeof url === 'string' ? url.trim() : '')
-    .filter(url => url.length > 0)
-  
-  // Create tags with "u" prefix for each feed URL
-  const tags = validUrls.map(url => ['u', url] as [string, string])
-  
-  return {
-    kind: ExtendedKind.RSS_FEED_LIST,
-    content: '', // Empty content, URLs are in tags
-    tags,
-    created_at: dayjs().unix()
-  }
-}
-
 export function createCacheRelaysDraftEvent(mailboxRelays: TMailboxRelay[]): TDraftEvent {
   return {
     kind: ExtendedKind.CACHE_RELAYS,

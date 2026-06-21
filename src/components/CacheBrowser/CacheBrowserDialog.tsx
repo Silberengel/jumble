@@ -285,7 +285,13 @@ export default function CacheBrowserDialog({
 
   /** Same predicate as full-text cache search — avoids hiding broadcast on valid rows that fail stricter checks. */
   const rowLooksLikeNostrEventForBroadcast = useCallback((v: unknown, storeName?: string | null): v is Event => {
-    if (storeName === 'rssFeedItems' || storeName === StoreNames.PIPER_TTS_CACHE) return false
+    if (
+      storeName === StoreNames.RSS_FEED_ITEMS ||
+      storeName === StoreNames.RSS_FEED_LIST_EVENTS ||
+      storeName === StoreNames.PIPER_TTS_CACHE
+    ) {
+      return false
+    }
     return isLikelyCachedNostrEvent(v)
   }, [])
 
@@ -296,8 +302,11 @@ export default function CacheBrowserDialog({
   const isInvalidEvent = useCallback(
     (item: { key: string; value: any; addedAt: number }, storeName?: string | null): boolean => {
       if (!item) return true
-      if (storeName === 'rssFeedItems') {
-        return !(item.value || (item as any).item)
+      if (
+        storeName === StoreNames.RSS_FEED_ITEMS ||
+        storeName === StoreNames.RSS_FEED_LIST_EVENTS
+      ) {
+        return true
       }
       if (storeName === StoreNames.PIPER_TTS_CACHE) {
         const v = item.value as { blob?: unknown; mimeType?: string } | null

@@ -1469,14 +1469,7 @@ class ClientService extends EventTarget {
           fastWriteRelays: FAST_WRITE_RELAY_URLS,
           additionalRelayCount: bootstrapExtras.length
         })
-      } else if (event.kind === ExtendedKind.RSS_FEED_LIST) {
-        if (useGlobalRelayDefaults) {
-          bootstrapExtras.push(...FAST_WRITE_RELAY_URLS, ...PROFILE_RELAY_URLS)
-        } else {
-          bootstrapExtras.push(...profileFetchRelayUrlsWithoutFastReadLayer())
-        }
-      }
-      if (isDocumentRelayKind(event.kind)) {
+      } else if (isDocumentRelayKind(event.kind)) {
         bootstrapExtras.push(...DOCUMENT_RELAY_URLS)
       }
 

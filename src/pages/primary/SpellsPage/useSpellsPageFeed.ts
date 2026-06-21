@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { Event } from 'nostr-tools'
 import { kinds as nostrKinds } from 'nostr-tools'
-import storage from '@/services/local-storage.service'
 import { ExtendedKind, DEFAULT_FEED_SHOW_KINDS } from '@/constants'
 import { getPubkeysFromPTags } from '@/lib/tag'
 import { normalizeUrl } from '@/lib/url'
@@ -101,18 +100,6 @@ function buildInboxShardFollowingSubRequests(args: {
   ])
 }
 
-function useNoteListHideReplies() {
-  const [hideReplies, setHideReplies] = useState(() => storage.getNoteListMode() === 'posts')
-
-  useEffect(() => {
-    const sync = () => setHideReplies(storage.getNoteListMode() === 'posts')
-    window.addEventListener('noteListModeChanged', sync)
-    return () => window.removeEventListener('noteListModeChanged', sync)
-  }, [])
-
-  return hideReplies
-}
-
 export type UseSpellsPageFeedArgs = {
   selectedFauxSpell: string | null
   selectedSpell: Event | null
@@ -156,7 +143,6 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     notificationEventsIMutedListEvent
   } = a
 
-  const hideRepliesFollowing = useNoteListHideReplies()
   const [followingSubRequests, setFollowingSubRequests] = useState<TFeedSubRequest[]>([])
 
   const normalizedReadSorted = relayList ? [...userReadInboxUrls(relayList, cacheRelayListEvent)].sort() : []
@@ -663,7 +649,6 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     fauxNoteListUseFilterAsIs,
     spellFauxMergeTimeline,
     notificationsMentionExtraHide,
-    hideRepliesFollowing,
     NOTIFICATION_SPELL_LOADING_SAFETY_MS,
     NOTIFICATION_SPELL_KINDS
   }

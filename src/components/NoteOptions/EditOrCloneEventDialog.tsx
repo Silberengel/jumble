@@ -17,7 +17,6 @@ import {
   PostEditorFormatToolbar,
   type PostEditorFormatToolbarUploadHandlers
 } from '@/components/PostEditor/PostEditorFormatToolbar'
-import { useAdvancedEventLabComposer } from '@/hooks/useAdvancedEventLabComposer'
 import { isRichMarkdownComposerKind } from '@/lib/rich-composer-kinds'
 import { imageUrlLooksLikeHttpImage } from '@/lib/composer-markup-insert'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -54,12 +53,10 @@ import { useNostr } from '@/providers/NostrProvider'
 import shortNoteEditsService from '@/services/short-note-edits.service'
 import type { TDraftEvent } from '@/types'
 import dayjs from 'dayjs'
-import { AlertTriangle, Code2, Plus, Trash2 } from 'lucide-react'
+import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
-import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
 import { canPublishWithContent } from '@/lib/publish-content-required'
 
 function normalizeTagRow(row: string[]): string[] | null {
@@ -146,7 +143,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   const isShortNoteAuthorEdit =
     !isCreate && mode === 'edit' && sourceEvent?.kind === kinds.ShortTextNote
 
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { pubkey, publish, checkLogin } = useNostr()
   const [content, setContent] = useState(() => sourceEvent?.content ?? '')
   const [createKindInput, setCreateKindInput] = useState('1')
@@ -162,46 +159,20 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     [isCreate, createKindInput]
   )
 
-  /** Stable lab draft bucket (separate from composer {@link postEditorCache.generateCacheKey}). */
-  const advancedLabDraftPersistenceKey = useMemo(() => {
-    if (isCreate) {
-      if (parsedCreateKind === null) return null
-      return `event-lab:ecc:create:${parsedCreateKind}`
-    }
-    const id = sourceEvent!.id.trim()
-    const normalized = /^[0-9a-f]{64}$/i.test(id) ? id.toLowerCase() : id
-    return mode === 'edit'
-      ? `event-lab:ecc:edit:${normalized}`
-      : `event-lab:ecc:clone:${normalized}`
-  }, [isCreate, parsedCreateKind, sourceEvent, mode])
-
   const kind = isCreate ? (parsedCreateKind ?? 0) : sourceEvent!.kind
   const useRichComposer = isRichMarkdownComposerKind(kind)
 
   const richDefaultContent = useMemo(
-    () => (advancedLabDraftPersistenceKey ? `ecc:${advancedLabDraftPersistenceKey}` : 'ecc:draft'),
-    [advancedLabDraftPersistenceKey]
+    () =>
+      isCreate
+        ? parsedCreateKind !== null
+          ? `ecc:create:${parsedCreateKind}`
+          : 'ecc:draft'
+        : sourceEvent
+          ? `ecc:${mode}:${sourceEvent.id}`
+          : 'ecc:draft',
+    [isCreate, parsedCreateKind, sourceEvent, mode]
   )
-
-  const kindRef = useRef(kind)
-  kindRef.current = kind
-
-  const {
-    advancedLabOpen,
-    advancedLabBodyApiRef,
-    advancedLabInitial,
-    openLab,
-    persistLabDraft,
-    applyToTipTap,
-    handleLabOpenChange,
-    insertComposerText,
-    insertComposerEmoji,
-    appendUploadedUrl
-  } = useAdvancedEventLabComposer({
-    persistenceKey: advancedLabDraftPersistenceKey,
-    textareaRef,
-    getKind: () => kindRef.current
-  })
 
   const canPublishEvent = useMemo(
     () => canPublishWithContent(kind, content),
@@ -485,15 +456,25 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         ? t('Edit this event')
         : t('Fork this event')
 
-  const openAdvancedLab = useCallback(() => {
-    if (isCreate && parsedCreateKind === null) return
-    const k = isCreate ? parsedCreateKind! : sourceEvent!.kind
-    openLab({
-      kind: k,
-      content,
-      tags: normalizedTags
-    })
-  }, [isCreate, parsedCreateKind, sourceEvent, content, normalizedTags, openLab])
+  const insertComposerText = useCallback(
+    (txt: string) => {
+      textareaRef.current?.insertText(txt)
+    },
+    []
+  )
+
+  const insertComposerEmoji = useCallback(
+    (em: string | import('@/types').TEmoji) => {
+      textareaRef.current?.insertEmoji(em)
+    },
+    []
+  )
+
+  const appendUploadedUrl = useCallback((url: string, _treatAsImage: boolean) => {
+    const ed = textareaRef.current
+    if (!ed || ed.getText().includes(url)) return
+    ed.appendText(url, true)
+  }, [])
 
   const toolbarUploadHandlers = useMemo<PostEditorFormatToolbarUploadHandlers>(
     () => ({
@@ -506,16 +487,6 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
       }
     }),
     [appendUploadedUrl]
-  )
-
-  const labKind = isCreate ? (parsedCreateKind ?? 0) : sourceEvent?.kind ?? 0
-
-  const labPreviewEmojiTags = useMemo(
-    () =>
-      !isCreate && sourceEvent?.tags?.length
-        ? sourceEvent.tags.filter(([n]) => n === 'emoji').map((row) => [...row])
-        : [],
-    [isCreate, sourceEvent]
   )
 
   return (
@@ -540,17 +511,6 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
               <TabsTrigger value="edit">{t('Edit')}</TabsTrigger>
               <TabsTrigger value="preview">{t('Preview')}</TabsTrigger>
               <TabsTrigger value="json">{t('Json')}</TabsTrigger>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-8 gap-1.5 ml-1"
-                onClick={openAdvancedLab}
-                title={t('Advanced event lab')}
-              >
-                <Code2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden sm:inline">{t('Advanced event lab')}</span>
-              </Button>
             </TabsList>
 
             <TabsContent value="edit" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
@@ -794,49 +754,6 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    <AdvancedEventLabDialog
-      open={advancedLabOpen}
-      onOpenChange={(o) => handleLabOpenChange(o)}
-      initial={advancedLabInitial}
-      kindEditable={isCreate}
-      markupMode={isAsciidocMarkupKind(labKind) ? 'asciidoc' : 'markdown'}
-      i18nLanguage={i18n.language}
-      contextEventId={!isCreate && sourceEvent ? sourceEvent.id : null}
-      previewAuthorPubkey={pubkey ?? null}
-      previewEmojiTags={labPreviewEmojiTags}
-      addClientTag={storage.getAddClientTag()}
-      draftPersistenceKey={
-        advancedLabOpen && advancedLabDraftPersistenceKey ? advancedLabDraftPersistenceKey : null
-      }
-      bodyApiRef={advancedLabBodyApiRef}
-      renderFormatToolbar={
-        useRichComposer
-          ? () => (
-              <PostEditorFormatToolbar
-                insertText={insertComposerText}
-                insertEmoji={insertComposerEmoji}
-                upload={toolbarUploadHandlers}
-                showAudioUpload={false}
-                audioUploadTitle=""
-                audioButtonHighlighted={false}
-                showMoreOptions={false}
-                onToggleMoreOptions={() => {}}
-                showAdvancedSettings={false}
-              />
-            )
-          : undefined
-      }
-      onApply={(payload) => {
-        persistLabDraft(payload)
-        setContent(payload.content)
-        setTagRows(payload.tags.length > 0 ? payload.tags.map((r) => [...r]) : [['', '']])
-        if (isCreate) {
-          setCreateKindInput(String(payload.kind))
-        }
-        applyToTipTap(payload.content)
-        handleLabOpenChange(false)
-      }}
-    />
     </>
     </NeventPickerProvider>
   )

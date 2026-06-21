@@ -96,7 +96,7 @@ class NostrArchivesApiService {
     return () => this.availabilityListeners.delete(listener)
   }
 
-  /** Call after `storage.setUseNostrArchivesApi` so hooks re-render. */
+  /** No-op: Archives API is disabled; kept for hook compatibility. */
   notifySettingsChanged(): void {
     this.notifyAvailability()
   }

@@ -110,7 +110,7 @@ import { Switch } from '@/components/ui/switch'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
 import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -130,13 +130,15 @@ import Uploader from './Uploader'
 import HighlightEditor, { HighlightData } from './HighlightEditor'
 import WebBookmarkEditor, { type WebBookmarkDraftData } from './WebBookmarkEditor'
 import EditOrCloneEventDialog from '../NoteOptions/EditOrCloneEventDialog'
-import AdvancedEventLabDialog from '@/components/AdvancedEventLab/AdvancedEventLabDialog'
+import type { PostEditorAdvancedLabHandle } from './PostEditorAdvancedLabHost'
+import { usePlainComposerBody } from './usePlainComposerBody'
+
+const PostEditorAdvancedLabHost = lazy(() => import('./PostEditorAdvancedLabHost'))
 import {
   PostEditorFormatToolbar,
   type PostEditorFormatToolbarUploadHandlers
 } from './PostEditorFormatToolbar'
 import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
-import { useAdvancedEventLabComposer } from '@/hooks/useAdvancedEventLabComposer'
 import { imageUrlLooksLikeHttpImage } from '@/lib/composer-markup-insert'
 import { useComposerController } from '@/hooks/useComposerController'
 import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
@@ -209,6 +211,8 @@ export default function PostContent({
   advancedLabPortalContainer,
   advancedLabPortalRef,
   onAdvancedLabOpenChange,
+  /** Desktop main composer only; lazy-loads CodeMirror when opened. */
+  enableAdvancedEditor = false,
   layoutMode = 'dialog',
   composerMode = 'full',
   onOpenOptions,
@@ -237,6 +241,8 @@ export default function PostContent({
   advancedLabPortalRef?: RefObject<HTMLElement | null>
   /** Notifies the composer shell when the full-screen advanced lab opens or closes. */
   onAdvancedLabOpenChange?: (open: boolean) => void
+  /** Desktop new-post dialog only; never set on mobile or reply/other composer modes. */
+  enableAdvancedEditor?: boolean
   /** Full-screen composer page (mobile) vs dialog shell. */
   layoutMode?: 'dialog' | 'page'
   /** Simplified UI for mobile page modes. */
@@ -844,24 +850,36 @@ export default function PostContent({
     [getDeterminedKind, defaultContent, parentEvent]
   )
 
-  const {
-    advancedLabOpen,
-    advancedLabOpenRef,
-    advancedLabBodyApiRef,
-    advancedLabInitial,
-    openLab,
-    persistLabDraft,
-    applyToTipTap,
-    handleLabOpenChange,
-    insertComposerText,
-    insertComposerEmoji,
-    appendUploadedUrl
-  } = useAdvancedEventLabComposer({
-    persistenceKey: advancedLabPersistenceKey,
-    textareaRef,
-    getKind: () => getDeterminedKindRef.current,
-    onOpenChange: onAdvancedLabOpenChange
-  })
+  const advancedLabHostRef = useRef<PostEditorAdvancedLabHandle | null>(null)
+  const advancedLabOpenRef = useRef(false)
+  const [advancedLabOpen, setAdvancedLabOpen] = useState(false)
+  const [advancedLabHostMounted, setAdvancedLabHostMounted] = useState(false)
+  const pendingLabOpenRef = useRef<import('@/lib/advanced-event-lab-slice').AdvancedEventLabSlice | null>(
+    null
+  )
+
+  const handleAdvancedLabOpenChange = useCallback(
+    (next: boolean) => {
+      advancedLabOpenRef.current = next
+      setAdvancedLabOpen(next)
+      onAdvancedLabOpenChange?.(next)
+    },
+    [onAdvancedLabOpenChange]
+  )
+
+  const plainComposerBody = usePlainComposerBody(textareaRef)
+  const insertComposerText = enableAdvancedEditor
+    ? (txt: string) => advancedLabHostRef.current?.insertComposerText(txt) ?? plainComposerBody.insertComposerText(txt)
+    : plainComposerBody.insertComposerText
+  const insertComposerEmoji = enableAdvancedEditor
+    ? (em: string | import('@/types').TEmoji) =>
+        advancedLabHostRef.current?.insertComposerEmoji(em) ?? plainComposerBody.insertComposerEmoji(em)
+    : plainComposerBody.insertComposerEmoji
+  const appendUploadedUrl = enableAdvancedEditor
+    ? (url: string, treatAsImage: boolean) =>
+        advancedLabHostRef.current?.appendUploadedUrl(url, treatAsImage) ??
+        plainComposerBody.appendUploadedUrl(url, treatAsImage)
+    : plainComposerBody.appendUploadedUrl
 
   const appendUploadedUrlToComposer = (url: string, treatAsImage: boolean) => {
     appendUploadedUrl(url, treatAsImage)
@@ -1491,14 +1509,13 @@ export default function PostContent({
           content: d.content,
           tags: d.tags ?? []
         }
+        pendingLabOpenRef.current = slice
+        setAdvancedLabHostMounted(true)
         for (let i = 0; i < 120; i++) {
           if (advancedLabPortalRef?.current ?? advancedLabPortalContainer) break
           await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
         }
         if (!advancedLabPortalRef?.current && !advancedLabPortalContainer) return
-        requestAnimationFrame(() => {
-          openLab(slice)
-        })
       } catch (e) {
         toast.error(e instanceof Error ? e.message : String(e))
       }
@@ -1508,11 +1525,29 @@ export default function PostContent({
     pubkey,
     text,
     finalizeDraftEvent,
-    openLab,
     advancedLabPortalContainer,
     advancedLabPortalRef,
     t
   ])
+
+  useEffect(() => {
+    const slice = pendingLabOpenRef.current
+    if (!advancedLabHostMounted || !slice) return
+    let cancelled = false
+    const tryOpen = () => {
+      if (cancelled) return
+      if (advancedLabHostRef.current) {
+        pendingLabOpenRef.current = null
+        advancedLabHostRef.current.openLab(slice)
+        return
+      }
+      requestAnimationFrame(tryOpen)
+    }
+    tryOpen()
+    return () => {
+      cancelled = true
+    }
+  }, [advancedLabHostMounted])
 
   const post = async (e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -3942,19 +3977,21 @@ export default function PostContent({
                 t('Short Note')
               return (
                 <div className="flex flex-nowrap items-center justify-end gap-1">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 shrink-0 px-2 text-xs font-normal sm:h-8 sm:text-sm"
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      void handleOpenAdvancedLab()
-                    }}
-                    title={t('Advanced event lab')}
-                  >
-                    {t('Advanced editor button')}
-                  </Button>
+                  {enableAdvancedEditor ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 px-2 text-xs font-normal sm:h-8 sm:text-sm"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handleOpenAdvancedLab()
+                      }}
+                      title={t('Advanced event lab')}
+                    >
+                      {t('Advanced editor button')}
+                    </Button>
+                  ) : null}
                   {!parentEvent ? (
                     <>
                   <Button
@@ -4495,37 +4532,34 @@ export default function PostContent({
           </div>
         </DialogContent>
       </Dialog>
-      {advancedLabOpen &&
-      advancedLabInitial &&
-      advancedLabPortalContainer
-        ? createPortal(
-            <AdvancedEventLabDialog
-              open={advancedLabOpen}
-              onOpenChange={(o) => handleLabOpenChange(o, () => setShowMoreOptions(false))}
-              initial={advancedLabInitial}
-              kindEditable={false}
-              markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
-              i18nLanguage={i18n.language}
-              contextEventId={parentEvent?.id ?? null}
-              previewAuthorPubkey={pubkey ?? null}
-              addClientTag={addClientTag}
-              contentWarning={labContentWarning}
-              draftPersistenceKey={advancedLabOpen ? advancedLabPersistenceKey : null}
-              bodyApiRef={advancedLabBodyApiRef}
-              portalContainer={advancedLabPortalContainer}
-              portalBackdrop
-              renderFormatToolbar={({ pickerPortalContainer: labPickerPortal, toolbarOrientation }) =>
-                renderComposerFormatToolbar(labPickerPortal, toolbarOrientation ?? 'horizontal')
-              }
-              composerToolbarPanel={composerAdvancedPanel}
-              onApply={(payload) => {
-                persistLabDraft(payload)
-                applyToTipTap(payload.content)
-              }}
-            />,
-            advancedLabPortalContainer
-          )
-        : null}
+      {enableAdvancedEditor && advancedLabHostMounted && advancedLabPortalContainer ? (
+        <Suspense fallback={null}>
+          <PostEditorAdvancedLabHost
+            hostRef={advancedLabHostRef}
+            persistenceKey={advancedLabPersistenceKey}
+            textareaRef={textareaRef}
+            getKind={() => getDeterminedKindRef.current}
+            onOpenChange={handleAdvancedLabOpenChange}
+            advancedLabPortalContainer={advancedLabPortalContainer}
+            advancedLabPortalRef={advancedLabPortalRef}
+            markupMode={isAsciidocMarkupKind(getDeterminedKind) ? 'asciidoc' : 'markdown'}
+            i18nLanguage={i18n.language}
+            contextEventId={parentEvent?.id ?? null}
+            previewAuthorPubkey={pubkey ?? null}
+            addClientTag={addClientTag}
+            contentWarning={labContentWarning}
+            renderFormatToolbar={({ pickerPortalContainer: labPickerPortal, toolbarOrientation }) =>
+              renderComposerFormatToolbar(labPickerPortal, toolbarOrientation ?? 'horizontal')
+            }
+            composerToolbarPanel={composerAdvancedPanel}
+            onLabClose={() => setShowMoreOptions(false)}
+            onApply={(payload) => {
+              advancedLabHostRef.current?.persistLabDraft(payload)
+              advancedLabHostRef.current?.applyToTipTap(payload.content)
+            }}
+          />
+        </Suspense>
+      ) : null}
       <EditOrCloneEventDialog
         open={createCustomEventOpen}
         onOpenChange={setCreateCustomEventOpen}

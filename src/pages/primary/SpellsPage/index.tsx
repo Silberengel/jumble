@@ -228,7 +228,6 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
     fauxNoteListUseFilterAsIs,
     spellFauxMergeTimeline,
     notificationsMentionExtraHide,
-    hideRepliesFollowing,
     fauxSubRequests,
     followingFeedPreparing,
     NOTIFICATION_SPELL_LOADING_SAFETY_MS,
@@ -1102,11 +1101,7 @@ const SpellsPage = forwardRef<TPageRef>(function SpellsPage(
                       ? showKind1111
                       : true
                   }
-                  hideReplies={
-                    selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell)
-                      ? hideRepliesFollowing
-                      : false
-                  }
+                  hideReplies={false}
                   extraShouldHideEvent={
                     selectedFauxSpell === 'notifications' && notificationsFeedPubkey
                       ? notificationsMentionExtraHide
