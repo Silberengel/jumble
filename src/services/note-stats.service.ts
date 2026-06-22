@@ -1660,8 +1660,14 @@ class NoteStatsService {
 
     if (!originalEventId) {
       if (evt.kind === ExtendedKind.COMMENT || evt.kind === ExtendedKind.VOICE_COMMENT) {
-        const eTag = evt.tags.find(tagNameEquals('e')) ?? evt.tags.find(tagNameEquals('E'))
-        originalEventId = eTag?.[1]
+        const parentHex = getParentEventHexId(evt)
+        if (parentHex && /^[0-9a-f]{64}$/i.test(parentHex)) {
+          originalEventId = parentHex.toLowerCase()
+        }
+        if (!originalEventId) {
+          const eTag = evt.tags.find(tagNameEquals('e')) ?? evt.tags.find(tagNameEquals('E'))
+          originalEventId = eTag?.[1]
+        }
         if (!originalEventId) {
           const scopeUrl = getArticleUrlFromCommentITags(evt)
           if (scopeUrl) {

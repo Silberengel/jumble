@@ -62,6 +62,7 @@ export function buildThreadInteractionFilters(input: BuildThreadInteractionFilte
   ])
   const kindsPrimaryThread = kindsNoteCommentVoiceZap
   const kindsUpperEThread = sortedUniqueKinds([
+    kinds.ShortTextNote,
     ExtendedKind.COMMENT,
     ExtendedKind.VOICE_COMMENT,
     kinds.Zap,

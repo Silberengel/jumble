@@ -1,16 +1,18 @@
 import {
+  getParentATag,
   getParentEventHexId,
   getQuotedEventHexIdFromQTags,
+  getReplaceableCoordinateFromEvent,
   getRootATag,
   getRootEventHexId,
-  isNip25ReactionKind,
+  isReplaceableEvent,
   kind1QuotesThreadRoot,
+  normalizeReplaceableCoordinateString,
   resolveDeclaredThreadRootEventHex
 } from '@/lib/event'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { getPaymentNotificationInfo, isSuperchatKind } from '@/lib/superchat'
 import { ExtendedKind } from '@/constants'
-import { getFirstHexEventIdFromETags } from '@/lib/tag'
 import {
   canonicalizeRssArticleUrl,
   getArticleUrlFromCommentITags,
@@ -36,7 +38,8 @@ function peekThreadEvent(hexLower: string, localByHex?: ReadonlyMap<string, Even
 function hexNoteParticipatesInThread(
   noteHexLower: string,
   rootHexLower: string,
-  localByHex?: ReadonlyMap<string, Event>
+  localByHex?: ReadonlyMap<string, Event>,
+  rootCoord?: string
 ): boolean {
   const root = rootHexLower.trim().toLowerCase()
   const start = noteHexLower.trim().toLowerCase()
@@ -58,6 +61,8 @@ function hexNoteParticipatesInThread(
 
     const declaredRoot = getRootEventHexId(ev)?.toLowerCase()
     if (declaredRoot === root) return true
+    if (declaredRoot && resolveDeclaredThreadRootEventHex(declaredRoot) === root) return true
+    if (rootCoord && aTagCoordinateMatchesRoot(getRootATag(ev), rootCoord)) return true
 
     const parent = getParentEventHexId(ev)?.toLowerCase()
     if (!parent || !/^[0-9a-f]{64}$/i.test(parent)) return false
@@ -66,59 +71,79 @@ function hexNoteParticipatesInThread(
   return false
 }
 
+function threadRootWalkTarget(root: TThreadRootRef): { hex: string; coord?: string } | undefined {
+  if (root.type === 'E') {
+    const hex = root.id.trim().toLowerCase()
+    return /^[0-9a-f]{64}$/i.test(hex) ? { hex } : undefined
+  }
+  if (root.type === 'A') {
+    const hex = root.eventId.trim().toLowerCase()
+    if (/^[0-9a-f]{64}$/i.test(hex)) return { hex, coord: root.id }
+    return { hex: root.id, coord: root.id }
+  }
+  return undefined
+}
+
 /** Reply whose direct parent is a zap / superchat whose target note is in this thread. */
-function replyParentIsSuperchatToThreadHex(
+function replyParentIsSuperchatToThreadRoot(
   reply: Event,
-  rootHexLower: string,
+  root: TThreadRootRef,
   localByHex?: ReadonlyMap<string, Event>
 ): boolean {
+  if (root.type === 'I') return false
+  const walk = threadRootWalkTarget(root)
+  if (!walk) return false
   const parentHex = getParentEventHexId(reply)
   if (!parentHex || !/^[0-9a-f]{64}$/i.test(parentHex)) return false
   const pl = parentHex.toLowerCase()
-  if (pl === rootHexLower) return false
+  if (pl === walk.hex) return false
   const parentEv = peekThreadEvent(pl, localByHex)
   if (!parentEv || !isSuperchatKind(parentEv.kind)) return false
 
   if (parentEv.kind === kinds.Zap || parentEv.kind === ExtendedKind.ZAP_RECEIPT) {
     const zapped = getZapInfoFromEvent(parentEv)?.originalEventId
     if (!zapped || !/^[0-9a-f]{64}$/i.test(zapped)) return false
-    return hexNoteParticipatesInThread(zapped.toLowerCase(), rootHexLower, localByHex)
+    return hexNoteParticipatesInThread(zapped.toLowerCase(), walk.hex, localByHex, walk.coord)
   }
 
   if (parentEv.kind === ExtendedKind.MONERO_TIP_DISCLOSURE || parentEv.kind === ExtendedKind.MONERO_TIP_RECEIPT) {
     const tipped = parentEv.tags.find((t) => t[0] === 'e' || t[0] === 'E')?.[1]
     if (!tipped || !/^[0-9a-f]{64}$/i.test(tipped)) return false
-    return hexNoteParticipatesInThread(tipped.toLowerCase(), rootHexLower, localByHex)
+    return hexNoteParticipatesInThread(tipped.toLowerCase(), walk.hex, localByHex, walk.coord)
   }
 
   const ref = getPaymentNotificationInfo(parentEv)?.referencedEventId
   if (!ref || !/^[0-9a-f]{64}$/i.test(ref)) return false
-  return hexNoteParticipatesInThread(ref.toLowerCase(), rootHexLower, localByHex)
+  return hexNoteParticipatesInThread(ref.toLowerCase(), walk.hex, localByHex, walk.coord)
 }
 
-function reactionTargetNoteHex(reaction: Event): string | undefined {
-  const fromParent = getParentEventHexId(reaction)
-  if (fromParent && /^[0-9a-f]{64}$/i.test(fromParent)) return fromParent.toLowerCase()
-  const first = getFirstHexEventIdFromETags(reaction.tags)
-  if (first && /^[0-9a-f]{64}$/i.test(first)) return first.toLowerCase()
-  return undefined
+function aTagCoordinateMatchesRoot(tag: string[] | undefined, rootCoord: string): boolean {
+  const c = tag?.[1]?.trim()
+  if (!c) return false
+  return normalizeReplaceableCoordinateString(c) === normalizeReplaceableCoordinateString(rootCoord)
 }
 
-/** Reply whose direct parent is a reaction to some note in this thread (OP or a nested reply under OP). */
-function replyParentIsReactionToThreadHex(
-  reply: Event,
-  rootHexLower: string,
+/** Kind 1 / 1111 / 1244 replies that tag the article via `a`/`A` (not only `#e`). */
+function addressableReplyReferencesCoordinate(
+  evt: Event,
+  rootCoord: string,
   localByHex?: ReadonlyMap<string, Event>
 ): boolean {
-  const parentHex = getParentEventHexId(reply)
+  if (aTagCoordinateMatchesRoot(getRootATag(evt), rootCoord)) return true
+  if (aTagCoordinateMatchesRoot(getParentATag(evt), rootCoord)) return true
+
+  const parentHex = getParentEventHexId(evt)?.toLowerCase()
   if (!parentHex || !/^[0-9a-f]{64}$/i.test(parentHex)) return false
-  const pl = parentHex.toLowerCase()
-  if (pl === rootHexLower) return false
-  const parentEv = peekThreadEvent(pl, localByHex)
-  if (!parentEv || !isNip25ReactionKind(parentEv.kind)) return false
-  const targetHex = reactionTargetNoteHex(parentEv)
-  if (!targetHex) return false
-  return hexNoteParticipatesInThread(targetHex, rootHexLower, localByHex)
+  const parentEv = peekThreadEvent(parentHex, localByHex)
+  if (!parentEv) return false
+  if (isReplaceableEvent(parentEv.kind)) {
+    const pc = getReplaceableCoordinateFromEvent(parentEv)
+    if (normalizeReplaceableCoordinateString(pc) === normalizeReplaceableCoordinateString(rootCoord)) {
+      return true
+    }
+  }
+  if (aTagCoordinateMatchesRoot(getRootATag(parentEv), rootCoord)) return true
+  return aTagCoordinateMatchesRoot(getParentATag(parentEv), rootCoord)
 }
 
 /** Matches `ReplyNoteList` / discussion thread root shapes. */
@@ -154,8 +179,7 @@ export function eventReplyMatchesThreadRoot(
     return false
   }
   if (root.type === 'A') {
-    const coord = getRootATag(evt)?.[1]
-    if (coord === root.id) return true
+    if (addressableReplyReferencesCoordinate(evt, root.id, localByHex)) return true
     const rootHex = getRootEventHexId(evt)
     if (rootHex && (rootHex === root.eventId || rootHex === root.id)) return true
     const parentHex = getParentEventHexId(evt)?.toLowerCase()
@@ -163,10 +187,11 @@ export function eventReplyMatchesThreadRoot(
     if (
       parentHex &&
       /^[0-9a-f]{64}$/i.test(rootEventHex) &&
-      hexNoteParticipatesInThread(parentHex, rootEventHex, localByHex)
+      hexNoteParticipatesInThread(parentHex, rootEventHex, localByHex, root.id)
     ) {
       return true
     }
+    if (replyParentIsSuperchatToThreadRoot(evt, root, localByHex)) return true
     return kind1QuotesThreadRoot(evt, root)
   }
   const rid = root.id.trim().toLowerCase()
@@ -175,8 +200,7 @@ export function eventReplyMatchesThreadRoot(
   if (evtRootHex && resolveDeclaredThreadRootEventHex(evtRootHex) === rid) return true
   const parentHex = getParentEventHexId(evt)?.toLowerCase()
   if (parentHex && hexNoteParticipatesInThread(parentHex, rid, localByHex)) return true
-  if (replyParentIsSuperchatToThreadHex(evt, rid, localByHex)) return true
-  if (replyParentIsReactionToThreadHex(evt, rid, localByHex)) return true
+  if (replyParentIsSuperchatToThreadRoot(evt, root, localByHex)) return true
   return kind1QuotesThreadRoot(evt, root)
 }
 

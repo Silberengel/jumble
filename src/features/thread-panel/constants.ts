@@ -1,6 +1,8 @@
 export const THREAD_REPLY_LIMIT = 200
 export const THREAD_REPLY_SHOW_COUNT = 10
 export const MAX_PARENT_IDS_PER_NESTED_REQ = 64
+/** Nested #e passes for kind 1 / 1111 / 1244 chains (cross-kind replies need multiple rounds). */
+export const MAX_NESTED_THREAD_FETCH_ROUNDS = 4
 export const THREAD_PROFILE_BATCH_DEBOUNCE_MS = 120
 export const THREAD_PROFILE_CHUNK = 80
 

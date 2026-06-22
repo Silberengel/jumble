@@ -53,6 +53,7 @@ import ReplyNote, { ReplyNoteSkeleton } from '@/components/ReplyNote'
 import ThreadQuoteBacklink, { BacklinkAvatarStrip } from './components/ThreadQuoteBacklink'
 import threadPanelCache from './thread-panel-cache'
 import {
+  MAX_NESTED_THREAD_FETCH_ROUNDS,
   MAX_PARENT_IDS_PER_NESTED_REQ,
   THREAD_PROFILE_BATCH_DEBOUNCE_MS,
   THREAD_PROFILE_CHUNK,
@@ -67,6 +68,7 @@ import {
   hydrateThreadRepliesFromStats,
   isPollVoteKind,
   loadThreadRepliesFromLocalStores,
+  mergeNestedThreadReplyParentEvents,
   mergeFetchedKind7ReactionsIntoRootNoteStats,
   openNoteHexId,
   replyIdPresentInRepliesMap,
@@ -990,28 +992,38 @@ function ThreadPanel({
               commentKindsNested.includes(event.kind) && /^[0-9a-f]{64}$/i.test(event.id)
                 ? event.id.toLowerCase()
                 : undefined
-            const parentIdsNested = Array.from(
-              new Set(
-                [
-                  focusedParentId,
-                  ...regularReplies
-                    .filter((evt) => isNestedThreadReplyParentKind(evt.kind))
-                    .map((evt) => evt.id)
-                ].filter(Boolean) as string[]
-              )
+            const nestedParentEvents = mergeNestedThreadReplyParentEvents(regularReplies, allReplies)
+            const streamWalkById = new Map<string, NEvent>(
+              nestedParentEvents.map((e) => [e.id.toLowerCase(), e] as const)
             )
-            if (parentIdsNested.length > 0) {
-              const nestedAccum: NEvent[] = []
-              const streamWalkById = new Map<string, NEvent>(
-                regularReplies.map((e) => [e.id.toLowerCase(), e] as const)
-              )
-              for (let off = 0; off < parentIdsNested.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
-                const idChunk = parentIdsNested.slice(off, off + MAX_PARENT_IDS_PER_NESTED_REQ)
+            const queriedParentIds = new Set<string>()
+            let pendingParentIds = new Set<string>(
+              [
+                focusedParentId,
+                ...nestedParentEvents
+                  .filter((evt) => isNestedThreadReplyParentKind(evt.kind))
+                  .map((evt) => evt.id.toLowerCase())
+              ].filter(Boolean) as string[]
+            )
+            const nestedAccum: NEvent[] = []
+
+            for (
+              let round = 0;
+              round < MAX_NESTED_THREAD_FETCH_ROUNDS && pendingParentIds.size > 0;
+              round++
+            ) {
+              const parentBatch = [...pendingParentIds].filter((id) => !queriedParentIds.has(id))
+              pendingParentIds = new Set()
+              if (parentBatch.length === 0) break
+
+              for (let off = 0; off < parentBatch.length; off += MAX_PARENT_IDS_PER_NESTED_REQ) {
+                const idChunk = parentBatch.slice(off, off + MAX_PARENT_IDS_PER_NESTED_REQ)
+                for (const id of idChunk) queriedParentIds.add(id)
                 const nestedFilters: Filter[] = [
                   { '#e': idChunk, kinds: commentKindsNested, limit: THREAD_REPLY_LIMIT },
                   {
                     '#E': idChunk,
-                    kinds: [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT],
+                    kinds: commentKindsNested,
                     limit: THREAD_REPLY_LIMIT
                   }
                 ]
@@ -1036,23 +1048,48 @@ function ThreadPanel({
                 if (fetchGeneration !== threadPanelEngineRef.current.currentGeneration()) return
                 nestedAccum.push(...nestedReplies)
               }
+
               const nestedWalkMerged = new Map<string, NEvent>(streamWalkById)
               for (const e of nestedAccum) nestedWalkMerged.set(e.id.toLowerCase(), e)
-              const validNested = nestedAccum.filter(
-                (evt) =>
-                  !isPollVoteKind(evt) &&
-                  !shouldHideThreadResponseEvent(
-              evt,
-              mutePubkeySet,
-              hideContentMentioningMutedUsers,
-              threadResponseHideOpts
-            ) &&
-                  replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, nestedWalkMerged)
-              )
-              if (validNested.length > 0) {
-                threadPanelCache.setCachedReplies(rootInfo, validNested)
-                addReplies(validNested, 'nested')
+              for (const evt of nestedAccum) {
+                if (isPollVoteKind(evt)) continue
+                if (
+                  shouldHideThreadResponseEvent(
+                    evt,
+                    mutePubkeySet,
+                    hideContentMentioningMutedUsers,
+                    threadResponseHideOpts
+                  )
+                ) {
+                  continue
+                }
+                if (
+                  !replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, nestedWalkMerged)
+                ) {
+                  continue
+                }
+                if (isNestedThreadReplyParentKind(evt.kind)) {
+                  pendingParentIds.add(evt.id.toLowerCase())
+                }
               }
+            }
+
+            const nestedWalkMerged = new Map<string, NEvent>(streamWalkById)
+            for (const e of nestedAccum) nestedWalkMerged.set(e.id.toLowerCase(), e)
+            const validNested = nestedAccum.filter(
+              (evt) =>
+                !isPollVoteKind(evt) &&
+                !shouldHideThreadResponseEvent(
+                  evt,
+                  mutePubkeySet,
+                  hideContentMentioningMutedUsers,
+                  threadResponseHideOpts
+                ) &&
+                replyMatchesThreadForList(evt, event, rootInfo, isDiscussionRoot, nestedWalkMerged)
+            )
+            if (validNested.length > 0) {
+              threadPanelCache.setCachedReplies(rootInfo, validNested)
+              addReplies(validNested, 'nested')
             }
           }
         } catch (error) {

@@ -46,6 +46,8 @@ describe('buildThreadInteractionFilters', () => {
     })
     expect(filters.some((f) => f['#e']?.[0] === SNAP_HEX)).toBe(true)
     expect(filters.some((f) => f['#a']?.length === 1)).toBe(true)
+    const upperE = filters.find((f) => f['#E']?.[0] === SNAP_HEX)
+    expect(upperE?.kinds).toContain(kinds.ShortTextNote)
   })
 
   it('adds open-note #e filters when viewing a mid-thread reply', () => {

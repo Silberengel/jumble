@@ -190,6 +190,21 @@ export function replyIsInSubtreeBelowOpenNote(
   return false
 }
 
+/** Superchats are listed under “Antworten” but nested replies tag the payment id, not the thread root. */
+export function mergeNestedThreadReplyParentEvents(
+  displayedReplies: readonly NEvent[],
+  relayBatch: readonly NEvent[]
+): NEvent[] {
+  const byId = new Map<string, NEvent>()
+  for (const e of displayedReplies) byId.set(e.id.toLowerCase(), e)
+  for (const e of relayBatch) {
+    if (isSuperchatKind(e.kind)) {
+      byId.set(e.id.toLowerCase(), e)
+    }
+  }
+  return [...byId.values()]
+}
+
 function dedupeEventsFromRepliesMap(repliesMap: TRepliesMap): NEvent[] {
   const byId = new Map<string, NEvent>()
   for (const { events } of repliesMap.values()) {

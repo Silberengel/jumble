@@ -366,7 +366,10 @@ export function getRootATag(event?: Event) {
     return undefined
   }
 
-  return event.tags.find(tagNameEquals('A'))
+  const isATag = (n: string) => n === 'a' || n === 'A'
+  const byMarker = event.tags.find(([tagName, , , marker]) => isATag(tagName) && marker === 'root')
+  if (byMarker) return byMarker
+  return event.tags.find(tagNameEquals('A')) ?? event.tags.find(tagNameEquals('a'))
 }
 
 export function getRootEventHexId(event?: Event) {
