@@ -1,5 +1,10 @@
 import { ExtendedKind } from '@/constants'
-import { getRootETag, isReplyNoteEvent, resolveDeclaredThreadRootEventHex } from '@/lib/event'
+import {
+  getParentEventHexId,
+  getRootETag,
+  isReplyNoteEvent,
+  resolveDeclaredThreadRootEventHex
+} from '@/lib/event'
 import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { isValidPubkey } from '@/lib/pubkey'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
@@ -50,6 +55,51 @@ export function peekThreadRootAuthorPubkey(parentEvent: Event): string | undefin
 
   if (parentEvent.kind === kinds.ShortTextNote && !isReplyNoteEvent(parentEvent)) {
     return parentEvent.pubkey.toLowerCase()
+  }
+
+  return undefined
+}
+
+const THREAD_ROOT_PARENT_WALK_MAX_HOPS = 14
+
+/**
+ * Thread root event id when inferable from NIP-22 `E`, NIP-10 root `e`, or a cached parent walk.
+ * Session cache only — never blocks on relay REQ.
+ */
+export function peekThreadRootEventHex(parentEvent: Event): string | undefined {
+  let cur: Event | undefined = parentEvent
+  for (let hop = 0; hop < THREAD_ROOT_PARENT_WALK_MAX_HOPS && cur; hop++) {
+    const eUpper = cur.tags.find(
+      (t) => t[0] === 'E' && typeof t[1] === 'string' && /^[0-9a-f]{64}$/i.test(t[1])
+    )
+    if (eUpper?.[1]) return resolveDeclaredThreadRootEventHex(eUpper[1].toLowerCase())
+
+    if (cur.kind === kinds.ShortTextNote && !isReplyNoteEvent(cur)) {
+      return cur.id.toLowerCase()
+    }
+
+    const rootTag = getRootETag(cur)
+    if (rootTag?.[1] && /^[0-9a-f]{64}$/i.test(rootTag[1])) {
+      const resolved = resolveDeclaredThreadRootEventHex(rootTag[1].toLowerCase())
+      const curId = cur.id?.toLowerCase()
+      if (!curId || resolved !== curId) return resolved
+    }
+
+    const parentHex = getParentEventHexId(cur)?.trim().toLowerCase()
+    if (!parentHex || !/^[0-9a-f]{64}$/.test(parentHex)) break
+    const next = client.peekSessionCachedEvent(parentHex)
+    const curId = cur.id?.toLowerCase()
+    if (!next?.id || (curId && next.id.toLowerCase() === curId)) break
+    cur = next
+  }
+
+  const rootTag = getRootETag(parentEvent)
+  if (rootTag?.[1] && /^[0-9a-f]{64}$/i.test(rootTag[1])) {
+    return resolveDeclaredThreadRootEventHex(rootTag[1].toLowerCase())
+  }
+
+  if (parentEvent.kind === kinds.ShortTextNote && !isReplyNoteEvent(parentEvent)) {
+    return parentEvent.id.toLowerCase()
   }
 
   return undefined

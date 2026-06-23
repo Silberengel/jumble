@@ -3,6 +3,7 @@ import { getParentEventHexId, getRootEventHexId } from '@/lib/event'
 import {
   collectThreadReplyInboxPubkeys,
   peekThreadRootAuthorPubkey,
+  peekThreadRootEventHex,
   pubkeyFromThreadETag,
   relayHintsFromThreadETag
 } from '@/lib/thread-context-relays'
@@ -57,6 +58,9 @@ describe('NIP-10 Damus reply thread tags', () => {
     ])
     expect(peekThreadRootAuthorPubkey(reply)).toBe(
       'b133bfc57bed61c391d4e8f953b906c7f1709c438d91c75fb6daf79449d5789d'
+    )
+    expect(peekThreadRootEventHex(reply)).toBe(
+      '1dae240e0fe68c331cd9f0923f756c148fb7cf0344a7229c7831b676d6102e71'
     )
   })
 })

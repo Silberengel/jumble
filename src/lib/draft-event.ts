@@ -27,6 +27,7 @@ import {
   getRootETag,
   isProtectedEvent,
   isReplaceableEvent,
+  isReplyNoteEvent,
   resolveDeclaredThreadRootEventHex
 } from './event'
 import {
@@ -40,7 +41,7 @@ import { collectReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
 import { getImetaInfoFromImetaTag, tagNameEquals } from './tag'
-import { pubkeyFromThreadETag } from './thread-context-relays'
+import { pubkeyFromThreadETag, peekThreadRootAuthorPubkey, peekThreadRootEventHex } from './thread-context-relays'
 
 function canonicalizeHttpUrlForITags(url: string): string {
   if (!url.startsWith('http://') && !url.startsWith('https://')) return url
@@ -1511,7 +1512,7 @@ async function extractCommentMentions(content: string, parentEvent: Event) {
     rootKind = NIP22_URL_SCOPE_KIND
   }
 
-  return {
+  return enrichCommentThreadRootFromContext(parentEvent, {
     quoteEventHexIds,
     quoteReplaceableCoordinates,
     rootEventId,
@@ -1519,6 +1520,76 @@ async function extractCommentMentions(content: string, parentEvent: Event) {
     rootKind,
     rootPubkey,
     rootUrl
+  })
+}
+
+type TCommentThreadRootFields = {
+  quoteEventHexIds: string[]
+  quoteReplaceableCoordinates: string[]
+  rootEventId?: string
+  rootCoordinateTag?: string[]
+  rootKind?: number | string
+  rootPubkey?: string
+  rootUrl?: string
+}
+
+/** Fill missing NIP-22 root `E` / `P` / `K` from thread tags or session-cached parents when possible. */
+async function enrichCommentThreadRootFromContext(
+  parentEvent: Event,
+  fields: TCommentThreadRootFields
+): Promise<TCommentThreadRootFields> {
+  const isComment = [ExtendedKind.COMMENT, ExtendedKind.VOICE_COMMENT].includes(parentEvent.kind)
+  const parentIsNested =
+    isComment || isReplyNoteEvent(parentEvent) || parentEvent.kind === ExtendedKind.COMMENT
+
+  const inferredRootHex = peekThreadRootEventHex(parentEvent)
+  let rootEventId = fields.rootEventId
+  if (inferredRootHex) {
+    const inferred = inferredRootHex.toLowerCase()
+    const current = rootEventId?.trim().toLowerCase()
+    const parentId = parentEvent.id.toLowerCase()
+    if (!current || (parentIsNested && current === parentId && inferred !== parentId)) {
+      rootEventId = inferred
+    }
+  }
+
+  let rootPubkey = fields.rootPubkey
+  let rootKind = fields.rootKind
+  const parentId = parentEvent.id.toLowerCase()
+  const canonicalRootHex =
+    rootEventId && /^[0-9a-f]{64}$/i.test(rootEventId)
+      ? resolveDeclaredThreadRootEventHex(rootEventId.toLowerCase())
+      : undefined
+  const rootIsNotParent = !!canonicalRootHex && canonicalRootHex !== parentId
+  const rootPubkeyLooksLikeParent =
+    !!rootPubkey && rootPubkey.toLowerCase() === parentEvent.pubkey.toLowerCase()
+
+  if (
+    canonicalRootHex &&
+    ((rootIsNotParent && rootPubkeyLooksLikeParent) || rootKind == null || rootKind === '')
+  ) {
+    const rootEv = await peekRootEventForReplyDraft(canonicalRootHex)
+    if (rootEv) {
+      if (!rootPubkey || (rootIsNotParent && rootPubkeyLooksLikeParent)) {
+        rootPubkey = rootEv.pubkey
+      }
+      if (rootKind == null || rootKind === '') rootKind = rootEv.kind
+    }
+  }
+
+  if (
+    !rootPubkey ||
+    (rootIsNotParent && rootPubkey.toLowerCase() === parentEvent.pubkey.toLowerCase())
+  ) {
+    const inferredPubkey = peekThreadRootAuthorPubkey(parentEvent)
+    if (inferredPubkey) rootPubkey = inferredPubkey
+  }
+
+  return {
+    ...fields,
+    rootEventId,
+    rootPubkey,
+    rootKind
   }
 }
 
