@@ -304,41 +304,28 @@ async function publishToOneRelay (url, msg, eventId) {
     ws = new WebSocket(url, { handshakeTimeout: 8000 })
     await new Promise((resolve, reject) => {
       let timeoutId
-      let resolved = false
-      const cleanup = () => {
-        if (resolved) return
-        resolved = true
+      let settled = false
+      const settle = (fn, arg) => {
+        if (settled) return
+        settled = true
         clearTimeout(timeoutId)
         ws.removeListener('open', onOpen)
-        ws.removeListener('error', onError)
+        ws.removeListener('error', onOpenError)
+        if (arg !== undefined) fn(arg)
+        else fn()
       }
-      const onOpen = () => {
-        cleanup()
-        resolve()
-      }
-      const onError = (err) => {
-        cleanup()
-        reject(err)
-      }
-      timeoutId = setTimeout(() => {
-        cleanup()
-        reject(new Error('open timeout'))
-      }, 10000)
+      const onOpen = () => settle(resolve)
+      const onOpenError = (err) => settle(reject, err)
+      timeoutId = setTimeout(() => settle(reject, new Error('open timeout')), 10000)
       ws.once('open', onOpen)
-      ws.on('error', onError)
+      ws.once('error', onOpenError)
     })
+
     let accepted = false
     await new Promise((resolve) => {
       let settled = false
-      const finish = () => {
-        if (settled) return
-        settled = true
-        clearTimeout(t)
-        ws.removeListener('message', onMessage)
-        ws.removeListener('error', onError)
-        resolve()
-      }
-      const onError = (err) => {
+      let timeoutId
+      const onMessageError = (err) => {
         log('Publish WS error waiting for OK', { url, err: err?.message })
         finish()
       }
@@ -357,9 +344,17 @@ async function publishToOneRelay (url, msg, eventId) {
           /* ignore malformed frames */
         }
       }
-      const t = setTimeout(finish, 3000)
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeoutId)
+        ws.removeListener('message', onMessage)
+        ws.removeListener('error', onMessageError)
+        resolve()
+      }
+      timeoutId = setTimeout(finish, 3000)
       ws.on('message', onMessage)
-      ws.on('error', onError)
+      ws.once('error', onMessageError)
       ws.send(msg)
     })
     return accepted ? 1 : 0
@@ -368,6 +363,7 @@ async function publishToOneRelay (url, msg, eventId) {
     return 0
   } finally {
     try {
+      ws?.removeAllListeners()
       ws?.close()
     } catch (_) {}
   }
