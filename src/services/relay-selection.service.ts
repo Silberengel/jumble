@@ -138,6 +138,14 @@ class RelaySelectionService {
       for (const pk of collectThreadReplyInboxPubkeys(parentEvent, userPubkey)) {
         add(pk)
       }
+      if (
+        userPubkey &&
+        content &&
+        parentEvent.kind !== ExtendedKind.PUBLIC_MESSAGE
+      ) {
+        const extracted = await this.extractMentions(content, parentEvent)
+        extracted.forEach((pk) => add(pk))
+      }
     } else if (isPublicMessage && userPubkey) {
       if (mentions && mentions.length > 0) {
         mentions.forEach((pk) => add(pk))
@@ -145,19 +153,6 @@ class RelaySelectionService {
         const extracted = await this.extractMentions(content, parentEvent)
         extracted.forEach((pk) => add(pk))
       }
-    } else if (parentEvent?.kind === ExtendedKind.PUBLIC_MESSAGE && userPubkey) {
-      add(parentEvent.pubkey)
-      parentEvent.tags.forEach(([tagName, tagValue]) => {
-        if (tagName === 'p') add(tagValue)
-      })
-    } else if (parentEvent && userPubkey) {
-      if (content) {
-        const extracted = await this.extractMentions(content, parentEvent)
-        extracted.forEach((pk) => add(pk))
-      }
-      parentEvent.tags.forEach(([tagName, tagValue]) => {
-        if (['p', 'P'].includes(tagName)) add(tagValue)
-      })
     }
 
     return out.slice(0, RELAY_PICKER_CONTEXT_PUBKEY_CAP)

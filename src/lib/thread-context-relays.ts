@@ -11,7 +11,6 @@ import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { normalizeWssRelayHintUrl } from '@/lib/relay-list-sanitize'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import client from '@/services/client.service'
-import { normalizeUrl } from '@/lib/url'
 import { kinds, type Event } from 'nostr-tools'
 
 /** NIP-10 optional pubkey on an `e` tag (field 4 when field 3 is a marker). */
