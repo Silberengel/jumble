@@ -4,7 +4,22 @@ import {
   sanitizeRelayUrlsForFetch,
   setViewerPersonalRelayKeys
 } from './read-only-relay-personal'
-import { stripLocalRelaysFromThirdPartyHints } from './relay-list-sanitize'
+import { stripLocalRelaysFromThirdPartyHints, normalizeWssRelayHintUrl } from './relay-list-sanitize'
+
+describe('normalizeWssRelayHintUrl', () => {
+  it('accepts remote wss only', () => {
+    expect(normalizeWssRelayHintUrl('wss://relay.mostr.pub')).toBe('wss://relay.mostr.pub/')
+    expect(normalizeWssRelayHintUrl('wss://relay.example.com/')).toBe('wss://relay.example.com/')
+  })
+
+  it('rejects http, https, ws, and LAN', () => {
+    expect(normalizeWssRelayHintUrl('https://index.example/')).toBeUndefined()
+    expect(normalizeWssRelayHintUrl('http://127.0.0.1:8090/')).toBeUndefined()
+    expect(normalizeWssRelayHintUrl('ws://relay.example.com/')).toBeUndefined()
+    expect(normalizeWssRelayHintUrl('ws://localhost:4869/')).toBeUndefined()
+    expect(normalizeWssRelayHintUrl('wss://127.0.0.1:7777/')).toBeUndefined()
+  })
+})
 
 describe('stripLocalRelaysFromThirdPartyHints', () => {
   it('removes loopback and LAN from hint lists', () => {

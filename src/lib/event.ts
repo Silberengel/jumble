@@ -3,8 +3,8 @@ import { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
 import { getZapInfoFromEvent } from '@/lib/event-metadata'
 import { muteSetHas } from '@/lib/mute-set'
 import { EMBEDDED_EVENT_REGEX, EMBEDDED_MENTION_REGEX, NOSTR_EMBEDDED_NOTE_REGEX } from '@/lib/content-patterns'
-import { cleanUrl, normalizeUrl } from '@/lib/url'
-import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
+import { cleanUrl } from '@/lib/url'
+import { normalizeWssRelayHintUrl } from '@/lib/relay-list-sanitize'
 import client from '@/services/client.service'
 import { TImetaInfo } from '@/types'
 import { LRUCache } from 'lru-cache'
@@ -686,7 +686,7 @@ export function collectEmbeddedEventPrefetchTargets(event: Event): {
 }
 
 /**
- * `wss://` / `ws://` hints from `e`/`a`/`q` third field, `relays` tags, and relays that delivered the parent event.
+ * `wss://` hints from `e`/`a`/`q` third field, `relays` tags, and relays that delivered the parent event.
  * Used to resolve embedded notes from the same context (e.g. long-form body) before the generic relay fan-out.
  */
 export function relayHintWssUrlsFromEvent(event: Event | undefined): string[] {
@@ -694,21 +694,15 @@ export function relayHintWssUrlsFromEvent(event: Event | undefined): string[] {
   const fromTags: string[] = []
   for (const tag of event.tags) {
     if (['e', 'a', 'q'].includes(tag[0]) && tag.length > 2 && typeof tag[2] === 'string') {
-      const hint = tag[2]
-      if (hint.startsWith('wss://') || hint.startsWith('ws://')) {
-        const n = normalizeUrl(hint) || hint
-        if (urlIsNonLocalForRemoteViewer(n)) fromTags.push(hint)
-      }
+      const n = normalizeWssRelayHintUrl(tag[2])
+      if (n) fromTags.push(n)
     }
   }
   const relaysTag = event.tags.find((t) => t[0] === 'relays')
   if (relaysTag) {
     for (let i = 1; i < relaysTag.length; i++) {
-      const u = relaysTag[i]
-      if (typeof u === 'string' && (u.startsWith('wss://') || u.startsWith('ws://'))) {
-        const n = normalizeUrl(u) || u
-        if (urlIsNonLocalForRemoteViewer(n)) fromTags.push(u)
-      }
+      const n = normalizeWssRelayHintUrl(relaysTag[i])
+      if (n) fromTags.push(n)
     }
   }
   const seen: string[] = []
@@ -719,7 +713,7 @@ export function relayHintWssUrlsFromEvent(event: Event | undefined): string[] {
   }
   const hints = [...fromTags, ...seen]
   const normalized = hints
-    .map((u) => normalizeUrl(u))
+    .map((u) => normalizeWssRelayHintUrl(u))
     .filter((u): u is string => Boolean(u))
   return [...new Set(normalized)]
 }
@@ -732,10 +726,8 @@ export function relayHintsForEmbeddedNotePointer(
   if (!containingEvent) return []
   const prioritized: string[] = []
   const pushHint = (raw: string | undefined) => {
-    const hint = raw?.trim()
-    if (!hint || (!hint.startsWith('wss://') && !hint.startsWith('ws://'))) return
-    const n = normalizeUrl(hint) || hint
-    if (urlIsNonLocalForRemoteViewer(n)) prioritized.push(hint)
+    const n = normalizeWssRelayHintUrl(raw)
+    if (n) prioritized.push(n)
   }
   const trimmed = notePointer.trim()
 
@@ -769,11 +761,7 @@ export function relayHintsForEmbeddedNotePointer(
   }
 
   const merged = [...prioritized, ...relayHintWssUrlsFromEvent(containingEvent)]
-  return [
-    ...new Set(
-      merged.map((u) => normalizeUrl(u)).filter((u): u is string => Boolean(u))
-    )
-  ]
+  return [...new Set(merged)]
 }
 
 function getEmbeddedPubkeys(event: Event) {

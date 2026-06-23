@@ -143,7 +143,8 @@ import {
   stripMailboxLocalUrlsForRemoteViewers,
   syntheticOriginalRelaysFromReadWrite,
   stripLocalNetworkRelaysForWssReq,
-  urlIsNonLocalForRemoteViewer
+  urlIsNonLocalForRemoteViewer,
+  normalizeWssRelayHintUrl
 } from '@/lib/relay-list-sanitize'
 import {
   getViewerNostrLandAggrSearchRelayUrls,
@@ -3750,11 +3751,13 @@ class ClientService extends EventTarget {
   }
 
   getEventHints(eventId: string) {
-    return this.getSeenEventRelayUrls(eventId).filter((url) => !isLocalNetworkUrl(url))
+    return this.getSeenEventRelayUrls(eventId)
+      .map((url) => normalizeWssRelayHintUrl(url))
+      .filter((url): url is string => !!url)
   }
 
   getEventHint(eventId: string) {
-    return this.getSeenEventRelayUrls(eventId).find((url) => !isLocalNetworkUrl(url)) ?? ''
+    return this.getEventHints(eventId)[0] ?? ''
   }
 
   /** Relay URLs in the pool whose WebSocket is currently connected (`listConnectionStatus`). */

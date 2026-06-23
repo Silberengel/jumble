@@ -21,7 +21,7 @@ import {
 } from '@/lib/viewer-read-inboxes'
 import { isRelayBlockedByUser } from '@/lib/relay-blocked'
 import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
-import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
+import { normalizeWssRelayHintUrl, urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
 import {
   canonicalRelaySessionKey,
   httpIndexRelayBasesInUrlBatch,
@@ -578,8 +578,8 @@ export function relayHintsFromEventTags(event: { tags: string[][] }): string[] {
   const out = new Set<string>()
   for (const tag of event.tags) {
     if ((tag[0] === 'e' || tag[0] === 'E') && tag[2]) {
-      const n = normalizeUrl(tag[2]) || tag[2]
-      if (n && urlIsNonLocalForRemoteViewer(n)) out.add(n)
+      const n = normalizeWssRelayHintUrl(tag[2])
+      if (n) out.add(n)
     }
   }
   return [...out]

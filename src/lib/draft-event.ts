@@ -41,6 +41,7 @@ import { collectReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
 import { getImetaInfoFromImetaTag, tagNameEquals } from './tag'
+import { wssRelayHintOrEmpty } from '@/lib/relay-list-sanitize'
 import { pubkeyFromThreadETag, peekThreadRootAuthorPubkey, peekThreadRootEventHex } from './thread-context-relays'
 
 function canonicalizeHttpUrlForITags(url: string): string {
@@ -842,13 +843,13 @@ export function createCalendarRsvpDraftEvent(
   options: { content?: string; fb?: 'free' | 'busy' } = {}
 ): TDraftEvent {
   const coordinate = normalizeReplaceableCoordinateString(getReplaceableCoordinateFromEvent(calendarEvent))
-  const hint = client.getEventHint(calendarEvent.id)
+  const hint = wssRelayHintOrEmpty(client.getEventHint(calendarEvent.id))
   const calendarHexId = /^[0-9a-f]{64}$/i.test(calendarEvent.id)
     ? calendarEvent.id.toLowerCase()
     : calendarEvent.id
   const tags: string[][] = [
-    ['a', coordinate, hint ?? ''],
-    ['e', calendarHexId, hint ?? ''],
+    ['a', coordinate, hint],
+    ['e', calendarHexId, hint],
     ['d', randomString(12)],
     ['status', status],
     ['p', calendarEvent.pubkey]
@@ -1646,7 +1647,7 @@ function escapeRegExp(s: string) {
 
 export function buildATag(event: Event, upperCase: boolean = false) {
   const coordinate = getReplaceableCoordinateFromEvent(event)
-  const hint = client.getEventHint(event.id)
+  const hint = wssRelayHintOrEmpty(client.getEventHint(event.id))
   return trimTagEnd([upperCase ? 'A' : 'a', coordinate, hint])
 }
 
@@ -1663,6 +1664,7 @@ export function buildETag(
   if (!hint) {
     hint = client.getEventHint(eventHexId)
   }
+  hint = wssRelayHintOrEmpty(hint)
   return trimTagEnd([upperCase ? 'E' : 'e', eventHexId, hint, pubkey])
 }
 
@@ -1675,6 +1677,7 @@ function buildETagWithMarker(
   if (!hint) {
     hint = client.getEventHint(eventHexId)
   }
+  hint = wssRelayHintOrEmpty(hint)
   return trimTagEnd(['e', eventHexId, hint, marker, pubkey])
 }
 
@@ -1691,7 +1694,7 @@ function buildPTag(pubkey: string, upperCase: boolean = false) {
 }
 
 function buildQTag(eventHexId: string) {
-  return trimTagEnd(['q', eventHexId, client.getEventHint(eventHexId)]) // TODO: pubkey
+  return trimTagEnd(['q', eventHexId, wssRelayHintOrEmpty(client.getEventHint(eventHexId))]) // TODO: pubkey
 }
 
 function buildReplaceableQTag(coordinate: string) {
@@ -1864,9 +1867,11 @@ export async function createHighlightDraftEvent(
         const decoded = nip19.decode(sourceValue)
         if (decoded.type === 'nevent') {
           const eventId = decoded.data.id
-          const relays = decoded.data.relays && decoded.data.relays.length > 0 
-            ? decoded.data.relays[0] 
-            : client.getEventHint(eventId)
+          const relays = wssRelayHintOrEmpty(
+            decoded.data.relays && decoded.data.relays.length > 0
+              ? decoded.data.relays[0]
+              : client.getEventHint(eventId)
+          )
           const author = decoded.data.author
           // Build e-tag: ["e", <event-id>, <relay-url>, <author-pubkey>]
           if (author) {
@@ -1886,7 +1891,7 @@ export async function createHighlightDraftEvent(
         const decoded = nip19.decode(sourceValue)
         if (decoded.type === 'note') {
           const eventId = decoded.data
-          const relay = client.getEventHint(eventId)
+          const relay = wssRelayHintOrEmpty(client.getEventHint(eventId))
           // Build e-tag: ["e", <event-id>, <relay-url>]
           if (relay) {
             tags.push(['e', eventId, relay])
@@ -1899,7 +1904,7 @@ export async function createHighlightDraftEvent(
       }
     } else {
       // Regular hex event ID
-      const relay = client.getEventHint(sourceValue)
+      const relay = wssRelayHintOrEmpty(client.getEventHint(sourceValue))
       if (relay) {
         tags.push(['e', sourceValue, relay])
       } else {

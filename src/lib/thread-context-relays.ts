@@ -8,7 +8,7 @@ import {
 import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { isValidPubkey } from '@/lib/pubkey'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
-import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
+import { normalizeWssRelayHintUrl } from '@/lib/relay-list-sanitize'
 import { buildReplyReadRelayList, relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import client from '@/services/client.service'
 import { normalizeUrl } from '@/lib/url'
@@ -138,9 +138,8 @@ export function collectThreadReplyInboxPubkeys(
 /** Relay hint from a single `e` / `E` tag (third field). */
 export function relayHintsFromThreadETag(tag: string[] | undefined): string[] {
   if (!tag?.[2] || typeof tag[2] !== 'string') return []
-  const n = normalizeUrl(tag[2]) || tag[2]
-  if (!n || !urlIsNonLocalForRemoteViewer(n)) return []
-  return [n]
+  const n = normalizeWssRelayHintUrl(tag[2])
+  return n ? [n] : []
 }
 
 /**

@@ -26,6 +26,24 @@ export function stripLocalRelaysFromThirdPartyHints(urls: readonly string[]): st
 }
 
 /**
+ * NIP-10 / NIP-22 relay hint (tag field 2): accept only remote `wss://` URLs.
+ * Drops `http://`, `https://`, `ws://`, and LAN/loopback.
+ */
+export function normalizeWssRelayHintUrl(raw: string | undefined): string | undefined {
+  if (!raw || typeof raw !== 'string') return undefined
+  const trimmed = raw.trim()
+  if (!trimmed.toLowerCase().startsWith('wss://')) return undefined
+  const n = normalizeUrl(trimmed) || trimmed
+  if (!n.toLowerCase().startsWith('wss://')) return undefined
+  if (!urlIsNonLocalForRemoteViewer(n)) return undefined
+  return n
+}
+
+export function wssRelayHintOrEmpty(raw: string | undefined): string {
+  return normalizeWssRelayHintUrl(raw) ?? ''
+}
+
+/**
  * Drop LAN/loopback from NIP-65 + HTTP mailbox fields when resolving **another** author's data:
  * the viewer cannot reach the author's `localhost` / `192.168.*` / etc., but we used to rank them first.
  */

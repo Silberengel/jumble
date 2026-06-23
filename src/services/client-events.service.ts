@@ -14,7 +14,7 @@ import {
 } from '@/constants'
 import { prependAggrForEventLookupRelayUrls } from '@/lib/nostr-land-relay-eligibility'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
-import { urlIsNonLocalForRemoteViewer } from '@/lib/relay-list-sanitize'
+import { normalizeWssRelayHintUrl } from '@/lib/relay-list-sanitize'
 import logger from '@/lib/logger'
 import {
   collectEmbeddedEventPrefetchTargets,
@@ -1240,13 +1240,8 @@ export class EventService {
     const tagTypesWithRelayHints = ['e', 'a', 'q']
     for (const tag of event.tags) {
       if (tagTypesWithRelayHints.includes(tag[0]) && tag.length > 2 && typeof tag[2] === 'string') {
-        const hint = tag[2]
-        if (
-          (hint.startsWith('wss://') || hint.startsWith('ws://')) &&
-          urlIsNonLocalForRemoteViewer(hint)
-        ) {
-          hints.add(hint)
-        }
+        const n = normalizeWssRelayHintUrl(tag[2])
+        if (n) hints.add(n)
       }
     }
 
@@ -1254,13 +1249,8 @@ export class EventService {
     const relaysTag = event.tags.find((tag) => tag[0] === 'relays')
     if (relaysTag && relaysTag.length > 1) {
       relaysTag.slice(1).forEach((url) => {
-        if (
-          typeof url === 'string' &&
-          (url.startsWith('wss://') || url.startsWith('ws://')) &&
-          urlIsNonLocalForRemoteViewer(url)
-        ) {
-          hints.add(url)
-        }
+        const n = normalizeWssRelayHintUrl(url)
+        if (n) hints.add(n)
       })
     }
 
