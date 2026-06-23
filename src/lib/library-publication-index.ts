@@ -2,10 +2,12 @@ import { DOCUMENT_RELAY_URLS, ExtendedKind, LIBRARY_RELAY_URLS } from '@/constan
 import { tryParseCitationEventIdFromQuery } from '@/lib/citation-picker-search'
 import {
   generalSearchQueryTerms,
+  haystackMatchesPhraseQuery,
   haystackMatchesSearchQuery,
+  isQuotedSearchQuery,
   metadataSearchHaystack,
   normalizeGeneralSearchQuery,
-  publicationContentMatchesSearchQuery
+  scorePublicationContentSearchQuery
 } from '@/lib/general-search-text-match'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
@@ -134,6 +136,8 @@ export type LibraryPublicationContentSearchMatch = {
   sectionAddress: string
   highlightQuery: string
   contentEvent: Event
+  /** Higher = closer match (exact phrase beats scattered words). */
+  matchScore: number
 }
 
 export type LibraryPublicationEntry = {
@@ -1389,6 +1393,16 @@ export function sortLibraryPublications(entries: LibraryPublicationEntry[]): Lib
   return [...entries].sort((a, b) => b.event.created_at - a.event.created_at)
 }
 
+/** Search results: best content phrase match first, then other content hits, then metadata. */
+export function sortLibrarySearchPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {
+  return [...entries].sort((a, b) => {
+    const aScore = a.contentSearchMatch?.matchScore ?? 0
+    const bScore = b.contentSearchMatch?.matchScore ?? 0
+    if (aScore !== bScore) return bScore - aScore
+    return b.event.created_at - a.event.created_at
+  })
+}
+
 const EMPTY_ENGAGEMENT = emptyPublicationEngagementMaps()
 
 function emptyPublicationEngagementMaps(): PublicationEngagementMaps {
@@ -1569,7 +1583,11 @@ export function publicationIndexMatchesSearchQuery(event: Event, query: string):
   const eventId = tryParseCitationEventIdFromQuery(raw)
   if (eventId && event.id.toLowerCase() === eventId) return true
 
-  return haystackMatchesSearchQuery(publicationIndexSearchHaystack(event), raw)
+  const haystack = publicationIndexSearchHaystack(event)
+  if (isQuotedSearchQuery(raw)) {
+    return haystackMatchesPhraseQuery(haystack, raw)
+  }
+  return haystackMatchesSearchQuery(haystack, raw)
 }
 
 function buildAddressToRootMap(
@@ -1608,27 +1626,36 @@ export function findLibraryPublicationContentSearchMatches(
   if (!q || contentEvents.length === 0 || indexEvents.length === 0) return []
 
   const matches: Array<{ root: Event; match: LibraryPublicationContentSearchMatch }> = []
-  const seenRoots = new Set<string>()
+  const bestByRootId = new Map<string, LibraryPublicationContentSearchMatch>()
 
   for (const ev of contentEvents) {
     if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
-    if (!publicationContentMatchesSearchQuery(ev, q)) continue
+    const matchScore = scorePublicationContentSearchQuery(ev.content ?? '', q)
+    if (matchScore <= 0) continue
 
     const addr = eventTagAddress(ev)
     if (!addr) continue
     const root = findPublicationRootForContentAddress(addr, indexEvents, indexByAddress)
-    if (!root || seenRoots.has(root.id)) continue
-    seenRoots.add(root.id)
-    matches.push({
-      root,
-      match: {
-        sectionAddress: addr,
-        highlightQuery: q,
-        contentEvent: ev
-      }
+    if (!root) continue
+
+    const prev = bestByRootId.get(root.id)
+    if (prev && prev.matchScore >= matchScore) continue
+
+    bestByRootId.set(root.id, {
+      sectionAddress: addr,
+      highlightQuery: q,
+      contentEvent: ev,
+      matchScore
     })
   }
-  return matches
+
+  for (const [rootId, match] of bestByRootId) {
+    const root = findPublicationRootForContentAddress(match.sectionAddress, indexEvents, indexByAddress)
+    if (!root || root.id !== rootId) continue
+    matches.push({ root, match })
+  }
+
+  return matches.sort((a, b) => b.match.matchScore - a.match.matchScore)
 }
 
 export function libraryPublicationRootsForContentEvents(
@@ -1788,7 +1815,7 @@ export async function searchLibraryPublications(
     contentMatches?: Map<string, LibraryPublicationContentSearchMatch>
   ) => {
     const indexByAddress = buildIndexByAddress(indexEvents)
-    const entries = sortLibraryPublications(
+    const entries = sortLibrarySearchPublications(
       libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT, contentMatches)
     )
     options?.onProgress?.({ entries, mergedIndexEvents: indexEvents })

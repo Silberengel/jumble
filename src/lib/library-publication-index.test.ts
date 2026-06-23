@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   buildEngagementMapsFromEvents,
+  buildLibraryPublicationEntry,
   buildDocumentRelayPublicationFilters,
   buildLibraryPublicationRelaySearchFilters,
   buildLibraryPublicationRelaySearchFiltersForAxis,
@@ -23,6 +24,7 @@ import {
   dTagSlugContainsHyphenNeedle,
   publicationQueryDTagVariants,
   libraryPublicationRootsForContentEvents,
+  sortLibrarySearchPublications,
   searchLibraryPublicationIndex,
   searchLibraryPublications
 } from '@/lib/library-publication-index'
@@ -742,5 +744,36 @@ describe('library-publication-index', () => {
     expect(
       libraryPublicationRootsForContentEvents('Chapter 1', [section], indexEvents, indexByAddress)
     ).toEqual([])
+  })
+
+  it('sortLibrarySearchPublications ranks exact phrase content matches first', () => {
+    const quote = 'I urged, when he halted once more.'
+    const exactRoot = indexEvent('jane-eyre', [`30041:${PK}:ch`])
+    exactRoot.created_at = 100
+    const weakRoot = indexEvent('other-book', [`30041:${PK}:other`])
+    weakRoot.created_at = 999
+    const indexByAddress = buildIndexByAddress([exactRoot, weakRoot])
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    const entries = sortLibrarySearchPublications([
+      {
+        ...buildLibraryPublicationEntry(weakRoot, indexByAddress, engagement),
+        contentSearchMatch: {
+          sectionAddress: `30041:${PK}:other`,
+          highlightQuery: quote,
+          contentEvent: weakRoot,
+          matchScore: 5
+        }
+      },
+      {
+        ...buildLibraryPublicationEntry(exactRoot, indexByAddress, engagement),
+        contentSearchMatch: {
+          sectionAddress: `30041:${PK}:ch`,
+          highlightQuery: quote,
+          contentEvent: exactRoot,
+          matchScore: 10_000 + quote.length
+        }
+      }
+    ])
+    expect(entries[0].event.id).toBe(exactRoot.id)
   })
 })

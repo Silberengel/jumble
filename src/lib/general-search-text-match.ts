@@ -85,8 +85,19 @@ export function generalSearchHaystack(ev: Event): string {
   return chunks.join('\n').toLowerCase()
 }
 
-/** Substring / multi-word match over a pre-built lowercase haystack. */
-export function haystackMatchesSearchQuery(haystack: string, query: string): boolean {
+/** True when the raw query is wrapped in matching quote characters. */
+export function isQuotedSearchQuery(raw: string): boolean {
+  const s = raw.trim()
+  return (
+    (s.startsWith('"') && s.endsWith('"')) ||
+    (s.startsWith("'") && s.endsWith("'")) ||
+    (s.startsWith('“') && s.endsWith('”')) ||
+    (s.startsWith('‘') && s.endsWith('’'))
+  )
+}
+
+/** Contiguous phrase match only (no scattered-word fallback). */
+export function haystackMatchesPhraseQuery(haystack: string, query: string): boolean {
   const raw = query.trim()
   if (!raw) return false
 
@@ -95,18 +106,61 @@ export function haystackMatchesSearchQuery(haystack: string, query: string): boo
   const needles = qSpace !== normalized ? [normalized, qSpace] : [normalized]
 
   for (const needle of needles) {
-    if (needle && haystack.includes(needle)) return true
+    if (needle.length >= 2 && haystack.includes(needle)) return true
+  }
+  return false
+}
+
+/**
+ * Relevance score for ranking search hits (higher = better).
+ * Phrase hits dominate; scattered multi-word matches score much lower.
+ */
+export function scoreHaystackSearchQuery(haystack: string, query: string): number {
+  const raw = query.trim()
+  if (!raw) return 0
+
+  const lower = haystack.toLowerCase()
+
+  if (isQuotedSearchQuery(raw)) {
+    return haystackMatchesPhraseQuery(lower, raw) ? 10_000 + normalizeGeneralSearchQuery(raw).length : 0
+  }
+
+  const normalized = normalizeGeneralSearchQuery(raw).toLowerCase()
+  const qSpace = normalized.replace(/-/g, ' ')
+  const needles = qSpace !== normalized ? [normalized, qSpace] : [normalized]
+
+  for (const needle of needles) {
+    if (needle && lower.includes(needle)) return 10_000 + needle.length
   }
 
   const words = generalSearchQueryTerms(raw)
-  if (words.length >= 2 && words.every((w) => haystack.includes(w))) return true
+  if (words.length >= 2) {
+    const matched = words.filter((w) => lower.includes(w))
+    if (matched.length === words.length) {
+      return 100 * matched.length + matched.reduce((sum, w) => sum + w.length, 0)
+    }
+    if (matched.length >= 2) {
+      return 10 * matched.length + matched.reduce((sum, w) => sum + w.length, 0)
+    }
+    return 0
+  }
 
-  return false
+  if (words.length === 1 && lower.includes(words[0])) return words[0].length
+  return 0
+}
+
+/** Substring / multi-word match over a pre-built lowercase haystack. */
+export function haystackMatchesSearchQuery(haystack: string, query: string): boolean {
+  return scoreHaystackSearchQuery(haystack, query) > 0
 }
 
 /** Match only {@link Event.content} (used for kind-30041 section body search). */
 export function publicationContentMatchesSearchQuery(ev: Event, query: string): boolean {
-  return haystackMatchesSearchQuery((ev.content ?? '').toLowerCase(), query)
+  return scorePublicationContentSearchQuery(ev.content ?? '', query) > 0
+}
+
+export function scorePublicationContentSearchQuery(content: string, query: string): number {
+  return scoreHaystackSearchQuery((content ?? '').toLowerCase(), query)
 }
 
 /** Best substring to highlight for a query that matched {@code haystack} (case preserved in caller). */

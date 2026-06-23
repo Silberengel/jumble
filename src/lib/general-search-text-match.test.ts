@@ -3,7 +3,8 @@ import {
   eventMatchesGeneralSearchQuery,
   generalSearchHaystack,
   generalSearchQueryTerms,
-  normalizeGeneralSearchQuery
+  normalizeGeneralSearchQuery,
+  scorePublicationContentSearchQuery
 } from '@/lib/general-search-text-match'
 import type { Event } from 'nostr-tools'
 
@@ -61,5 +62,24 @@ describe('eventMatchesGeneralSearchQuery', () => {
   it('matches quoted phrase against note content', () => {
     const note = ev({ kind: 1, content: 'Nostr is a thankless protocol.' })
     expect(eventMatchesGeneralSearchQuery(note, '"Nostr is a thankless protocol."')).toBe(true)
+  })
+
+  it('quoted content search requires exact phrase not scattered words', () => {
+    const quote = '"I urged, when he halted once more."'
+    const exact = 'She said: I urged, when he halted once more. Then paused.'
+    const scattered = 'They urged him when he once walked. More text here.'
+    expect(scorePublicationContentSearchQuery(exact, quote)).toBeGreaterThan(10_000)
+    expect(scorePublicationContentSearchQuery(scattered, quote)).toBe(0)
+  })
+
+  it('ranks phrase match above scattered multi-word match', () => {
+    const query = 'I urged, when he halted once more.'
+    const phrase = 'I urged, when he halted once more.'
+    const scattered = 'I had urged them when he halted. Once more they tried.'
+    const phraseScore = scorePublicationContentSearchQuery(phrase, query)
+    const scatteredScore = scorePublicationContentSearchQuery(scattered, query)
+    expect(phraseScore).toBeGreaterThan(10_000)
+    expect(scatteredScore).toBeGreaterThan(0)
+    expect(scatteredScore).toBeLessThan(phraseScore)
   })
 })
