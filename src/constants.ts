@@ -512,7 +512,6 @@ export const FAST_READ_RELAY_URLS = [
 
 // Optimized relay list for write operations (no aggregator since it's read-only)
 export const FAST_WRITE_RELAY_URLS = [
-  'wss://relay.primal.net',
   'wss://thecitadel.nostr1.com',
   'wss://nos.lol',
   'wss://freelay.sovbit.host'
@@ -677,6 +676,21 @@ export const ExtendedKind = {
   /** NIP-38: user status (addressable; `d` = status type such as `general` or `music`). */
   USER_STATUS: 30315
 }
+
+/**
+ * NIP-89 `client` tag substrings (case-insensitive) for clients that thread replies as kind 1111
+ * on kind-1 roots. When replying to kind 1, Imwald uses kind 1 except on notes from these clients.
+ * Keep in sync with aitherboard2 `KIND1111_REPLY_CLIENT_MATCHES`.
+ */
+export const KIND_1111_COMPATIBLE_CLIENT_TAG_SUBSTRINGS: readonly string[] = [
+  'aitherboard',
+  'Dark Wisp',
+  'jumble',
+  'amethyst',
+  'imwald',
+  'noornote',
+  'RelayTools-android'
+]
 
 /**
  * Replaceable kinds kept in session + in-memory cache only (no IndexedDB object store).
@@ -1130,7 +1144,6 @@ export const DEFAULT_NIP_96_SERVICE = 'https://nostr.build'
 export const DEFAULT_NOSTRCONNECT_RELAY = [
   'wss://relay.nsec.app/',
   'wss://bucket.coracle.social/',
-  'wss://relay.primal.net/',
   'wss://thecitadel.nostr1.com/'
 ]
 

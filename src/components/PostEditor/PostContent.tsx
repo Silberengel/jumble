@@ -47,6 +47,7 @@ import {
   isNip71ShortVideoKind,
   isNip71StyleVideoKind,
 } from '@/constants'
+import { resolveReplyDraftKind } from '@/lib/reply-kind'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
@@ -897,7 +898,7 @@ export default function PostContent({
     } else if (isPoll) {
       return ExtendedKind.POLL
     } else if (parentEvent) {
-      return ExtendedKind.COMMENT
+      return resolveReplyDraftKind(parentEvent)
     } else {
       return kinds.ShortTextNote
     }
@@ -1608,8 +1609,19 @@ export default function PostContent({
     }
 
 
-    // Comments and replies (kind 1111, including replies to kind 1)
     if (parentEvent) {
+      const replyKind = resolveReplyDraftKind(parentEvent)
+      if (replyKind === kinds.ShortTextNote) {
+        return await createShortTextNoteDraftEvent(cleanedText, mentions, {
+          parentEvent,
+          addClientTag,
+          ...contentWarningOpts,
+          addExpirationTag: addExpirationTag && isChattingKind(kinds.ShortTextNote),
+          expirationMonths,
+          mediaImetaTags: uploadImetaTagsOpt
+        })
+      }
+
       const replyRelays = Array.from(
         new Set([...relayHintsFromEventTags(parentEvent), ...additionalRelayUrls])
       )
