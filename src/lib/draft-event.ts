@@ -40,6 +40,7 @@ import { collectReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
 import { randomString } from './random'
 import { getImetaInfoFromImetaTag, tagNameEquals } from './tag'
+import { pubkeyFromThreadETag } from './thread-context-relays'
 
 function canonicalizeHttpUrlForITags(url: string): string {
   if (!url.startsWith('http://') && !url.startsWith('https://')) return url
@@ -267,8 +268,13 @@ export async function createShortTextNoteDraftEvent(
     tags.push(parentETag)
   }
 
-  // p tags
-  tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
+  // p tags — parent, thread OP, and mentions (NIP-10)
+  const pPubkeys = new Set(mentions)
+  const rootPk = pubkeyFromThreadETag(rootETag)
+  const parentPk = pubkeyFromThreadETag(parentETag)
+  if (rootPk) pPubkeys.add(rootPk)
+  if (parentPk) pPubkeys.add(parentPk)
+  tags.push(...[...pPubkeys].map((pubkey) => buildPTag(pubkey)))
 
   appendContentWarningTagIfNeeded(tags, options)
 

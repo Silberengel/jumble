@@ -125,6 +125,7 @@ import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { getPubkeysFromPTags, tagNameEquals } from '@/lib/tag'
 import { isReadOnlyRelayUrl } from '@/lib/relay-publish-filter'
 import { getPaymentAttestationTargetId } from '@/lib/superchat'
+import { pubkeyFromThreadETag } from '@/lib/thread-context-relays'
 import {
   buildPublicMessagePublishRelayUrls,
   collectRecipientInboxUrls
@@ -928,9 +929,11 @@ class ClientService extends EventTarget {
     for (const t of event.tags) {
       const name = t[0]
       const v = t[1]
-      const hint = t[3]
       if ((name === 'p' || name === 'P') && v) add(v)
-      if (name === 'e' && hint) add(hint)
+      if (name === 'e' || name === 'E') {
+        const pk = pubkeyFromThreadETag(t)
+        if (pk) add(pk)
+      }
     }
     return out
   }

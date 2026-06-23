@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { getParentEventHexId, getRootEventHexId } from '@/lib/event'
-import { pubkeyFromThreadETag, relayHintsFromThreadETag } from '@/lib/thread-context-relays'
+import {
+  collectThreadReplyInboxPubkeys,
+  peekThreadRootAuthorPubkey,
+  pubkeyFromThreadETag,
+  relayHintsFromThreadETag
+} from '@/lib/thread-context-relays'
 
 /** Damus-style NIP-10 reply (user report: parent missing on note page). */
 const DAMUS_REPLY_TAGS: string[][] = [
@@ -37,6 +42,21 @@ describe('NIP-10 Damus reply thread tags', () => {
     expect(relayHintsFromThreadETag(parentTag)).toEqual(['wss://relay.mostr.pub/'])
     expect(pubkeyFromThreadETag(parentTag)).toBe(
       'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319'
+    )
+  })
+
+  it('collectThreadReplyInboxPubkeys includes thread OP when replying under a nested note', () => {
+    const reply = {
+      kind: 1,
+      pubkey: 'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319',
+      tags: DAMUS_REPLY_TAGS
+    } as import('nostr-tools').Event
+    expect(collectThreadReplyInboxPubkeys(reply)).toEqual([
+      'dd664d5e4016433a8cd69f005ae1480804351789b59de5af06276de65633d319',
+      'b133bfc57bed61c391d4e8f953b906c7f1709c438d91c75fb6daf79449d5789d'
+    ])
+    expect(peekThreadRootAuthorPubkey(reply)).toBe(
+      'b133bfc57bed61c391d4e8f953b906c7f1709c438d91c75fb6daf79449d5789d'
     )
   })
 })

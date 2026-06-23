@@ -22,6 +22,7 @@ import indexedDb from '@/services/indexed-db.service'
 import { getHttpRelayListFromEvent, getRelayListFromEvent } from '@/lib/event-metadata'
 import { stripLocalNetworkRelaysFromRelayList } from '@/lib/relay-list-sanitize'
 import { isProtectedEvent } from '@/lib/event'
+import { collectThreadReplyInboxPubkeys } from '@/lib/thread-context-relays'
 import { dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
 import { nip66Service } from '@/services/nip66.service'
 
@@ -133,9 +134,11 @@ class RelaySelectionService {
       out.push(pk)
     }
 
-    if (parentEvent) add(parentEvent.pubkey)
-
-    if (isPublicMessage && userPubkey) {
+    if (parentEvent) {
+      for (const pk of collectThreadReplyInboxPubkeys(parentEvent, userPubkey)) {
+        add(pk)
+      }
+    } else if (isPublicMessage && userPubkey) {
       if (mentions && mentions.length > 0) {
         mentions.forEach((pk) => add(pk))
       } else if (content) {
@@ -420,12 +423,14 @@ class RelaySelectionService {
         // Get the replied-to author's read relays (filter out their local relays)
         // Use cached version from IndexedDB instead of fetching from relays
         if (parentEvent) {
-          const authorRelayList = await this.getCachedRelayList(parentEvent.pubkey)
-          if (authorRelayList) {
-            const filteredRelays = this.filterLocalRelaysFromOthers(
-              collectRemoteReadInboxUrlsFromRelayList(authorRelayList)
-            )
-            filteredRelays.slice(0, 4).forEach(url => contextualRelays.add(url))
+          for (const pubkey of collectThreadReplyInboxPubkeys(parentEvent, userPubkey)) {
+            const authorRelayList = await this.getCachedRelayList(pubkey)
+            if (authorRelayList) {
+              const filteredRelays = this.filterLocalRelaysFromOthers(
+                collectRemoteReadInboxUrlsFromRelayList(authorRelayList)
+              )
+              filteredRelays.slice(0, 4).forEach(url => contextualRelays.add(url))
+            }
           }
         }
 
@@ -437,12 +442,9 @@ class RelaySelectionService {
 
         // For replies and public messages, get mentioned users' relays
         if (userPubkey) {
-          let mentions: string[] = []
-          
-          // Always include parent event author for replies
-          if (parentEvent) {
-            mentions.push(parentEvent.pubkey)
-          }
+          let mentions: string[] = parentEvent
+            ? collectThreadReplyInboxPubkeys(parentEvent, userPubkey)
+            : []
           
           // Extract additional mentions from content if available
           if (content) {
@@ -520,8 +522,9 @@ class RelaySelectionService {
 
       // Add mention relays
       if (userPubkey) {
-        let mentions: string[] = []
-        if (parentEvent) mentions.push(parentEvent.pubkey)
+        let mentions: string[] = parentEvent
+          ? collectThreadReplyInboxPubkeys(parentEvent, userPubkey)
+          : []
         if (content) {
           const contentMentions = await this.extractMentions(content, parentEvent)
           mentions = [...new Set([...mentions, ...contentMentions])]
@@ -853,9 +856,10 @@ class RelaySelectionService {
   private async extractMentions(content: string, parentEvent?: Event): Promise<string[]> {
     const pubkeys: string[] = []
     
-    // Always include parent event author if there's a parent event
     if (parentEvent) {
-      pubkeys.push(parentEvent.pubkey)
+      for (const pk of collectThreadReplyInboxPubkeys(parentEvent)) {
+        if (!pubkeys.includes(pk)) pubkeys.push(pk)
+      }
     }
     
     // Extract nostr addresses from content
