@@ -145,7 +145,12 @@ export default function LibraryPublicationGrid({
               'flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden'
             )}
           >
-            <PublicationCard event={entry.event} presentation="library" className="border-0 shadow-none rounded-none" />
+            <PublicationCard
+              event={entry.event}
+              presentation="library"
+              className="border-0 shadow-none rounded-none"
+              contentSearchMatch={entry.contentSearchMatch}
+            />
             <EngagementBadges entry={entry} />
           </div>
         ))}

@@ -1,4 +1,5 @@
 import { ExtendedKind } from '@/constants'
+import { eventTagAddress } from '@/lib/publication-index'
 import { orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
 import {
   batchFetchPublicationSectionEvents,
@@ -45,6 +46,67 @@ export function collectPendingPublicationSectionLoads(
 
   walk(rootIndex)
   return out
+}
+
+function addressFromFetchedRef(
+  ref: PublicationSectionRef,
+  fetched: ReadonlyMap<string, Event>
+): string | undefined {
+  const coord = ref.coordinate?.trim().toLowerCase()
+  if (coord) return coord
+  const key = publicationRefKey(ref)
+  const ev = key ? fetched.get(key) : undefined
+  return ev ? eventTagAddress(ev)?.toLowerCase() : undefined
+}
+
+/** Loads along the tree path until {@code targetAddress} is reachable (inclusive). */
+export function collectPublicationSectionLoadsForAddress(
+  rootIndex: Event,
+  fetched: ReadonlyMap<string, Event>,
+  failed: ReadonlySet<string>,
+  inFlight: ReadonlySet<string>,
+  targetAddress: string
+): PublicationSectionLoadTask[] {
+  const target = targetAddress.trim().toLowerCase()
+  const tasks: PublicationSectionLoadTask[] = []
+
+  function walk(indexEvent: Event): boolean {
+    for (const ref of orderedPublicationRefsFromIndex(indexEvent)) {
+      const key = publicationRefKey(ref)
+      if (!key || failed.has(key)) continue
+
+      const refAddress = addressFromFetchedRef(ref, fetched)
+      const isTarget = refAddress === target
+
+      if (!fetched.has(key) && !inFlight.has(key)) {
+        tasks.push({ ref, indexEvent })
+      }
+
+      if (isTarget) return true
+
+      const ev = fetched.get(key)
+      if (ev && isPublicationBranchRef(ref) && ev.kind === ExtendedKind.PUBLICATION) {
+        if (walk(ev)) return true
+      }
+    }
+    return false
+  }
+
+  walk(rootIndex)
+  return tasks
+}
+
+export function fetchedPublicationEventForAddress(
+  fetched: ReadonlyMap<string, Event>,
+  targetAddress: string
+): Event | undefined {
+  const target = targetAddress.trim().toLowerCase()
+  const direct = fetched.get(target)
+  if (direct) return direct
+  for (const ev of fetched.values()) {
+    if (eventTagAddress(ev)?.toLowerCase() === target) return ev
+  }
+  return undefined
 }
 
 export async function fetchPublicationSection(

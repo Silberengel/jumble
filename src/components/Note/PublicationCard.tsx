@@ -4,7 +4,8 @@ import {
   getLongFormArticleMetadataFromEvent,
   getPublicationIndexMetadataFromEvent
 } from '@/lib/event-metadata'
-import { persistLibraryPublicationForReading } from '@/lib/library-publication-index'
+import { persistLibraryPublicationForReading, type LibraryPublicationContentSearchMatch } from '@/lib/library-publication-index'
+import { setLibraryPublicationReadingIntent } from '@/lib/library-publication-reading-intent'
 import { toNote, toNoteList } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useSecondaryPageOptional, useSmartNoteNavigationOptional } from '@/PageManager'
@@ -23,13 +24,15 @@ export default function PublicationCard({
   className,
   disableNavigation = false,
   /** Library grid: stacked cover on top, compact cover height. */
-  presentation = 'default'
+  presentation = 'default',
+  contentSearchMatch
 }: {
   event: Event
   className?: string
   /** When true (e.g. full note view), card is display-only; no navigate-to-note on click. */
   disableNavigation?: boolean
   presentation?: 'default' | 'library'
+  contentSearchMatch?: LibraryPublicationContentSearchMatch
 }) {
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
@@ -52,6 +55,14 @@ export default function PublicationCard({
     e.stopPropagation()
     if (disableNavigation) return
     persistLibraryPublicationForReading(event)
+    if (contentSearchMatch) {
+      setLibraryPublicationReadingIntent({
+        rootEventId: event.id,
+        sectionAddress: contentSearchMatch.sectionAddress,
+        highlightQuery: contentSearchMatch.highlightQuery,
+        contentEvent: contentSearchMatch.contentEvent
+      })
+    }
     navigateToNote(toNote(event), event)
   }
 

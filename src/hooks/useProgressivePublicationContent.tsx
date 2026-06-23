@@ -2,7 +2,9 @@ import { isMobileBrowserProfile } from '@/lib/client-platform'
 import { indexPublicationEvents } from '@/lib/publication-asciidoc-assembler'
 import {
   collectPendingPublicationSectionLoads,
+  collectPublicationSectionLoadsForAddress,
   fetchPublicationSection,
+  fetchedPublicationEventForAddress,
   type PublicationSectionLoadTask
 } from '@/lib/publication-section-loader'
 import { publicationRefKey, type PublicationSectionRef } from '@/lib/publication-section-fetch'
@@ -18,15 +20,25 @@ function initialPrefetchCount(): number {
 export function useProgressivePublicationContent(
   rootIndex: Event,
   relayUrls: string[],
-  options?: { enabled?: boolean }
+  options?: {
+    enabled?: boolean
+    seedContentEvent?: Event
+    priorityAddress?: string
+    /** When false, skip read-ahead and bulk prefetch (keeps quote scroll stable). */
+    backgroundLoads?: boolean
+  }
 ) {
   const enabled = options?.enabled ?? true
+  const seedContentEvent = options?.seedContentEvent
+  const priorityAddress = options?.priorityAddress?.trim() || undefined
+  const backgroundLoads = options?.backgroundLoads ?? true
   const enabledRef = useRef(enabled)
   enabledRef.current = enabled
 
   const [fetched, setFetched] = useState<Map<string, Event>>(() => {
     const seed = new Map<string, Event>()
     indexPublicationEvents(seed, [rootIndex])
+    if (seedContentEvent) indexPublicationEvents(seed, [seedContentEvent])
     return seed
   })
   const [failedKeys, setFailedKeys] = useState<Set<string>>(() => new Set())
@@ -43,11 +55,12 @@ export function useProgressivePublicationContent(
   useEffect(() => {
     const seed = new Map<string, Event>()
     indexPublicationEvents(seed, [rootIndex])
+    if (seedContentEvent) indexPublicationEvents(seed, [seedContentEvent])
     setFetched(seed)
     setFailedKeys(new Set())
     setLoadingKeys(new Set())
     inFlightRef.current = new Set()
-  }, [rootIndex.id, relayKey, rootIndex])
+  }, [rootIndex.id, relayKey, rootIndex, seedContentEvent?.id])
 
   const loadSection = useCallback(
     async (ref: PublicationSectionRef, indexEvent: Event) => {
@@ -110,7 +123,32 @@ export function useProgressivePublicationContent(
   useEffect(() => {
     if (!enabled) return
     let cancelled = false
+
+    const loadPriorityPath = async () => {
+      if (!priorityAddress) return
+      for (let attempt = 0; attempt < 48; attempt++) {
+        if (cancelled || !enabledRef.current) return
+        if (fetchedPublicationEventForAddress(fetchedRef.current, priorityAddress)) return
+
+        const tasks = collectPublicationSectionLoadsForAddress(
+          rootIndex,
+          fetchedRef.current,
+          failedRef.current,
+          inFlightRef.current,
+          priorityAddress
+        )
+        if (tasks.length === 0) return
+
+        for (const task of tasks.slice(0, 4)) {
+          if (cancelled) return
+          await loadSection(task.ref, task.indexEvent)
+        }
+      }
+    }
+
     ;(async () => {
+      await loadPriorityPath()
+      if (cancelled || !backgroundLoads) return
       const pending = collectPendingPublicationSectionLoads(
         rootIndex,
         fetchedRef.current,
@@ -125,7 +163,7 @@ export function useProgressivePublicationContent(
     return () => {
       cancelled = true
     }
-  }, [enabled, rootIndex.id, relayKey, loadSection, rootIndex])
+  }, [enabled, rootIndex.id, relayKey, loadSection, rootIndex, priorityAddress, backgroundLoads])
 
   const readAhead = useCallback(() => {
     if (!enabledRef.current) return
@@ -139,9 +177,9 @@ export function useProgressivePublicationContent(
   }, [prefetchTasks, rootIndex])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled || !backgroundLoads) return
     readAhead()
-  }, [enabled, fetched, failedKeys, readAhead])
+  }, [enabled, backgroundLoads, fetched, failedKeys, readAhead])
 
   return {
     fetched,

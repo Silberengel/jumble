@@ -22,6 +22,7 @@ import {
   publicationIndexMatchesSearchQuery,
   dTagSlugContainsHyphenNeedle,
   publicationQueryDTagVariants,
+  libraryPublicationRootsForContentEvents,
   searchLibraryPublicationIndex,
   searchLibraryPublications
 } from '@/lib/library-publication-index'
@@ -705,5 +706,41 @@ describe('library-publication-index', () => {
       myBooklistAddresses: new Set([rootAddr])
     })
     expect(filtered).toHaveLength(1)
+  })
+
+  it('publicationIndexMatchesSearchQuery skips kind-30040 content field', () => {
+    const root = indexEvent('book', [`30041:${PK}:intro`])
+    root.content = 'only in root content'
+    expect(publicationIndexMatchesSearchQuery(root, 'only in root content')).toBe(false)
+    expect(publicationIndexMatchesSearchQuery(root, 'Title book')).toBe(true)
+  })
+
+  it('libraryPublicationRootsForContentEvents maps section body text to publication roots', () => {
+    const quote = 'said Evangelist, pointing with his finger over a very wide field'
+    const contentD = 'pilgrims-progress-ch-1'
+    const contentAddr = `30041:${PK}:${contentD}`
+    const root = indexEvent('pilgrims-progress', [contentAddr])
+    root.tags = [
+      ['d', 'pilgrims-progress'],
+      ['title', "Pilgrim's Progress"],
+      ['a', contentAddr]
+    ]
+    const section = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION_CONTENT,
+        created_at: 100,
+        content: `Then ${quote}, that I saw.`,
+        tags: [['d', contentD], ['title', 'Chapter 1']]
+      },
+      sk
+    )
+    const indexEvents = [root]
+    const indexByAddress = buildIndexByAddress(indexEvents)
+    expect(
+      libraryPublicationRootsForContentEvents(quote, [section], indexEvents, indexByAddress)
+    ).toEqual([root])
+    expect(
+      libraryPublicationRootsForContentEvents('Chapter 1', [section], indexEvents, indexByAddress)
+    ).toEqual([])
   })
 })

@@ -165,6 +165,21 @@ export function buildPublicationSectionTree(
   return nodes
 }
 
+export function findPublicationSectionNodeByAddress(
+  nodes: PublicationSectionTreeNode[],
+  targetAddress: string
+): PublicationSectionTreeNode | undefined {
+  const target = targetAddress.trim().toLowerCase()
+  for (const node of nodes) {
+    const coord = node.ref.coordinate?.trim().toLowerCase()
+    const addr = node.event ? eventTagAddress(node.event)?.toLowerCase() : undefined
+    if (coord === target || addr === target) return node
+    const nested = findPublicationSectionNodeByAddress(node.children, targetAddress)
+    if (nested) return nested
+  }
+  return undefined
+}
+
 /** Depth-first flattening preserves the same order as {@link buildPublicationSectionTree}. */
 export function flattenPublicationSectionTreeForToc(
   nodes: PublicationSectionTreeNode[]

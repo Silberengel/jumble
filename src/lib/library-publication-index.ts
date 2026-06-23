@@ -1,10 +1,13 @@
 import { DOCUMENT_RELAY_URLS, ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
+import { tryParseCitationEventIdFromQuery } from '@/lib/citation-picker-search'
 import {
-  eventMatchesGeneralSearchQuery,
-  generalSearchHaystack,
   generalSearchQueryTerms,
-  normalizeGeneralSearchQuery
+  haystackMatchesSearchQuery,
+  metadataSearchHaystack,
+  normalizeGeneralSearchQuery,
+  publicationContentMatchesSearchQuery
 } from '@/lib/general-search-text-match'
+import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
 import logger from '@/lib/logger'
 import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label'
@@ -127,6 +130,12 @@ export type PublicationEngagementMaps = {
   pinEventIds: Set<string>
 }
 
+export type LibraryPublicationContentSearchMatch = {
+  sectionAddress: string
+  highlightQuery: string
+  contentEvent: Event
+}
+
 export type LibraryPublicationEntry = {
   event: Event
   hasLabel: boolean
@@ -141,6 +150,8 @@ export type LibraryPublicationEntry = {
   hasBookmark: boolean
   hasPin: boolean
   engagementCount: number
+  /** Set when this row matched via kind-30041 section body text. */
+  contentSearchMatch?: LibraryPublicationContentSearchMatch
 }
 
 type LibraryIndexCache = {
@@ -1525,9 +1536,9 @@ export function libraryPublicationEntriesForUserFromIndexAsync(
   })
 }
 
-/** Haystack for kind-30040 index search: general fields plus section refs and language tags. */
+/** Haystack for kind-30040 index search: metadata tags plus section refs and language tags (no content). */
 export function publicationIndexSearchHaystack(event: Event): string {
-  const base = generalSearchHaystack(event)
+  const base = metadataSearchHaystack(event)
   if (event.kind !== ExtendedKind.PUBLICATION) return base
 
   const extra: string[] = []
@@ -1547,23 +1558,18 @@ export function publicationIndexSearchHaystack(event: Event): string {
 }
 
 export function publicationIndexMatchesSearchQuery(event: Event, query: string): boolean {
-  if (eventMatchesGeneralSearchQuery(event, query)) return true
   if (event.kind !== ExtendedKind.PUBLICATION) return false
 
   const raw = query.trim()
   if (!raw) return false
 
-  const haystack = publicationIndexSearchHaystack(event)
-  const normalized = normalizeGeneralSearchQuery(raw).toLowerCase()
-  const qSpace = normalized.replace(/-/g, ' ')
-  const needles = qSpace !== normalized ? [normalized, qSpace] : [normalized]
-  for (const needle of needles) {
-    if (needle && haystack.includes(needle)) return true
-  }
+  const decodedAuthor = decodeProfileSearchQueryToPubkeyHex(raw)
+  if (decodedAuthor && event.pubkey.toLowerCase() === decodedAuthor) return true
 
-  const words = generalSearchQueryTerms(raw)
-  if (words.length >= 2 && words.every((w) => haystack.includes(w))) return true
-  return false
+  const eventId = tryParseCitationEventIdFromQuery(raw)
+  if (eventId && event.id.toLowerCase() === eventId) return true
+
+  return haystackMatchesSearchQuery(publicationIndexSearchHaystack(event), raw)
 }
 
 function buildAddressToRootMap(
@@ -1581,12 +1587,72 @@ function buildAddressToRootMap(
   return map
 }
 
+function findPublicationRootForContentAddress(
+  contentAddress: string,
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): Event | undefined {
+  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+  return addressToRoot.get(contentAddress)
+}
+
+/** Map kind-30041 content hits to top-level kind-30040 publication roots via `a` tag refs. */
+export function findLibraryPublicationContentSearchMatches(
+  query: string,
+  contentEvents: Event[],
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): Array<{ root: Event; match: LibraryPublicationContentSearchMatch }> {
+  const q = query.trim()
+  if (!q || contentEvents.length === 0 || indexEvents.length === 0) return []
+
+  const matches: Array<{ root: Event; match: LibraryPublicationContentSearchMatch }> = []
+  const seenRoots = new Set<string>()
+
+  for (const ev of contentEvents) {
+    if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
+    if (!publicationContentMatchesSearchQuery(ev, q)) continue
+
+    const addr = eventTagAddress(ev)
+    if (!addr) continue
+    const root = findPublicationRootForContentAddress(addr, indexEvents, indexByAddress)
+    if (!root || seenRoots.has(root.id)) continue
+    seenRoots.add(root.id)
+    matches.push({
+      root,
+      match: {
+        sectionAddress: addr,
+        highlightQuery: q,
+        contentEvent: ev
+      }
+    })
+  }
+  return matches
+}
+
+export function libraryPublicationRootsForContentEvents(
+  query: string,
+  contentEvents: Event[],
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): Event[] {
+  return findLibraryPublicationContentSearchMatches(query, contentEvents, indexEvents, indexByAddress).map(
+    ({ root }) => root
+  )
+}
+
 function libraryEntriesFromRoots(
   roots: Event[],
   indexByAddress: Map<string, Event>,
-  engagement: PublicationEngagementMaps
+  engagement: PublicationEngagementMaps,
+  contentMatchesByRootId?: Map<string, LibraryPublicationContentSearchMatch>
 ): LibraryPublicationEntry[] {
-  return roots.map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
+  return roots.map((root) => {
+    const entry = buildLibraryPublicationEntry(root, indexByAddress, engagement)
+    const contentSearchMatch = contentMatchesByRootId?.get(root.id)
+    return contentSearchMatch ? { ...entry, contentSearchMatch } : entry
+  })
 }
 
 const LIBRARY_SEARCH_BATCH_SIZE = 80
@@ -1703,8 +1769,9 @@ export type LibrarySearchContext = {
 }
 
 /**
- * Search publications across the library index cache (all loaded kind-30040 rows) and the
- * publication reading cache ({@link StoreNames.PUBLICATION_EVENTS}).
+ * Search publications across the library index cache (all loaded kind-30040 rows), the
+ * publication reading cache ({@link StoreNames.PUBLICATION_EVENTS}), and kind-30041 section
+ * body text (content only, mapped back to top-level roots).
  */
 export async function searchLibraryPublications(
   query: string,
@@ -1715,10 +1782,14 @@ export async function searchLibraryPublications(
   const q = query.trim()
   if (!q) return []
 
-  const report = (roots: Event[], indexEvents: Event[]) => {
+  const report = (
+    roots: Event[],
+    indexEvents: Event[],
+    contentMatches?: Map<string, LibraryPublicationContentSearchMatch>
+  ) => {
     const indexByAddress = buildIndexByAddress(indexEvents)
     const entries = sortLibraryPublications(
-      libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT)
+      libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT, contentMatches)
     )
     options?.onProgress?.({ entries, mergedIndexEvents: indexEvents })
     return entries
@@ -1744,9 +1815,10 @@ export async function searchLibraryPublications(
 
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
   const indexByAddress = buildIndexByAddress(indexEvents)
+  const contentMatchesByRootId = new Map<string, LibraryPublicationContentSearchMatch>()
   const fromIndex = await searchLibraryPublicationIndexAsync(q, indexEvents, indexByAddress, axis, {
     onProgress: (roots) => {
-      report(roots, indexEvents)
+      report(roots, indexEvents, contentMatchesByRootId)
     }
   })
   const rootMap = new Map<string, Event>()
@@ -1787,8 +1859,34 @@ export async function searchLibraryPublications(
     }
   }
 
+  if (!axis) {
+    try {
+      const fromContentCache = await indexedDb.getCachedEventsForSearch(
+        q,
+        LIBRARY_SEARCH_READING_CACHE_LIMIT,
+        [ExtendedKind.PUBLICATION_CONTENT],
+        { scanBudget: 20_000, collectCap: 400 }
+      )
+      for (const { root, match } of findLibraryPublicationContentSearchMatches(
+        q,
+        fromContentCache,
+        indexEvents,
+        indexByAddress
+      )) {
+        contentMatchesByRootId.set(root.id, match)
+        if (!rootMap.has(root.id)) rootMap.set(root.id, root)
+      }
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] content-cache search failed', {
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
+    }
+  }
+
   const roots = [...rootMap.values()]
-  const entries = report(roots, indexEvents)
+  const entries = report(roots, indexEvents, contentMatchesByRootId)
 
   const searchContext: LibrarySearchContext = { indexEvents, engagement }
   const prev = getLibrarySearchSessionRow(q, searchContext, { axis })

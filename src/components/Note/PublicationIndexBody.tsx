@@ -3,11 +3,18 @@ import MarkdownArticle from '@/components/Note/LazyMarkdownArticle'
 import NoteOptions from '@/components/NoteOptions'
 import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
 import { useProgressivePublicationContent } from '@/hooks/useProgressivePublicationContent'
+import { usePublicationSearchHighlight } from '@/hooks/usePublicationSearchHighlight'
 import { useNearViewport } from '@/hooks/useNearViewport'
+import {
+  consumeLibraryPublicationReadingIntent,
+  LIBRARY_PUBLICATION_READING_INTENT_EVENT
+} from '@/lib/library-publication-reading-intent'
+import { eventTagAddress } from '@/lib/publication-index'
 import { orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
 import { publicationRefKey } from '@/lib/publication-section-fetch'
 import {
   buildPublicationSectionTree,
+  findPublicationSectionNodeByAddress,
   flattenPublicationSectionTreeForToc,
   type PublicationSectionTreeNode
 } from '@/lib/publication-section-tree'
@@ -17,7 +24,7 @@ import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { BookOpen, Loader2 } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const ASCIIDOC_CONTENT_KINDS = new Set<number>([
@@ -26,6 +33,13 @@ const ASCIIDOC_CONTENT_KINDS = new Set<number>([
 ])
 
 type HeadingTag = 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+
+function sectionNodeMatchesAddress(node: PublicationSectionTreeNode, targetAddress: string): boolean {
+  const target = targetAddress.trim().toLowerCase()
+  const coord = node.ref.coordinate?.trim().toLowerCase()
+  const addr = node.event ? eventTagAddress(node.event)?.toLowerCase() : undefined
+  return coord === target || addr === target
+}
 
 function SectionHeadingRow({
   title,
@@ -46,18 +60,45 @@ function SectionHeadingRow({
   )
 }
 
-function SectionContent({ event }: { event: Event }) {
+function SectionContent({
+  event,
+  highlightQuery,
+  highlightActive,
+  onHighlightAnchored
+}: {
+  event: Event
+  highlightQuery?: string
+  highlightActive?: boolean
+  onHighlightAnchored?: () => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  usePublicationSearchHighlight(
+    containerRef,
+    highlightQuery ?? '',
+    Boolean(highlightActive && highlightQuery?.trim()),
+    { onAnchored: onHighlightAnchored }
+  )
+
   if (ASCIIDOC_CONTENT_KINDS.has(event.kind)) {
     return (
-      <AsciidocArticle className="mt-2" event={event} hideImagesAndInfo hideTitle />
+      <div ref={containerRef} className="mt-2">
+        <AsciidocArticle className="mt-0" event={event} hideImagesAndInfo hideTitle />
+      </div>
     )
   }
   if (event.kind === kinds.LongFormArticle) {
-    return <MarkdownArticle className="mt-2" event={event} hideMetadata hideTitle />
+    return (
+      <div ref={containerRef} className="mt-2">
+        <MarkdownArticle className="mt-0" event={event} hideMetadata hideTitle />
+      </div>
+    )
   }
   if ((event.content ?? '').trim()) {
     return (
-      <div className="mt-2 whitespace-pre-wrap break-words text-base text-foreground">
+      <div
+        ref={containerRef}
+        className="mt-2 whitespace-pre-wrap break-words text-base text-foreground"
+      >
         {event.content}
       </div>
     )
@@ -87,13 +128,21 @@ function PublicationSectionNodeView({
   failedKeys,
   loadingKeys,
   onRequestLoad,
-  onReadAhead
+  onReadAhead,
+  highlightSectionAddress,
+  highlightQuery,
+  shouldDeferSectionLoad,
+  onHighlightAnchored
 }: {
   node: PublicationSectionTreeNode
   failedKeys: ReadonlySet<string>
   loadingKeys: ReadonlySet<string>
   onRequestLoad: (ref: PublicationSectionTreeNode['ref'], indexEvent: Event) => void
   onReadAhead: () => void
+  highlightSectionAddress?: string
+  highlightQuery?: string
+  shouldDeferSectionLoad?: (sectionId: string) => boolean
+  onHighlightAnchored?: () => void
 }) {
   const Heading = `h${Math.min(6, node.depth + 2)}` as HeadingTag
   const sectionElRef = useRef<HTMLElement>(null)
@@ -101,13 +150,22 @@ function PublicationSectionNodeView({
   const isMissing = Boolean(refKey && failedKeys.has(refKey))
   const isLoading = Boolean(refKey && loadingKeys.has(refKey))
   const needsLoad = Boolean(refKey && !node.event && !isMissing && !isLoading)
-  const isNear = useNearViewport(sectionElRef, { enabled: needsLoad, marginPx: 480 })
+  const deferViewportLoad = shouldDeferSectionLoad?.(node.sectionId) ?? false
+  const isNear = useNearViewport(sectionElRef, {
+    enabled: needsLoad && !deferViewportLoad,
+    marginPx: 480
+  })
+  const shouldHighlight = Boolean(
+    highlightSectionAddress &&
+      highlightQuery &&
+      sectionNodeMatchesAddress(node, highlightSectionAddress)
+  )
 
   useEffect(() => {
-    if (!needsLoad || !isNear) return
+    if (!needsLoad || !isNear || deferViewportLoad) return
     onRequestLoad(node.ref, node.indexEvent)
     onReadAhead()
-  }, [needsLoad, isNear, node.ref, node.indexEvent, onRequestLoad, onReadAhead])
+  }, [needsLoad, isNear, deferViewportLoad, node.ref, node.indexEvent, onRequestLoad, onReadAhead])
 
   return (
     <section
@@ -133,6 +191,10 @@ function PublicationSectionNodeView({
                 loadingKeys={loadingKeys}
                 onRequestLoad={onRequestLoad}
                 onReadAhead={onReadAhead}
+                highlightSectionAddress={highlightSectionAddress}
+                highlightQuery={highlightQuery}
+                shouldDeferSectionLoad={shouldDeferSectionLoad}
+                onHighlightAnchored={onHighlightAnchored}
               />
             ))}
           </div>
@@ -146,7 +208,12 @@ function PublicationSectionNodeView({
       ) : isLoading || needsLoad ? (
         <SectionLoadingPlaceholder />
       ) : node.event ? (
-        <SectionContent event={node.event} />
+        <SectionContent
+          event={node.event}
+          highlightQuery={highlightQuery}
+          highlightActive={shouldHighlight}
+          onHighlightAnchored={onHighlightAnchored}
+        />
       ) : (
         <SectionMissingPlaceholder />
       )}
@@ -240,14 +307,47 @@ export default function PublicationIndexBody({
     [currentBrowsingRelayUrls, favoriteRelays]
   )
 
+  const [readingIntent, setReadingIntent] = useState<ReturnType<typeof consumeLibraryPublicationReadingIntent>>(null)
   const [readingStarted, setReadingStarted] = useState(false)
+  const [backgroundLoadsEnabled, setBackgroundLoadsEnabled] = useState(true)
 
-  useEffect(() => {
-    setReadingStarted(false)
+  useLayoutEffect(() => {
+    const applyIntent = () => {
+      const intent = consumeLibraryPublicationReadingIntent(event.id)
+      if (!intent) return
+      setReadingIntent(intent)
+      setReadingStarted(true)
+      setBackgroundLoadsEnabled(false)
+    }
+    applyIntent()
+    window.addEventListener(LIBRARY_PUBLICATION_READING_INTENT_EVENT, applyIntent)
+    return () => window.removeEventListener(LIBRARY_PUBLICATION_READING_INTENT_EVENT, applyIntent)
   }, [event.id])
 
+  const targetSectionAddress = readingIntent?.sectionAddress
+  const highlightQuery = readingIntent?.highlightQuery
+
+  const enableBackgroundLoads = useCallback(() => {
+    setBackgroundLoadsEnabled(true)
+  }, [])
+
+  useEffect(() => {
+    if (!targetSectionAddress) {
+      setBackgroundLoadsEnabled(true)
+      return
+    }
+    setBackgroundLoadsEnabled(false)
+    const fallback = window.setTimeout(enableBackgroundLoads, 6_000)
+    return () => window.clearTimeout(fallback)
+  }, [targetSectionAddress, enableBackgroundLoads])
+
   const { fetched, failedKeys, loadingKeys, requestLoad, readAhead } =
-    useProgressivePublicationContent(event, relayUrls, { enabled: readingStarted })
+    useProgressivePublicationContent(event, relayUrls, {
+      enabled: readingStarted,
+      seedContentEvent: readingIntent?.contentEvent,
+      priorityAddress: readingIntent?.sectionAddress,
+      backgroundLoads: backgroundLoadsEnabled
+    })
 
   const sectionTree = useMemo(
     () => buildPublicationSectionTree(event, fetched),
@@ -259,18 +359,41 @@ export default function PublicationIndexBody({
     [sectionTree]
   )
 
+  const targetSectionId = useMemo(() => {
+    if (!targetSectionAddress) return undefined
+    return findPublicationSectionNodeByAddress(sectionTree, targetSectionAddress)?.sectionId
+  }, [sectionTree, targetSectionAddress])
+
+  const targetTocIndex = useMemo(() => {
+    if (!targetSectionId) return -1
+    return tocEntries.findIndex((entry) => entry.id === targetSectionId)
+  }, [tocEntries, targetSectionId])
+
+  const shouldDeferSectionLoad = useCallback(
+    (sectionId: string) => {
+      if (backgroundLoadsEnabled || targetTocIndex < 0) return false
+      const index = tocEntries.findIndex((entry) => entry.id === sectionId)
+      return index >= 0 && index < targetTocIndex
+    },
+    [backgroundLoadsEnabled, targetTocIndex, tocEntries]
+  )
+
   const startReading = useCallback(() => {
     setReadingStarted(true)
   }, [])
 
   useEffect(() => {
-    if (!readingStarted) return
+    if (!readingStarted || targetSectionAddress) return
     const firstId = tocEntries[0]?.id
     if (!firstId) return
     requestAnimationFrame(() => {
       document.getElementById(firstId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
-  }, [readingStarted, tocEntries])
+  }, [readingStarted, tocEntries, targetSectionAddress])
+
+  const handleHighlightAnchored = useCallback(() => {
+    window.setTimeout(enableBackgroundLoads, 1_500)
+  }, [enableBackgroundLoads])
 
   const hasRefs = orderedPublicationRefsFromIndex(event).length > 0
   if (!hasRefs) return null
@@ -291,7 +414,11 @@ export default function PublicationIndexBody({
               failedKeys={failedKeys}
               loadingKeys={loadingKeys}
               onRequestLoad={requestLoad}
-              onReadAhead={readAhead}
+              onReadAhead={backgroundLoadsEnabled ? readAhead : () => {}}
+              highlightSectionAddress={targetSectionAddress}
+              highlightQuery={highlightQuery}
+              shouldDeferSectionLoad={shouldDeferSectionLoad}
+              onHighlightAnchored={handleHighlightAnchored}
             />
           ))}
         </div>
