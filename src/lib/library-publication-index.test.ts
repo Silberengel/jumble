@@ -9,6 +9,7 @@ import {
   buildRecentPublicationEntries,
   clearLibrarySearchSessionCache,
   computeLibraryFeedRootOrder,
+  filterPublicationContentEventsForQuery,
   filterEngagedPublications,
   filterEventsForPublicationRelaySearchAxis,
   filterLibraryPublicationsBySearch,
@@ -25,6 +26,7 @@ import {
   publicationQueryDTagVariants,
   libraryPublicationRootsForContentEvents,
   sortLibrarySearchPublications,
+  shouldSearchPublicationContentOnRelays,
   searchLibraryPublicationIndex,
   searchLibraryPublications
 } from '@/lib/library-publication-index'
@@ -775,5 +777,38 @@ describe('library-publication-index', () => {
       }
     ])
     expect(entries[0].event.id).toBe(exactRoot.id)
+  })
+
+  it('shouldSearchPublicationContentOnRelays is true for quote-like all-fields queries only', () => {
+    expect(shouldSearchPublicationContentOnRelays('"I urged, when he halted once more."', null)).toBe(true)
+    expect(
+      shouldSearchPublicationContentOnRelays('stronger, but right is the necessity of the weak', null)
+    ).toBe(true)
+    expect(shouldSearchPublicationContentOnRelays('jane eyre', null)).toBe(false)
+    expect(shouldSearchPublicationContentOnRelays('short', null)).toBe(false)
+    expect(shouldSearchPublicationContentOnRelays('"quote"', 'title')).toBe(false)
+  })
+
+  it('filterPublicationContentEventsForQuery keeps phrase hits and drops scattered-word-only hits for quotes', () => {
+    const quote = '"I urged, when he halted once more."'
+    const exact = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION_CONTENT,
+        created_at: 100,
+        content: `She said: I urged, when he halted once more. Then paused.`,
+        tags: [['d', 'ch-1']]
+      },
+      sk
+    )
+    const weak = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION_CONTENT,
+        created_at: 100,
+        content: 'They urged him onward.',
+        tags: [['d', 'ch-2']]
+      },
+      sk
+    )
+    expect(filterPublicationContentEventsForQuery([exact, weak], quote)).toEqual([exact])
   })
 })

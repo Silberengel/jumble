@@ -4,6 +4,7 @@ import {
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
   searchLibraryPublicationsViaDocumentRelays,
+  shouldSearchPublicationContentOnRelays,
   type LibraryPublicationEntry,
   type LibraryPublicationRelaySearchAxis
 } from '@/lib/library-publication-index'
@@ -178,12 +179,13 @@ export function useLibrarySearch(params: {
 
     try {
       const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
+      const timeoutMs = shouldSearchPublicationContentOnRelays(q, searchAxis) ? 90_000 : RELAY_SEARCH_TIMEOUT_MS
 
       let timeoutId: number | undefined
       const timeoutPromise = new Promise<never>((_, reject) => {
         timeoutId = window.setTimeout(
           () => reject(new Error('Relay search timed out')),
-          RELAY_SEARCH_TIMEOUT_MS
+          timeoutMs
         )
       })
       let events: Event[]
@@ -209,7 +211,12 @@ export function useLibrarySearch(params: {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Relay search failed'
-      const local = await searchLibraryPublications(q, { indexEvents, engagement: EMPTY_ENGAGEMENT }, searchAxis)
+      const local = await searchLibraryPublications(
+        q,
+        { indexEvents, engagement: EMPTY_ENGAGEMENT },
+        searchAxis,
+        { forceRefresh: true }
+      )
       if (local.length > 0) {
         setSearchResults(local)
         setError(null)

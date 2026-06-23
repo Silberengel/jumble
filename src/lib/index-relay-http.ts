@@ -1,5 +1,6 @@
 /**
- * HTTP JSON API for index-style relays (e.g. gc_index_relay: POST /api/events/filter, POST /api/events).
+ * HTTP JSON API for index-style relays (e.g. gc_index_relay: POST /api/events/filter, POST /api/events,
+ * POST /api/publications/search, POST /api/publications/content/search).
  * @see gc_index_relay lib/gc_index_relay_web/router.ex
  *
  * **Local dev:** loopback bases (`http://localhost:*` / `http://127.0.0.1:*`) are automatically fetched via
@@ -33,6 +34,10 @@ function indexRelayPublishUrl(baseUrl: string): string {
 
 function indexRelayPublicationMetadataSearchUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/search`
+}
+
+function indexRelayPublicationContentSearchUrl(baseUrl: string): string {
+  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/content/search`
 }
 
 /** Map a Nostr filter to gc_index_relay POST body (requires `limit` 1–100; strips unsupported keys). */
@@ -514,6 +519,72 @@ export async function queryIndexRelayPublicationMetadataSearch(
       throw new IndexRelayTransportError(e)
     }
     warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] publication metadata search request error', {
+      endpoint,
+      error: e
+    })
+    return { events: [], apiRowCount: 0 }
+  }
+}
+
+/** Kind-30041 section body search on Mercury-style index relays. */
+export async function queryIndexRelayPublicationContentSearch(
+  baseUrl: string,
+  query: string,
+  options?: { limit?: number; signal?: AbortSignal }
+): Promise<TIndexRelayLibraryPage> {
+  const q = query.trim()
+  if (!q) return { events: [], apiRowCount: 0 }
+
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayPublicationContentSearchUrl(base)
+  if (shouldSkipDevIndexRelayFetch(endpoint)) {
+    return { events: [], apiRowCount: 0 }
+  }
+
+  const limit = Math.max(1, Math.min(options?.limit ?? 100, 100))
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ q, limit }),
+      signal: options?.signal,
+      timeoutMs: 45_000
+    })
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 405) return { events: [], apiRowCount: 0 }
+      if (res.status >= 500) {
+        markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
+        throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      }
+      return { events: [], apiRowCount: 0 }
+    }
+    clearDevIndexRelayUnavailableThisSession()
+    const json = (await res.json()) as { data?: unknown }
+    const data = json.data
+    if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }
+
+    const events: NEvent[] = []
+    const seen = new Set<string>()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const ev = rawToIndexRelayEvent(item as Record<string, unknown>)
+      if (ev && !seen.has(ev.id)) {
+        seen.add(ev.id)
+        events.push(ev)
+      }
+    }
+    return { events, apiRowCount: data.length }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] publication content search request error', {
       endpoint,
       error: e
     })
