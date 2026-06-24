@@ -2468,6 +2468,112 @@ async function scanWsRelayForPublicationContent(
   return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
 }
 
+type PublicationSectionRootRef = { sectionAddress: string; authorPubkey: string }
+
+const MAX_PUBLICATION_ROOT_LOOKUP_PASSES = 4
+
+function collectOrphanPublicationSectionRootRefs(
+  contentEvents: Iterable<Event>,
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): PublicationSectionRootRef[] {
+  const rootRefs: PublicationSectionRootRef[] = []
+  const seenSectionAddrs = new Set<string>()
+
+  for (const ev of contentEvents) {
+    if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
+    const addr = eventTagAddress(ev)
+    if (!addr || seenSectionAddrs.has(addr)) continue
+    seenSectionAddrs.add(addr)
+    if (findPublicationRootForContentAddress(addr, indexEvents, indexByAddress)) continue
+    rootRefs.push({ sectionAddress: addr, authorPubkey: ev.pubkey.toLowerCase() })
+  }
+
+  return rootRefs
+}
+
+/** Fetch kind-30040 indexes that reference section coordinates (Mercury `#a` filter). */
+async function fetchPublicationIndexRootsForContentSections(
+  httpRelays: string[],
+  refs: PublicationSectionRootRef[]
+): Promise<Event[]> {
+  if (httpRelays.length === 0 || refs.length === 0) return []
+
+  const uniqueRefs = new Map<string, PublicationSectionRootRef>()
+  for (const ref of refs) {
+    uniqueRefs.set(ref.sectionAddress, ref)
+  }
+
+  const seenIds = new Set<string>()
+  const out: Event[] = []
+
+  await Promise.all(
+    httpRelays.flatMap((relay) =>
+      [...uniqueRefs.values()].map(async ({ sectionAddress, authorPubkey }) => {
+        try {
+          const page = await queryIndexRelayForLibrary(relay, {
+            kinds: [ExtendedKind.PUBLICATION],
+            authors: [authorPubkey],
+            '#a': [sectionAddress],
+            limit: 10
+          })
+          for (const ev of page.events as Event[]) {
+            if (seenIds.has(ev.id)) continue
+            seenIds.add(ev.id)
+            out.push(ev)
+          }
+        } catch (e) {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] HTTP publication root lookup failed', {
+              relay,
+              sectionAddress,
+              message: e instanceof Error ? e.message : String(e)
+            })
+          }
+        }
+      })
+    )
+  )
+
+  return filterValidIndexEvents(out)
+}
+
+/** Resolve kind-30040 indexes for section hits that are not yet linked to a publication root. */
+async function resolvePublicationIndexRootsForOrphanContentSections(
+  contentEvents: Iterable<Event>,
+  structuralMap: PublicationIndexMap,
+  httpRelays: string[]
+): Promise<{ structuralMap: PublicationIndexMap; fetched: Event[] }> {
+  if (httpRelays.length === 0) {
+    return { structuralMap, fetched: [] }
+  }
+
+  let map = structuralMap
+  const fetched: Event[] = []
+  const seenIds = new Set<string>()
+
+  for (let pass = 0; pass < MAX_PUBLICATION_ROOT_LOOKUP_PASSES; pass++) {
+    const mergedIndex = publicationIndexMapValues(map)
+    const indexByAddress = buildIndexByAddress(mergedIndex)
+    const rootRefs = collectOrphanPublicationSectionRootRefs(
+      contentEvents,
+      mergedIndex,
+      indexByAddress
+    )
+    if (rootRefs.length === 0) break
+
+    const batch = await fetchPublicationIndexRootsForContentSections(httpRelays, rootRefs)
+    const valid = filterValidIndexEvents(batch).filter((ev) => !seenIds.has(ev.id))
+    if (valid.length === 0) break
+
+    for (const ev of valid) seenIds.add(ev.id)
+    fetched.push(...valid)
+    map = mergePublicationIndexMaps(map, valid)
+  }
+
+  return { structuralMap: map, fetched }
+}
+
 /** Scan Mercury HTTP index relays and WS document relays for kind-30041 section body text matching {@code query}. */
 export async function fetchPublicationContentFromRelays(
   query: string,
@@ -2532,7 +2638,9 @@ export async function fetchPublicationContentFromRelays(
   }
 
   if (globalMatched.length < LIBRARY_RELAY_SEARCH_LIMIT && wsDocumentRelays.length > 0) {
-    await Promise.all(
+    // WS scans paginate kind 30041 without server-side search — keep them in the background so
+    // Mercury HTTP hits can surface in the UI immediately.
+    void Promise.all(
       wsDocumentRelays.map((relay) =>
         scanWsRelayForPublicationContent(relay, q, {
           onPartialEvents: (batch) => emitMatches(batch)
@@ -2918,12 +3026,32 @@ export async function searchLibraryPublicationsOnRelays(
     options?.onProgress?.(buildProgress())
   }
 
+  let contentProgressGeneration = 0
+  let contentRootResolution = Promise.resolve()
+
   const reportContentBatch = (batchEvents: Event[]) => {
     for (const ev of batchEvents) {
       if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
       accumulatedContent.set(ev.id, ev)
     }
-    options?.onProgress?.(buildProgress())
+
+    const generation = ++contentProgressGeneration
+    contentRootResolution = contentRootResolution.then(async () => {
+      if (generation !== contentProgressGeneration) return
+      const resolved = await resolvePublicationIndexRootsForOrphanContentSections(
+        accumulatedContent.values(),
+        structuralMap,
+        httpRelays
+      )
+      if (generation !== contentProgressGeneration) return
+      if (resolved.fetched.length > 0) {
+        for (const ev of resolved.fetched) accumulatedValid.set(ev.id, ev)
+        structuralMap = resolved.structuralMap
+        await persistRelayDiscoveredLibraryIndexes(resolved.fetched)
+      }
+      if (generation !== contentProgressGeneration) return
+      options?.onProgress?.(buildProgress())
+    })
   }
 
   const batches: Promise<Event[]>[] = []
@@ -3053,6 +3181,20 @@ export async function searchLibraryPublicationsOnRelays(
   options?.onProgress?.(buildProgress())
 
   await Promise.all(batches)
+  await contentRootResolution
+
+  if (accumulatedContent.size > 0) {
+    const resolved = await resolvePublicationIndexRootsForOrphanContentSections(
+      accumulatedContent.values(),
+      structuralMap,
+      httpRelays
+    )
+    if (resolved.fetched.length > 0) {
+      for (const ev of resolved.fetched) accumulatedValid.set(ev.id, ev)
+      structuralMap = resolved.structuralMap
+      await persistRelayDiscoveredLibraryIndexes(resolved.fetched)
+    }
+  }
 
   const networkEvents = [...accumulatedValid.values()]
   const valid = filterValidIndexEvents(networkEvents)

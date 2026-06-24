@@ -54,6 +54,7 @@ export function useLibrarySearch(params: {
     entries: LibraryPublicationEntry[]
     mergedIndexEvents?: Event[]
   } | null>(null)
+  const relayProgressRef = useRef<LibraryPublicationEntry[]>([])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(committedSearch), SEARCH_DEBOUNCE_MS)
@@ -195,12 +196,17 @@ export function useLibrarySearch(params: {
     setCommittedSearch(q)
     setRelaySearchLoading(true)
     setError(null)
+    relayProgressRef.current = []
 
     const applyRelayProgress = (progress: {
       entries: LibraryPublicationEntry[]
       mergedIndexEvents?: Event[]
     }) => {
+      relayProgressRef.current = progress.entries
       setSearchResults(progress.entries)
+      if (progress.entries.length > 0) {
+        setError(null)
+      }
       if (progress.mergedIndexEvents) {
         setIndexEvents(progress.mergedIndexEvents)
         setAllIndexCount(progress.mergedIndexEvents.length)
@@ -242,20 +248,29 @@ export function useLibrarySearch(params: {
       }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Relay search failed'
-      const local = await searchLibraryPublications(
-        q,
-        { indexEvents, engagement: EMPTY_ENGAGEMENT },
-        searchAxis,
-        { forceRefresh: true }
-      )
-      if (local.length > 0) {
-        setSearchResults(local)
+      const partialResults = relayProgressRef.current
+      if (partialResults.length > 0) {
+        setSearchResults(partialResults)
         setError(null)
       } else {
-        setError(message === 'Relay search timed out' ? t('Library relay search timed out') : message)
+        const local = await searchLibraryPublications(
+          q,
+          { indexEvents, engagement: EMPTY_ENGAGEMENT },
+          searchAxis,
+          { forceRefresh: true }
+        )
+        if (local.length > 0) {
+          setSearchResults(local)
+          setError(null)
+        } else {
+          setError(message === 'Relay search timed out' ? t('Library relay search timed out') : message)
+        }
       }
       if (import.meta.env.DEV) {
-        logger.warn('[Library] relay search failed', { message, localFallback: local.length })
+        logger.warn('[Library] relay search failed', {
+          message,
+          partialResults: partialResults.length
+        })
       }
     } finally {
       setRelaySearchLoading(false)

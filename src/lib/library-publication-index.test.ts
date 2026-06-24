@@ -748,6 +748,58 @@ describe('library-publication-index', () => {
     ).toEqual([root])
   })
 
+  it('libraryPublicationRootsForContentEvents returns empty until parent index is available', () => {
+    const quote = 'orphan section quote'
+    const contentD = 'orphan-chapter'
+    const contentAddr = `30041:${PK}:${contentD}`
+    const section = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION_CONTENT,
+        created_at: 100,
+        content: quote,
+        tags: [['d', contentD], ['title', 'Orphan Chapter']]
+      },
+      sk
+    )
+    expect(
+      libraryPublicationRootsForContentEvents(quote, [section], [], new Map())
+    ).toEqual([])
+
+    const root = indexEvent('orphan-book', [contentAddr])
+    const indexEvents = [root]
+    expect(
+      libraryPublicationRootsForContentEvents(
+        quote,
+        [section],
+        indexEvents,
+        buildIndexByAddress(indexEvents)
+      )
+    ).toEqual([root])
+  })
+
+  it('libraryPublicationRootsForContentEvents resolves nested indexes after parent merge', () => {
+    const quote = 'nested section quote'
+    const contentD = 'nested-section'
+    const contentAddr = `30041:${PK}:${contentD}`
+    const partAddr = `30040:${PK}:nested-part`
+    const section = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION_CONTENT,
+        created_at: 100,
+        content: quote,
+        tags: [['d', contentD], ['title', 'Nested Section']]
+      },
+      sk
+    )
+    const part = indexEvent('nested-part', [contentAddr])
+    const book = indexEvent('nested-book', [partAddr])
+    const indexEvents = [book, part]
+    const indexByAddress = buildIndexByAddress(indexEvents)
+    expect(
+      libraryPublicationRootsForContentEvents(quote, [section], indexEvents, indexByAddress)
+    ).toEqual([book])
+  })
+
   it('sortLibrarySearchPublications ranks exact phrase content matches first', () => {
     const quote = 'I urged, when he halted once more.'
     const exactRoot = indexEvent('jane-eyre', [`30041:${PK}:ch`])
