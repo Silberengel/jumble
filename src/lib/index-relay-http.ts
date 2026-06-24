@@ -10,6 +10,7 @@
  */
 import { ExtendedKind } from '@/constants'
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout'
+import { normalizeGeneralSearchQuery } from '@/lib/general-search-text-match'
 import logger from '@/lib/logger'
 import { relaySessionStrikes } from '@/lib/relay-strikes'
 import {
@@ -484,7 +485,7 @@ export async function queryIndexRelayPublicationMetadataSearch(
   query: string,
   options?: { limit?: number; signal?: AbortSignal }
 ): Promise<TIndexRelayLibraryPage> {
-  const q = query.trim()
+  const q = normalizeGeneralSearchQuery(query.trim())
   if (!q) return { events: [], apiRowCount: 0 }
 
   const base = devHttpIndexRelayBaseForFetch(baseUrl)
@@ -550,7 +551,7 @@ export async function queryIndexRelayPublicationContentSearch(
   query: string,
   options?: { limit?: number; signal?: AbortSignal }
 ): Promise<TIndexRelayLibraryPage> {
-  const q = query.trim()
+  const q = normalizeGeneralSearchQuery(query.trim())
   if (!q) return { events: [], apiRowCount: 0 }
 
   const base = devHttpIndexRelayBaseForFetch(baseUrl)

@@ -84,6 +84,19 @@ describe('eventMatchesGeneralSearchQuery', () => {
     expect(scatteredScore).toBeLessThan(phraseScore)
   })
 
+  it('matches Grimms quote when query is wrapped in straight double quotes', () => {
+    const section = ev({
+      kind: 30041,
+      content:
+        'Little brother took his little sister by the hand and said, “Since our\nmother died, we have had no happiness; our stepmother beats us every day',
+      tags: [['d', 'pg52521-chapter-5-little-brother-and-little-sister'], ['title', 'Little Brother and Little Sister']]
+    })
+    const query =
+      '"Since our mother died, we have had no happiness; our stepmother beats us every day"'
+
+    expect(scorePublicationContentEventSearchQuery(section, query)).toBeGreaterThan(10_000)
+  })
+
   it('matches kind-30041 body when phrase spans a hard line break', () => {
     const section = ev({
       kind: 30041,
