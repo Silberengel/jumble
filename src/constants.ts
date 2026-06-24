@@ -548,7 +548,9 @@ export const SEARCHABLE_RELAY_URLS = [
   'wss://relay.noswhere.com',
   'wss://nostr-pub.wellorder.net',
   'wss://njump.me',
-  'wss://nos.lol'
+  'wss://nos.lol',
+  'wss://search.nostrarchives.com',
+  'wss://relay.ditto.pub'
 ]
 
 /**
@@ -684,7 +686,6 @@ export const ExtendedKind = {
  */
 export const KIND_1111_COMPATIBLE_CLIENT_TAG_SUBSTRINGS: readonly string[] = [
   'aitherboard',
-  'Dark Wisp',
   'jumble',
   'amethyst',
   'imwald',

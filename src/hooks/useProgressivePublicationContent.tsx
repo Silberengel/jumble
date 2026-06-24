@@ -148,7 +148,7 @@ export function useProgressivePublicationContent(
 
     ;(async () => {
       await loadPriorityPath()
-      if (cancelled || !backgroundLoads) return
+      if (cancelled || !backgroundLoads || priorityAddress) return
       const pending = collectPendingPublicationSectionLoads(
         rootIndex,
         fetchedRef.current,
@@ -177,9 +177,9 @@ export function useProgressivePublicationContent(
   }, [prefetchTasks, rootIndex])
 
   useEffect(() => {
-    if (!enabled || !backgroundLoads) return
+    if (!enabled || !backgroundLoads || priorityAddress) return
     readAhead()
-  }, [enabled, backgroundLoads, fetched, failedKeys, readAhead])
+  }, [enabled, backgroundLoads, fetched, failedKeys, readAhead, priorityAddress])
 
   return {
     fetched,

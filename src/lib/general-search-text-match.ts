@@ -154,11 +154,34 @@ export function haystackMatchesSearchQuery(haystack: string, query: string): boo
   return scoreHaystackSearchQuery(haystack, query) > 0
 }
 
-/** Match only {@link Event.content} (used for kind-30041 section body search). */
-export function publicationContentMatchesSearchQuery(ev: Event, query: string): boolean {
-  return scorePublicationContentSearchQuery(ev.content ?? '', query) > 0
+export function publicationContentSectionTitle(event: Event): string {
+  for (const tag of event.tags ?? []) {
+    if ((tag[0] || '').trim().toLowerCase() === 'title' && tag[1]?.trim()) {
+      return tag[1].trim()
+    }
+  }
+  return ''
 }
 
+/** Kind-30041 sections often split a sentence across `title` and `content` tags. */
+export function publicationContentSectionHaystack(event: Event): string {
+  const title = publicationContentSectionTitle(event)
+  const body = event.content ?? ''
+  if (!title) return body
+  if (!body.trim()) return title
+  return `${title}\n${body}`
+}
+
+/** Match kind-30041 section `title` + {@link Event.content}. */
+export function publicationContentMatchesSearchQuery(ev: Event, query: string): boolean {
+  return scorePublicationContentEventSearchQuery(ev, query) > 0
+}
+
+export function scorePublicationContentEventSearchQuery(event: Event, query: string): number {
+  return scoreHaystackSearchQuery(publicationContentSectionHaystack(event).toLowerCase(), query)
+}
+
+/** Body-only scoring (legacy); prefer {@link scorePublicationContentEventSearchQuery}. */
 export function scorePublicationContentSearchQuery(content: string, query: string): number {
   return scoreHaystackSearchQuery((content ?? '').toLowerCase(), query)
 }

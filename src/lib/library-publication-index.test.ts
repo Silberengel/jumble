@@ -745,7 +745,7 @@ describe('library-publication-index', () => {
     ).toEqual([root])
     expect(
       libraryPublicationRootsForContentEvents('Chapter 1', [section], indexEvents, indexByAddress)
-    ).toEqual([])
+    ).toEqual([root])
   })
 
   it('sortLibrarySearchPublications ranks exact phrase content matches first', () => {

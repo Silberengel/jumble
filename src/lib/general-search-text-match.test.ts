@@ -4,6 +4,7 @@ import {
   generalSearchHaystack,
   generalSearchQueryTerms,
   normalizeGeneralSearchQuery,
+  scorePublicationContentEventSearchQuery,
   scorePublicationContentSearchQuery
 } from '@/lib/general-search-text-match'
 import type { Event } from 'nostr-tools'
@@ -81,5 +82,22 @@ describe('eventMatchesGeneralSearchQuery', () => {
     expect(phraseScore).toBeGreaterThan(10_000)
     expect(scatteredScore).toBeGreaterThan(0)
     expect(scatteredScore).toBeLessThan(phraseScore)
+  })
+
+  it('matches kind-30041 title tag when phrase is only in title not body', () => {
+    const section = ev({
+      kind: 30041,
+      content: 'being, and have no clear patterns in their minds of justice',
+      tags: [
+        ['d', 'pg55201-chapter-13-book-vi'],
+        ['title', 'BOOK VI. *484* Having determined that the many have no knowledge of true']
+      ]
+    })
+    expect(
+      scorePublicationContentEventSearchQuery(section, '"Having determined that the many"')
+    ).toBeGreaterThan(10_000)
+    expect(scorePublicationContentSearchQuery(section.content, '"Having determined that the many"')).toBe(
+      0
+    )
   })
 })

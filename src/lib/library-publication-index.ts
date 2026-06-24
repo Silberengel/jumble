@@ -7,7 +7,7 @@ import {
   isQuotedSearchQuery,
   metadataSearchHaystack,
   normalizeGeneralSearchQuery,
-  scorePublicationContentSearchQuery
+  scorePublicationContentEventSearchQuery
 } from '@/lib/general-search-text-match'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
@@ -1644,7 +1644,7 @@ export function findLibraryPublicationContentSearchMatches(
 
   for (const ev of contentEvents) {
     if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
-    const matchScore = scorePublicationContentSearchQuery(ev.content ?? '', q)
+    const matchScore = scorePublicationContentEventSearchQuery(ev, q)
     if (matchScore <= 0) continue
 
     const addr = eventTagAddress(ev)
@@ -2384,7 +2384,7 @@ export function filterPublicationContentEventsForQuery(events: Event[], query: s
   return events.filter(
     (ev) =>
       ev.kind === ExtendedKind.PUBLICATION_CONTENT &&
-      scorePublicationContentSearchQuery(ev.content ?? '', q) > 0
+      scorePublicationContentEventSearchQuery(ev, q) > 0
   )
 }
 

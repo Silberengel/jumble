@@ -6,6 +6,8 @@ import {
 } from '@/lib/event-metadata'
 import { persistLibraryPublicationForReading, type LibraryPublicationContentSearchMatch } from '@/lib/library-publication-index'
 import { setLibraryPublicationReadingIntent } from '@/lib/library-publication-reading-intent'
+import { markPublicationReadingStarted } from '@/lib/library-publication-reading-session'
+import { eventTagAddress } from '@/lib/publication-index'
 import { toNote, toNoteList } from '@/lib/link'
 import { cn } from '@/lib/utils'
 import { useSecondaryPageOptional, useSmartNoteNavigationOptional } from '@/PageManager'
@@ -55,9 +57,13 @@ export default function PublicationCard({
     e.stopPropagation()
     if (disableNavigation) return
     persistLibraryPublicationForReading(event)
+    if (presentation === 'library') {
+      markPublicationReadingStarted(event)
+    }
     if (contentSearchMatch) {
       setLibraryPublicationReadingIntent({
         rootEventId: event.id,
+        rootAddress: eventTagAddress(event) ?? undefined,
         sectionAddress: contentSearchMatch.sectionAddress,
         highlightQuery: contentSearchMatch.highlightQuery,
         contentEvent: contentSearchMatch.contentEvent
