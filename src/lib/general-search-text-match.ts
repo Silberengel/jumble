@@ -85,6 +85,28 @@ export function generalSearchHaystack(ev: Event): string {
   return chunks.join('\n').toLowerCase()
 }
 
+/** Collapse whitespace (incl. hard line breaks) and normalize dash runs for phrase matching. */
+export function normalizeSearchMatchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[‐‑‒–—―\-]+/gu, ' ')
+    .replace(/--+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function phraseNeedlesForQuery(raw: string): string[] {
+  const normalized = normalizeGeneralSearchQuery(raw).toLowerCase()
+  const qSpace = normalized.replace(/-/g, ' ')
+  return qSpace !== normalized ? [normalized, qSpace] : [normalized]
+}
+
+function haystackIncludesPhrase(haystack: string, needle: string): boolean {
+  const matchHaystack = normalizeSearchMatchText(haystack)
+  const matchNeedle = normalizeSearchMatchText(needle)
+  return matchNeedle.length >= 2 && matchHaystack.includes(matchNeedle)
+}
+
 /** True when the raw query is wrapped in matching quote characters. */
 export function isQuotedSearchQuery(raw: string): boolean {
   const s = raw.trim()
@@ -101,12 +123,8 @@ export function haystackMatchesPhraseQuery(haystack: string, query: string): boo
   const raw = query.trim()
   if (!raw) return false
 
-  const normalized = normalizeGeneralSearchQuery(raw).toLowerCase()
-  const qSpace = normalized.replace(/-/g, ' ')
-  const needles = qSpace !== normalized ? [normalized, qSpace] : [normalized]
-
-  for (const needle of needles) {
-    if (needle.length >= 2 && haystack.includes(needle)) return true
+  for (const needle of phraseNeedlesForQuery(raw)) {
+    if (haystackIncludesPhrase(haystack, needle)) return true
   }
   return false
 }
@@ -122,15 +140,11 @@ export function scoreHaystackSearchQuery(haystack: string, query: string): numbe
   const lower = haystack.toLowerCase()
 
   if (isQuotedSearchQuery(raw)) {
-    return haystackMatchesPhraseQuery(lower, raw) ? 10_000 + normalizeGeneralSearchQuery(raw).length : 0
+    return haystackMatchesPhraseQuery(haystack, raw) ? 10_000 + normalizeGeneralSearchQuery(raw).length : 0
   }
 
-  const normalized = normalizeGeneralSearchQuery(raw).toLowerCase()
-  const qSpace = normalized.replace(/-/g, ' ')
-  const needles = qSpace !== normalized ? [normalized, qSpace] : [normalized]
-
-  for (const needle of needles) {
-    if (needle && lower.includes(needle)) return 10_000 + needle.length
+  for (const needle of phraseNeedlesForQuery(raw)) {
+    if (needle && haystackIncludesPhrase(haystack, needle)) return 10_000 + needle.length
   }
 
   const words = generalSearchQueryTerms(raw)
@@ -192,14 +206,15 @@ export function findSearchHighlightNeedle(haystack: string, query: string): stri
   if (!raw) return null
 
   const lowerHaystack = haystack.toLowerCase()
-  const normalized = normalizeGeneralSearchQuery(raw).toLowerCase()
-  const qSpace = normalized.replace(/-/g, ' ')
-  const needles = qSpace !== normalized ? [normalized, qSpace] : [normalized]
 
-  for (const needle of needles) {
-    if (needle && lowerHaystack.includes(needle)) {
-      const idx = lowerHaystack.indexOf(needle)
-      return haystack.slice(idx, idx + needle.length)
+  for (const needle of phraseNeedlesForQuery(raw)) {
+    if (haystackIncludesPhrase(haystack, needle)) {
+      const words = generalSearchQueryTerms(raw)
+      if (words.length > 0) {
+        const idx = lowerHaystack.indexOf(words[0])
+        if (idx !== -1) return haystack.slice(idx, idx + words[0].length)
+      }
+      return needle
     }
   }
 

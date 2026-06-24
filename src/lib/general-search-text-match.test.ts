@@ -84,6 +84,19 @@ describe('eventMatchesGeneralSearchQuery', () => {
     expect(scatteredScore).toBeLessThan(phraseScore)
   })
 
+  it('matches kind-30041 body when phrase spans a hard line break', () => {
+    const section = ev({
+      kind: 30041,
+      content:
+        'Such was the fault found in Callippides, as also in others of our own day, who are\ncensured for representing degraded women.',
+      tags: [['d', 'pg1974-chapter-18-xxvi']]
+    })
+    const query = '"who are censured for representing degraded women"'
+
+    expect(scorePublicationContentEventSearchQuery(section, query)).toBeGreaterThan(10_000)
+    expect(scorePublicationContentSearchQuery(section.content, query)).toBeGreaterThan(10_000)
+  })
+
   it('matches kind-30041 title tag when phrase is only in title not body', () => {
     const section = ev({
       kind: 30041,

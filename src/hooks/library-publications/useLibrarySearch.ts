@@ -64,8 +64,9 @@ export function useLibrarySearch(params: {
     if (!searchQuery.trim()) {
       setCommittedSearch('')
       setSearchAxis(null)
+      setError(null)
     }
-  }, [searchQuery])
+  }, [searchQuery, setError])
 
   useEffect(() => {
     setFeedPageIndex(0)
@@ -87,6 +88,7 @@ export function useLibrarySearch(params: {
     if (!q) {
       setSearchResults(null)
       setSearchLoading(false)
+      setError(null)
       return
     }
 
