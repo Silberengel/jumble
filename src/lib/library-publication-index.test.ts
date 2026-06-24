@@ -25,6 +25,7 @@ import {
   dTagSlugContainsHyphenNeedle,
   publicationQueryDTagVariants,
   libraryPublicationRootsForContentEvents,
+  rankPublicationContentEventsForQuery,
   sortLibrarySearchPublications,
   shouldSearchPublicationContentOnRelays,
   searchLibraryPublicationIndex,
@@ -746,6 +747,32 @@ describe('library-publication-index', () => {
     expect(
       libraryPublicationRootsForContentEvents('Chapter 1', [section], indexEvents, indexByAddress)
     ).toEqual([root])
+  })
+
+  it('rankPublicationContentEventsForQuery orders phrase matches first', () => {
+    const quote = 'Since our mother died, we have had no happiness'
+    const contentD = 'pg52521-chapter-5-little-brother-and-little-sister'
+    const grimmsSection = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION_CONTENT,
+        created_at: 100,
+        content:
+          'Little brother took his little sister by the hand and said, “Since our\nmother died, we have had no happiness; our stepmother beats us every day',
+        tags: [['d', contentD], ['title', 'Little Brother and Little Sister']]
+      },
+      sk
+    )
+    const weakSection = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION_CONTENT,
+        created_at: 50,
+        content: 'Our mother once spoke of happiness in general terms.',
+        tags: [['d', 'other-chapter'], ['title', 'Other']]
+      },
+      sk
+    )
+    const ranked = rankPublicationContentEventsForQuery([weakSection, grimmsSection], quote, 5)
+    expect(ranked[0]?.id).toBe(grimmsSection.id)
   })
 
   it('libraryPublicationRootsForContentEvents returns empty until parent index is available', () => {

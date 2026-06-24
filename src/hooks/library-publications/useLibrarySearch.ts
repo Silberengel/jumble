@@ -55,6 +55,7 @@ export function useLibrarySearch(params: {
     mergedIndexEvents?: Event[]
   } | null>(null)
   const relayProgressRef = useRef<LibraryPublicationEntry[]>([])
+  const relaySearchActiveRef = useRef(false)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(committedSearch), SEARCH_DEBOUNCE_MS)
@@ -90,6 +91,10 @@ export function useLibrarySearch(params: {
       setSearchResults(null)
       setSearchLoading(false)
       setError(null)
+      return
+    }
+
+    if (relaySearchActiveRef.current) {
       return
     }
 
@@ -197,6 +202,7 @@ export function useLibrarySearch(params: {
     setRelaySearchLoading(true)
     setError(null)
     relayProgressRef.current = []
+    relaySearchActiveRef.current = true
 
     const applyRelayProgress = (progress: {
       entries: LibraryPublicationEntry[]
@@ -273,6 +279,7 @@ export function useLibrarySearch(params: {
         })
       }
     } finally {
+      relaySearchActiveRef.current = false
       setRelaySearchLoading(false)
     }
   }, [searchQuery, searchAxis, pubkey, indexEvents, blockedRelays, setError, setIndexEvents, setAllIndexCount, setTopLevelCount, t])

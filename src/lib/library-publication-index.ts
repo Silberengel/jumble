@@ -1823,15 +1823,22 @@ export async function searchLibraryPublications(
   const q = query.trim()
   if (!q) return []
 
+  const contentPrimary = !axis && shouldSearchPublicationContentOnRelays(q)
+
   const report = (
     roots: Event[],
     indexEvents: Event[],
     contentMatches?: Map<string, LibraryPublicationContentSearchMatch>
   ) => {
     const indexByAddress = buildIndexByAddress(indexEvents)
-    const entries = sortLibrarySearchPublications(
+    const sortedEntries = sortLibrarySearchPublications(
       libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT, contentMatches)
     )
+    const phraseEntries = sortedEntries.filter(
+      (entry) => (entry.contentSearchMatch?.matchScore ?? 0) >= 10_000
+    )
+    const entries =
+      contentPrimary && phraseEntries.length > 0 ? phraseEntries : sortedEntries
     options?.onProgress?.({ entries, mergedIndexEvents: indexEvents })
     return entries
   }
@@ -1859,19 +1866,24 @@ export async function searchLibraryPublications(
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
   const indexByAddress = buildIndexByAddress(indexEvents)
   const contentMatchesByRootId = new Map<string, LibraryPublicationContentSearchMatch>()
-  const fromIndex = await searchLibraryPublicationIndexAsync(q, indexEvents, indexByAddress, axis, {
-    onProgress: (roots) => {
-      report(roots, indexEvents, contentMatchesByRootId)
-    }
-  })
   const rootMap = new Map<string, Event>()
-  for (const root of fromIndex) rootMap.set(root.id, root)
+
+  if (!contentPrimary) {
+    const fromIndex = await searchLibraryPublicationIndexAsync(q, indexEvents, indexByAddress, axis, {
+      onProgress: (roots) => {
+        for (const root of roots) rootMap.set(root.id, root)
+        report([...rootMap.values()], indexEvents, contentMatchesByRootId)
+      }
+    })
+    for (const root of fromIndex) rootMap.set(root.id, root)
+  }
 
   const topLevel = getTopLevelIndexEvents(indexEvents)
   const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
 
-  try {
-    const fromReadingCache = await indexedDb.getCachedEventsForSearch(
+  if (!contentPrimary) {
+    try {
+      const fromReadingCache = await indexedDb.getCachedEventsForSearch(
       q,
       LIBRARY_SEARCH_READING_CACHE_LIMIT,
       [ExtendedKind.PUBLICATION],
@@ -1894,11 +1906,12 @@ export async function searchLibraryPublications(
       if (addr && referenced.has(addr)) continue
       rootMap.set(ev.id, ev)
     }
-  } catch (e) {
-    if (import.meta.env.DEV) {
-      logger.warn('[Library] reading-cache search failed', {
-        message: e instanceof Error ? e.message : String(e)
-      })
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] reading-cache search failed', {
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
     }
   }
 
@@ -2379,14 +2392,28 @@ export function shouldSearchPublicationContentOnRelays(
 }
 
 export function filterPublicationContentEventsForQuery(events: Event[], query: string): Event[] {
+  return rankPublicationContentEventsForQuery(events, query)
+}
+
+/** Score kind-30041 rows for {@code query} and return the best matches first. */
+export function rankPublicationContentEventsForQuery(
+  events: Event[],
+  query: string,
+  limit = LIBRARY_RELAY_SEARCH_LIMIT
+): Event[] {
   const q = query.trim()
   if (!q) return []
-  return events.filter(
-    (ev) =>
-      ev.kind === ExtendedKind.PUBLICATION_CONTENT &&
-      scorePublicationContentEventSearchQuery(ev, q) > 0
-  )
+  return events
+    .filter((ev) => ev.kind === ExtendedKind.PUBLICATION_CONTENT)
+    .map((ev) => ({ ev, score: scorePublicationContentEventSearchQuery(ev, q) }))
+    .filter(({ score }) => score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ ev }) => ev)
 }
+
+const LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT = 25
+const LIBRARY_CONTENT_ROOT_LOOKUP_LIMIT = 20
 
 function persistPublicationContentEventsForReading(events: Event[]): void {
   for (const ev of events) {
@@ -2471,16 +2498,34 @@ async function scanWsRelayForPublicationContent(
 type PublicationSectionRootRef = { sectionAddress: string; authorPubkey: string }
 
 const MAX_PUBLICATION_ROOT_LOOKUP_PASSES = 4
+const PUBLICATION_ROOT_LOOKUP_CONCURRENCY = 6
+const CONTENT_ROOT_RESOLVE_DEBOUNCE_MS = 300
+
+function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException
+    ? err.name === 'AbortError'
+    : err instanceof Error && err.name === 'AbortError'
+}
 
 function collectOrphanPublicationSectionRootRefs(
   contentEvents: Iterable<Event>,
   indexEvents: Event[],
-  indexByAddress: Map<string, Event>
+  indexByAddress: Map<string, Event>,
+  options?: { query?: string; maxRefs?: number }
 ): PublicationSectionRootRef[] {
+  const ranked =
+    options?.query?.trim() ?
+      rankPublicationContentEventsForQuery(
+        [...contentEvents],
+        options.query,
+        options.maxRefs ?? LIBRARY_CONTENT_ROOT_LOOKUP_LIMIT
+      )
+    : [...contentEvents]
+
   const rootRefs: PublicationSectionRootRef[] = []
   const seenSectionAddrs = new Set<string>()
 
-  for (const ev of contentEvents) {
+  for (const ev of ranked) {
     if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
     const addr = eventTagAddress(ev)
     if (!addr || seenSectionAddrs.has(addr)) continue
@@ -2495,7 +2540,8 @@ function collectOrphanPublicationSectionRootRefs(
 /** Fetch kind-30040 indexes that reference section coordinates (Mercury `#a` filter). */
 async function fetchPublicationIndexRootsForContentSections(
   httpRelays: string[],
-  refs: PublicationSectionRootRef[]
+  refs: PublicationSectionRootRef[],
+  options?: { signal?: AbortSignal }
 ): Promise<Event[]> {
   if (httpRelays.length === 0 || refs.length === 0) return []
 
@@ -2506,23 +2552,36 @@ async function fetchPublicationIndexRootsForContentSections(
 
   const seenIds = new Set<string>()
   const out: Event[] = []
+  const jobs: Array<{ relay: string; sectionAddress: string; authorPubkey: string }> = []
+  for (const relay of httpRelays) {
+    for (const { sectionAddress, authorPubkey } of uniqueRefs.values()) {
+      jobs.push({ relay, sectionAddress, authorPubkey })
+    }
+  }
 
-  await Promise.all(
-    httpRelays.flatMap((relay) =>
-      [...uniqueRefs.values()].map(async ({ sectionAddress, authorPubkey }) => {
+  for (const chunk of chunkArray(jobs, PUBLICATION_ROOT_LOOKUP_CONCURRENCY)) {
+    if (options?.signal?.aborted) break
+    await Promise.all(
+      chunk.map(async ({ relay, sectionAddress, authorPubkey }) => {
+        if (options?.signal?.aborted) return
         try {
-          const page = await queryIndexRelayForLibrary(relay, {
-            kinds: [ExtendedKind.PUBLICATION],
-            authors: [authorPubkey],
-            '#a': [sectionAddress],
-            limit: 10
-          })
+          const page = await queryIndexRelayForLibrary(
+            relay,
+            {
+              kinds: [ExtendedKind.PUBLICATION],
+              authors: [authorPubkey],
+              '#a': [sectionAddress],
+              limit: 10
+            },
+            { signal: options?.signal }
+          )
           for (const ev of page.events as Event[]) {
             if (seenIds.has(ev.id)) continue
             seenIds.add(ev.id)
             out.push(ev)
           }
         } catch (e) {
+          if (isAbortError(e)) return
           if (import.meta.env.DEV) {
             logger.warn('[Library] HTTP publication root lookup failed', {
               relay,
@@ -2533,7 +2592,7 @@ async function fetchPublicationIndexRootsForContentSections(
         }
       })
     )
-  )
+  }
 
   return filterValidIndexEvents(out)
 }
@@ -2542,7 +2601,8 @@ async function fetchPublicationIndexRootsForContentSections(
 async function resolvePublicationIndexRootsForOrphanContentSections(
   contentEvents: Iterable<Event>,
   structuralMap: PublicationIndexMap,
-  httpRelays: string[]
+  httpRelays: string[],
+  options?: { signal?: AbortSignal; query?: string }
 ): Promise<{ structuralMap: PublicationIndexMap; fetched: Event[] }> {
   if (httpRelays.length === 0) {
     return { structuralMap, fetched: [] }
@@ -2558,11 +2618,14 @@ async function resolvePublicationIndexRootsForOrphanContentSections(
     const rootRefs = collectOrphanPublicationSectionRootRefs(
       contentEvents,
       mergedIndex,
-      indexByAddress
+      indexByAddress,
+      { query: options?.query, maxRefs: LIBRARY_CONTENT_ROOT_LOOKUP_LIMIT }
     )
     if (rootRefs.length === 0) break
 
-    const batch = await fetchPublicationIndexRootsForContentSections(httpRelays, rootRefs)
+    const batch = await fetchPublicationIndexRootsForContentSections(httpRelays, rootRefs, {
+      signal: options?.signal
+    })
     const valid = filterValidIndexEvents(batch).filter((ev) => !seenIds.has(ev.id))
     if (valid.length === 0) break
 
@@ -2604,13 +2667,14 @@ export async function fetchPublicationContentFromRelays(
   const globalMatched: Event[] = []
 
   const emitMatches = (events: Event[]) => {
+    const ranked = rankPublicationContentEventsForQuery(events, q, LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT)
     const fresh: Event[] = []
-    for (const ev of filterPublicationContentEventsForQuery(events, q)) {
+    for (const ev of ranked) {
       if (globalSeen.has(ev.id)) continue
       globalSeen.add(ev.id)
       globalMatched.push(ev)
       fresh.push(ev)
-      if (globalMatched.length >= LIBRARY_RELAY_SEARCH_LIMIT) break
+      if (globalMatched.length >= LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT) break
     }
     if (fresh.length > 0) {
       persistPublicationContentEventsForReading(fresh)
@@ -2621,7 +2685,9 @@ export async function fetchPublicationContentFromRelays(
   if (httpRelays.length > 0) {
     await Promise.all(
       httpRelays.map((relay) =>
-        queryIndexRelayPublicationContentSearch(relay, q, { limit: LIBRARY_RELAY_SEARCH_LIMIT })
+        queryIndexRelayPublicationContentSearch(relay, q, {
+          limit: LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT
+        })
           .then((page) => {
             emitMatches(page.events as Event[])
           })
@@ -2637,10 +2703,9 @@ export async function fetchPublicationContentFromRelays(
     )
   }
 
-  if (globalMatched.length < LIBRARY_RELAY_SEARCH_LIMIT && wsDocumentRelays.length > 0) {
-    // WS scans paginate kind 30041 without server-side search — keep them in the background so
-    // Mercury HTTP hits can surface in the UI immediately.
-    void Promise.all(
+  // Mercury HTTP search is server-side; WS pagination only adds noisy word matches for long quotes.
+  if (globalMatched.length === 0 && wsDocumentRelays.length > 0) {
+    await Promise.all(
       wsDocumentRelays.map((relay) =>
         scanWsRelayForPublicationContent(relay, q, {
           onPartialEvents: (batch) => emitMatches(batch)
@@ -2649,7 +2714,7 @@ export async function fetchPublicationContentFromRelays(
     )
   }
 
-  return globalMatched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
+  return globalMatched.slice(0, LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT)
 }
 
 /** One axis of kind-30040 relay discovery: `#d`, metadata title/author (HTTP), or `authors` for npub. */
@@ -2989,13 +3054,16 @@ export async function searchLibraryPublicationsOnRelays(
   const accumulatedValid = new Map<string, Event>()
   const accumulatedContent = new Map<string, Event>()
   const contentMatchesByRootId = new Map<string, LibraryPublicationContentSearchMatch>()
+  const preferContentRelaySearch = shouldSearchPublicationContentOnRelays(q, options?.axis)
 
   const buildProgress = (): LibrarySearchProgress => {
     const mergedIndex = publicationIndexMapValues(structuralMap)
     const indexByAddress = buildIndexByAddress(mergedIndex)
     const rootMap = new Map<string, Event>()
-    for (const root of searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)) {
-      rootMap.set(root.id, root)
+    if (!preferContentRelaySearch || options?.axis) {
+      for (const root of searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)) {
+        rootMap.set(root.id, root)
+      }
     }
     if (!options?.axis && accumulatedContent.size > 0) {
       for (const { root, match } of findLibraryPublicationContentSearchMatches(
@@ -3008,9 +3076,16 @@ export async function searchLibraryPublicationsOnRelays(
         rootMap.set(root.id, root)
       }
     }
-    const entries = sortLibrarySearchPublications(
+    const sortedEntries = sortLibrarySearchPublications(
       libraryEntriesFromRoots([...rootMap.values()], indexByAddress, engagement, contentMatchesByRootId)
     )
+    const phraseEntries = sortedEntries.filter(
+      (entry) => (entry.contentSearchMatch?.matchScore ?? 0) >= 10_000
+    )
+    const entries =
+      preferContentRelaySearch && !options?.axis && phraseEntries.length > 0
+        ? phraseEntries
+        : sortedEntries
     return {
       entries,
       mergedIndexEvents: mergedIndex,
@@ -3028,35 +3103,53 @@ export async function searchLibraryPublicationsOnRelays(
 
   let contentProgressGeneration = 0
   let contentRootResolution = Promise.resolve()
+  let contentRootResolveTimer: number | null = null
+  const contentRootLookupAbortRef: { current: AbortController | null } = { current: null }
+
+  const runContentRootResolve = (generation: number, signal: AbortSignal) => {
+    contentRootResolution = contentRootResolution.then(async () => {
+      if (generation !== contentProgressGeneration || signal.aborted) return
+      const resolved = await resolvePublicationIndexRootsForOrphanContentSections(
+        accumulatedContent.values(),
+        structuralMap,
+        httpRelays,
+        { signal, query: q }
+      )
+      if (generation !== contentProgressGeneration || signal.aborted) return
+      if (resolved.fetched.length > 0) {
+        for (const ev of resolved.fetched) accumulatedValid.set(ev.id, ev)
+        structuralMap = resolved.structuralMap
+        await persistRelayDiscoveredLibraryIndexes(resolved.fetched)
+      }
+      if (generation !== contentProgressGeneration || signal.aborted) return
+      options?.onProgress?.(buildProgress())
+    })
+  }
+
+  const scheduleContentRootResolve = () => {
+    if (contentRootResolveTimer !== null) {
+      window.clearTimeout(contentRootResolveTimer)
+    }
+    contentRootResolveTimer = window.setTimeout(() => {
+      contentRootResolveTimer = null
+      if (contentRootLookupAbortRef.current) contentRootLookupAbortRef.current.abort()
+      contentRootLookupAbortRef.current = new AbortController()
+      const generation = ++contentProgressGeneration
+      runContentRootResolve(generation, contentRootLookupAbortRef.current.signal)
+    }, CONTENT_ROOT_RESOLVE_DEBOUNCE_MS)
+  }
 
   const reportContentBatch = (batchEvents: Event[]) => {
     for (const ev of batchEvents) {
       if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
       accumulatedContent.set(ev.id, ev)
     }
-
-    const generation = ++contentProgressGeneration
-    contentRootResolution = contentRootResolution.then(async () => {
-      if (generation !== contentProgressGeneration) return
-      const resolved = await resolvePublicationIndexRootsForOrphanContentSections(
-        accumulatedContent.values(),
-        structuralMap,
-        httpRelays
-      )
-      if (generation !== contentProgressGeneration) return
-      if (resolved.fetched.length > 0) {
-        for (const ev of resolved.fetched) accumulatedValid.set(ev.id, ev)
-        structuralMap = resolved.structuralMap
-        await persistRelayDiscoveredLibraryIndexes(resolved.fetched)
-      }
-      if (generation !== contentProgressGeneration) return
-      options?.onProgress?.(buildProgress())
-    })
+    options?.onProgress?.(buildProgress())
+    scheduleContentRootResolve()
   }
 
   const batches: Promise<Event[]>[] = []
   let filterCount = 0
-  const preferContentRelaySearch = shouldSearchPublicationContentOnRelays(q, options?.axis)
   const axes = options?.axis
     ? [options.axis]
     : preferContentRelaySearch
@@ -3181,13 +3274,20 @@ export async function searchLibraryPublicationsOnRelays(
   options?.onProgress?.(buildProgress())
 
   await Promise.all(batches)
+
+  if (contentRootResolveTimer !== null) {
+    window.clearTimeout(contentRootResolveTimer)
+    contentRootResolveTimer = null
+  }
+  contentRootLookupAbortRef.current?.abort()
   await contentRootResolution
 
   if (accumulatedContent.size > 0) {
     const resolved = await resolvePublicationIndexRootsForOrphanContentSections(
       accumulatedContent.values(),
       structuralMap,
-      httpRelays
+      httpRelays,
+      { query: q }
     )
     if (resolved.fetched.length > 0) {
       for (const ev of resolved.fetched) accumulatedValid.set(ev.id, ev)

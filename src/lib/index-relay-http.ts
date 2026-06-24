@@ -169,7 +169,18 @@ function markDevIndexRelayUnavailableFromHttpStatus(status: number, endpoint: st
 }
 
 function shouldSkipDevIndexRelayFetch(endpoint: string): boolean {
-  return import.meta.env.DEV && devIndexRelayUnavailableThisSession && isDevViteIndexRelayProxyPath(endpoint)
+  if (!import.meta.env.DEV || !devIndexRelayUnavailableThisSession || !isDevViteIndexRelayProxyPath(endpoint)) {
+    return false
+  }
+  // NIP-50-style publication search endpoints are separate from POST /api/events/filter;
+  // keep them available when the filter API tripped the dev session skip.
+  if (
+    endpoint.includes('/api/publications/content/search') ||
+    endpoint.includes('/api/publications/search')
+  ) {
+    return false
+  }
+  return true
 }
 
 function maybeLogDevIndexRelayUnreachableHint(): void {
