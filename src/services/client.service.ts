@@ -134,6 +134,7 @@ import { buildPrioritizedWriteRelayUrls, dedupeNormalizeRelayUrlsOrdered } from 
 import { filterPublishingRelayUrls } from '@/lib/social-kind-blocked-relays'
 import {
   IndexRelayTransportError,
+  applyKind5DeletionTargetsToHttpRelay,
   isIndexRelayTransportFailure,
   publishEventToHttpRelay
 } from '@/lib/index-relay-http'
@@ -2010,6 +2011,16 @@ class ClientService extends EventTarget {
                   )
                 )
               ])
+              if (event.kind === kinds.EventDeletion) {
+                try {
+                  await applyKind5DeletionTargetsToHttpRelay(base, event)
+                } catch (e) {
+                  logger.warn('[PublishEvent] HTTP index relay delete after kind 5 failed', {
+                    url: base,
+                    error: e
+                  })
+                }
+              }
               that.recordPublishSuccess(url, Date.now() - startMs)
               that.queryService.trackEventSeenOnByUrl(event.id, base)
               successCount++

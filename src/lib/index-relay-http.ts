@@ -1,6 +1,6 @@
 /**
  * HTTP JSON API for index-style relays (e.g. gc_index_relay: POST /api/events/filter, POST /api/events,
- * POST /api/publications/search, POST /api/publications/content/search).
+ * DELETE /api/events/:id, POST /api/publications/search, POST /api/publications/content/search).
  * @see gc_index_relay lib/gc_index_relay_web/router.ex
  *
  * **Local dev:** loopback bases (`http://localhost:*` / `http://127.0.0.1:*`) are automatically fetched via
@@ -18,7 +18,7 @@ import {
   normalizeHttpRelayUrl
 } from '@/lib/url'
 import type { Filter, Event as NEvent } from 'nostr-tools'
-import { verifyEvent } from 'nostr-tools'
+import { kinds, verifyEvent } from 'nostr-tools'
 
 function trimSlash(base: string): string {
   return base.replace(/\/+$/, '')
@@ -31,6 +31,13 @@ function indexRelayFilterUrl(baseUrl: string): string {
 function indexRelayPublishUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/events`
 }
+
+function indexRelayEventDeleteUrl(baseUrl: string, eventId: string): string {
+  const id = eventId.trim().toLowerCase()
+  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/events/${id}`
+}
+
+const REPLACEABLE_COORDINATE_RE = /^(\d+):([0-9a-f]{64}):(.*)$/i
 
 function indexRelayPublicationMetadataSearchUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/search`
@@ -636,5 +643,110 @@ export async function publishEventToHttpRelay(
       throw new IndexRelayTransportError(e)
     }
     throw e
+  }
+}
+
+/** Hex event ids from kind-5 `e` tags (sync; does not resolve `a` coordinates). */
+export function collectKind5DeletionTargetIdsFromTags(deletionEvent: NEvent): string[] {
+  const ids = new Set<string>()
+  for (const tag of deletionEvent.tags) {
+    if (tag[0] !== 'e' || !tag[1]) continue
+    const id = tag[1].trim().toLowerCase()
+    if (/^[0-9a-f]{64}$/.test(id)) ids.add(id)
+  }
+  return [...ids]
+}
+
+/** Resolve all target event ids referenced by a signed kind-5 (e tags + index lookup for a tags). */
+export async function resolveKind5DeletionTargetIdsForHttpRelay(
+  baseUrl: string,
+  deletionEvent: NEvent,
+  options?: { signal?: AbortSignal }
+): Promise<string[]> {
+  const ids = new Set(collectKind5DeletionTargetIdsFromTags(deletionEvent))
+  const author = deletionEvent.pubkey.trim().toLowerCase()
+
+  for (const tag of deletionEvent.tags) {
+    if (tag[0] !== 'a' || !tag[1]) continue
+    const match = REPLACEABLE_COORDINATE_RE.exec(tag[1].trim())
+    if (!match) continue
+    const kind = Number(match[1])
+    const pubkey = match[2].toLowerCase()
+    const d = match[3]
+    if (!Number.isFinite(kind) || pubkey !== author) continue
+
+    const events = await queryIndexRelay(
+      baseUrl,
+      { authors: [pubkey], kinds: [kind], '#d': [d], limit: 100 },
+      options
+    )
+    for (const ev of events) {
+      if (ev.pubkey.toLowerCase() === pubkey) ids.add(ev.id)
+    }
+  }
+
+  return [...ids]
+}
+
+/** DELETE one event row on an HTTP index relay. 404 is treated as success. */
+export async function deleteEventFromHttpRelay(
+  baseUrl: string,
+  eventId: string,
+  options?: { signal?: AbortSignal }
+): Promise<void> {
+  const id = eventId.trim().toLowerCase()
+  if (!/^[0-9a-f]{64}$/.test(id)) return
+
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayEventDeleteUrl(base, id)
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+      signal: options?.signal,
+      timeoutMs: 25_000
+    })
+    if (res.status === 204 || res.status === 404) return
+    if (isDevViteIndexRelayProxyPath(endpoint) && res.status === 500) {
+      throw new IndexRelayTransportError()
+    }
+    const text = await res.text().catch(() => '')
+    throw new Error(`HTTP ${res.status}${text ? `: ${text.slice(0, 200)}` : ''}`)
+  } catch (e) {
+    if (e instanceof IndexRelayTransportError) throw e
+    if ((e as Error).name === 'AbortError') throw e
+    if (isIndexRelayTransportFailure(e)) {
+      throw new IndexRelayTransportError(e)
+    }
+    throw e
+  }
+}
+
+/**
+ * After a signed kind-5 is published to an HTTP index relay, remove referenced rows via DELETE.
+ * Caller should tombstone locally first; this only runs for verified kind-5 events.
+ */
+export async function applyKind5DeletionTargetsToHttpRelay(
+  baseUrl: string,
+  deletionEvent: NEvent,
+  options?: { signal?: AbortSignal }
+): Promise<void> {
+  if (deletionEvent.kind !== kinds.EventDeletion) return
+  if (!verifyEvent(deletionEvent)) {
+    logger.warn('[IndexRelayHttp] Skipping HTTP index deletes — kind 5 failed signature verify')
+    return
+  }
+
+  const targetIds = await resolveKind5DeletionTargetIdsForHttpRelay(baseUrl, deletionEvent, options)
+  for (const id of targetIds) {
+    try {
+      await deleteEventFromHttpRelay(baseUrl, id, options)
+    } catch (e) {
+      logger.warn('[IndexRelayHttp] HTTP index delete failed', {
+        baseUrl,
+        eventId: id.slice(0, 12),
+        error: e
+      })
+    }
   }
 }

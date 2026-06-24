@@ -1,11 +1,12 @@
 import {
   IndexRelayTransportError,
   clearDevIndexRelayUnavailableThisSession,
+  collectKind5DeletionTargetIdsFromTags,
   isDevIndexRelayUnavailableThisSession,
   isIndexRelayTransportFailure,
   rawToIndexRelayEvent
 } from '@/lib/index-relay-http'
-import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from 'nostr-tools'
+import { finalizeEvent, generateSecretKey, getPublicKey, kinds, verifyEvent } from 'nostr-tools'
 import { describe, expect, it, beforeEach } from 'vitest'
 
 describe('isIndexRelayTransportFailure', () => {
@@ -75,5 +76,31 @@ describe('rawToIndexRelayEvent', () => {
       tags: [...verified.tags].reverse()
     } as unknown as Record<string, unknown>
     expect(rawToIndexRelayEvent(scrambled)).toBeNull()
+  })
+})
+
+describe('collectKind5DeletionTargetIdsFromTags', () => {
+  it('collects lowercase hex ids from e tags', () => {
+    const sk = generateSecretKey()
+    const pubkey = getPublicKey(sk)
+    const target = finalizeEvent(
+      { kind: 1, created_at: 1_700_000_000, tags: [], content: 'note' },
+      sk
+    )
+    const deletion = finalizeEvent(
+      {
+        kind: kinds.EventDeletion,
+        created_at: 1_700_000_001,
+        tags: [
+          ['k', '1'],
+          ['e', target.id.toUpperCase()]
+        ],
+        content: 'Request for deletion of the event.'
+      },
+      sk
+    )
+    expect(collectKind5DeletionTargetIdsFromTags(deletion)).toEqual([target.id])
+    expect(verifyEvent(deletion)).toBe(true)
+    expect(deletion.pubkey).toBe(pubkey)
   })
 })
