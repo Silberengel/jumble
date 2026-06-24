@@ -50,7 +50,6 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
   )
 
   const isSearchPending = searchLoading || relaySearchLoading
-  const showSearchStatus = isSearchPending && entries.length > 0
   const searchStatusMessage = !loading
     ? searchLoading
       ? t('Library search loading', { searchButton: t('Search') })

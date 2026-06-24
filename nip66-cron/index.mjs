@@ -1,7 +1,7 @@
 /**
  * NIP-66 relay monitor cron. Runs on the server; nsec stays in env, never sent to client.
  * - On startup: publish kind 10166 (monitor announcement) once.
- * - Every INTERVAL_MS: for each relay in the resolved monitor list, fetch NIP-11, build & publish 30166.
+ * - Every INTERVAL_MS after the previous round finishes: for each relay in the resolved monitor list, fetch NIP-11, build & publish 30166.
  *
  * Which relays are monitored:
  *   1) If RELAYS_TO_MONITOR is set: use that comma-separated list only (operator override).
@@ -19,7 +19,7 @@
  *   RELAY_LIST_SKIP_KIND10002 - optional; "1"/"true" = do not fetch kind 10002; defaults only
  *   PUBLISH_RELAYS            - optional; comma-separated relays to publish/query / REQ 10002
  *   MAX_RELAYS_TO_MONITOR     - optional; cap after merge (default 500)
- *   INTERVAL_MS               - optional; ms between full monitor runs (default 900000 = 15m)
+ *   INTERVAL_MS               - optional; ms pause between monitor runs (default 900000 = 15m)
  */
 
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
@@ -405,6 +405,23 @@ async function run30166Round (sk, relaysToMonitor, publishRelays) {
   }
 }
 
+async function runMonitorRound (sk, publishRelays) {
+  const relaysToMonitor = await resolveRelaysToMonitor(sk, publishRelays)
+  await run30166Round(sk, relaysToMonitor, publishRelays)
+}
+
+/** Run monitor rounds sequentially; never start a new round while the previous is in flight. */
+async function loopMonitorRounds (sk, publishRelays) {
+  for (;;) {
+    try {
+      await runMonitorRound(sk, publishRelays)
+    } catch (err) {
+      console.error('[nip66-cron] monitor round failed', err)
+    }
+    await new Promise((resolve) => setTimeout(resolve, INTERVAL_MS))
+  }
+}
+
 async function main () {
   const sk = getSecretKey()
   if (!sk) {
@@ -417,12 +434,7 @@ async function main () {
 
   await run10166(sk, publishRelays)
 
-  const run = async () => {
-    const relaysToMonitor = await resolveRelaysToMonitor(sk, publishRelays)
-    await run30166Round(sk, relaysToMonitor, publishRelays)
-  }
-  await run()
-  setInterval(run, INTERVAL_MS)
+  void loopMonitorRounds(sk, publishRelays)
 }
 
 main().catch((err) => {

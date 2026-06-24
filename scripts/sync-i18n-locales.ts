@@ -1,5 +1,5 @@
 /**
- * Merge t() keys from src into en, then regenerate all locale files with the same key set.
+ * Regenerate locale files from keys used in src (orphans pruned).
  * Missing non-English strings fall back to English.
  *
  * Run: node --experimental-strip-types scripts/sync-i18n-locales.ts && npx prettier --write "src/i18n/locales/*.ts"
@@ -17,9 +17,9 @@ import pl from '../src/i18n/locales/pl.ts'
 import ru from '../src/i18n/locales/ru.ts'
 import tr from '../src/i18n/locales/tr.ts'
 import zh from '../src/i18n/locales/zh.ts'
+import { collectUsedTranslationKeys } from './i18n-collect-used-keys.ts'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const srcDir = path.join(__dirname, '..', 'src')
 const localesDir = path.join(__dirname, '..', 'src/i18n/locales')
 const overridesDir = path.join(__dirname, 'i18n-overrides')
 
@@ -47,41 +47,6 @@ const PACKAGES: { file: string; translation: Record<string, string>; header?: st
   { file: 'zh.ts', translation: zh.translation, header: '// NOTE: Untranslated strings fall back to English.\n' }
 ]
 
-function walk(dir: string, acc: string[] = []): string[] {
-  for (const name of fs.readdirSync(dir)) {
-    const p = path.join(dir, name)
-    const st = fs.statSync(p)
-    if (st.isDirectory()) {
-      if (name === 'node_modules' || name === 'dist') continue
-      walk(p, acc)
-    } else if (/\.(tsx|ts)$/.test(name)) acc.push(p)
-  }
-  return acc
-}
-
-function unquoteSingle(s: string) {
-  return s.replace(/\\'/g, "'").replace(/\\\\/g, '\\')
-}
-function unquoteDouble(s: string) {
-  return s.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
-}
-
-function extractTKeys(content: string): Set<string> {
-  const keys = new Set<string>()
-  const re1 = /\bt\(\s*'((?:\\.|[^'\\])*)'/g
-  let m
-  while ((m = re1.exec(content)) !== null) {
-    const raw = unquoteSingle(m[1])
-    if (raw.length > 0 && raw.length < 500) keys.add(raw)
-  }
-  const re2 = /\bt\(\s*"((?:\\.|[^"\\])*)"/g
-  while ((m = re2.exec(content)) !== null) {
-    const raw = unquoteDouble(m[1])
-    if (raw.length > 0 && raw.length < 500) keys.add(raw)
-  }
-  return keys
-}
-
 function formatKey(k: string): string {
   if (/^[A-Za-z_$][\w$]*$/.test(k)) return k
   return JSON.stringify(k)
@@ -103,16 +68,13 @@ function emitLocaleFile(translation: Record<string, string>, keyOrder: string[],
   return lines.join('\n')
 }
 
-const used = new Set<string>()
-for (const f of walk(srcDir)) {
-  const c = fs.readFileSync(f, 'utf8')
-  for (const k of extractTKeys(c)) used.add(k)
-}
-
+const used = collectUsedTranslationKeys()
 const prevEn = { ...en.translation } as Record<string, string>
 const prevKeys = Object.keys(prevEn)
+const keptFromPrev = prevKeys.filter((k) => used.has(k))
 const newOnly = [...used].filter((k) => !(k in prevEn)).sort()
-const keyOrder = [...prevKeys, ...newOnly]
+const keyOrder = [...keptFromPrev, ...newOnly]
+const pruned = prevKeys.length - keptFromPrev.length
 
 const mergedEn: Record<string, string> = {}
 for (const k of keyOrder) {
@@ -131,4 +93,13 @@ for (const pkg of PACKAGES) {
   fs.writeFileSync(path.join(localesDir, pkg.file), body, 'utf8')
 }
 
-console.log('Keys:', keyOrder.length, '| New from scan:', newOnly.length)
+console.log(
+  'Keys:',
+  keyOrder.length,
+  '| New:',
+  newOnly.length,
+  '| Pruned:',
+  pruned,
+  '| Used in src:',
+  used.size
+)
