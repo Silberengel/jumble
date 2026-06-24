@@ -38,6 +38,10 @@ FROM nginx:alpine
 
 ARG APP_VERSION=unknown
 ARG GIT_COMMIT=unknown
+ARG BUILD_TIME
+ENV APP_VERSION=${APP_VERSION}
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
 
 RUN apk add --no-cache jq wget
 
