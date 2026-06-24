@@ -11,9 +11,9 @@ import {
 import { getTopLevelIndexEvents } from '@/lib/publication-index'
 import logger from '@/lib/logger'
 import type { Event } from 'nostr-tools'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RELAY_SEARCH_TIMEOUT_MS, SEARCH_DEBOUNCE_MS } from './config'
+import { RELAY_SEARCH_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, SEARCH_PROGRESS_THROTTLE_MS } from './config'
 import { EMPTY_ENGAGEMENT } from './constants'
 
 export function useLibrarySearch(params: {
@@ -49,6 +49,11 @@ export function useLibrarySearch(params: {
   const [searchLoading, setSearchLoading] = useState(false)
   const [relaySearchLoading, setRelaySearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<LibraryPublicationEntry[] | null>(null)
+  const progressThrottleRef = useRef<number | null>(null)
+  const latestProgressRef = useRef<{
+    entries: LibraryPublicationEntry[]
+    mergedIndexEvents?: Event[]
+  } | null>(null)
 
   useEffect(() => {
     const timer = window.setTimeout(() => setDebouncedSearch(committedSearch), SEARCH_DEBOUNCE_MS)
@@ -99,15 +104,34 @@ export function useLibrarySearch(params: {
 
     let cancelled = false
     setSearchLoading(true)
+    latestProgressRef.current = null
+    if (progressThrottleRef.current !== null) {
+      window.clearTimeout(progressThrottleRef.current)
+      progressThrottleRef.current = null
+    }
+
+    const flushProgress = () => {
+      if (cancelled) return
+      const latest = latestProgressRef.current
+      if (!latest) return
+      setSearchResults(latest.entries)
+      if (latest.mergedIndexEvents) {
+        setIndexEvents(latest.mergedIndexEvents)
+        setAllIndexCount(latest.mergedIndexEvents.length)
+        setTopLevelCount(getTopLevelIndexEvents(latest.mergedIndexEvents).length)
+      }
+    }
+
     void (async () => {
       const applyProgress = (entries: LibraryPublicationEntry[], mergedIndexEvents?: Event[]) => {
         if (cancelled) return
-        setSearchResults(entries)
-        if (mergedIndexEvents) {
-          setIndexEvents(mergedIndexEvents)
-          setAllIndexCount(mergedIndexEvents.length)
-          setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
-        }
+        latestProgressRef.current = { entries, mergedIndexEvents }
+        if (progressThrottleRef.current !== null) return
+        flushProgress()
+        progressThrottleRef.current = window.setTimeout(() => {
+          progressThrottleRef.current = null
+          flushProgress()
+        }, SEARCH_PROGRESS_THROTTLE_MS)
       }
 
       let results = await searchLibraryPublications(
@@ -140,12 +164,17 @@ export function useLibrarySearch(params: {
         }
       }
       if (cancelled) return
+      flushProgress()
       setSearchResults(results)
       setSearchLoading(false)
     })()
 
     return () => {
       cancelled = true
+      if (progressThrottleRef.current !== null) {
+        window.clearTimeout(progressThrottleRef.current)
+        progressThrottleRef.current = null
+      }
     }
   }, [
     debouncedSearch,

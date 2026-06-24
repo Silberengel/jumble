@@ -375,6 +375,10 @@ export default function AsciidocArticle({
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const { navigateToHashtag } = useSmartHashtagNavigationOptional()
   const { navigateToRelay } = useSmartRelayNavigationOptional()
+  const navigateToHashtagRef = useRef(navigateToHashtag)
+  navigateToHashtagRef.current = navigateToHashtag
+  const navigateToRelayRef = useRef(navigateToRelay)
+  navigateToRelayRef.current = navigateToRelay
   const { t } = useTranslation()
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
   const contentRef = useRef<HTMLDivElement>(null)
@@ -973,16 +977,20 @@ export default function AsciidocArticle({
   
   // Store React roots for cleanup
   const reactRootsRef = useRef<Map<Element, Root>>(new Map())
-  // Track which placeholders have been processed to avoid re-processing
-  const processedPlaceholdersRef = useRef<Set<string>>(new Set())
+  const postProcessedHtmlRef = useRef<string | null>(null)
   // Track citations for footnotes and endnotes sections
   const citationsRef = useRef<Array<{ id: string; type: string; citationId: string; index: number }>>([])
   const citationIndexRef = useRef(0)
   const citationAnchorPrefix = useMemo(() => event.id.toLowerCase(), [event.id])
+
+  useEffect(() => {
+    postProcessedHtmlRef.current = null
+  }, [event.id, processedContent])
   
   // Post-process rendered HTML to inject React components for nostr: links and handle hashtags
   useEffect(() => {
     if (!contentRef.current || !parsedHtml || isLoading) return
+    if (postProcessedHtmlRef.current === parsedHtml) return
     
     // Only clean up roots that are no longer in the DOM
     const rootsToCleanup: Array<[Element, Root]> = []
@@ -1110,13 +1118,6 @@ export default function AsciidocArticle({
     const referencesSectionId = `references-section-${citationAnchorPrefix}`
 
     const citationPlaceholders = Array.from(contentRef.current.querySelectorAll('.citation-placeholder[data-citation]'))
-    console.log('AsciidocArticle: Found citation placeholders', {
-      count: citationPlaceholders.length,
-      placeholders: citationPlaceholders.map(el => ({
-        id: el.getAttribute('data-citation'),
-        type: el.getAttribute('data-citation-type')
-      }))
-    })
     
     citationsRef.current = []
     citationIndexRef.current = 0
@@ -1136,11 +1137,6 @@ export default function AsciidocArticle({
         citationId,
         index: citationIndex
       })
-    })
-    
-    console.log('AsciidocArticle: Collected citations', {
-      count: citationsRef.current.length,
-      citations: citationsRef.current
     })
     
     // Second pass: render citations based on type
@@ -1245,13 +1241,6 @@ export default function AsciidocArticle({
     const footnotes = citationsRef.current.filter(c => c.type === 'foot' || c.type === 'foot-end')
     const endCitations = citationsRef.current.filter(c => c.type === 'end' || c.type === 'prompt-end')
     
-    console.log('AsciidocArticle: Processing citations', {
-      totalCitations: citationsRef.current.length,
-      footnotesCount: footnotes.length,
-      endCitationsCount: endCitations.length,
-      allCitations: citationsRef.current
-    })
-    
     if (!contentRef.current?.parentElement) {
       console.warn('AsciidocArticle: contentRef parent not found, cannot render footnotes/references')
       return
@@ -1270,10 +1259,7 @@ export default function AsciidocArticle({
     // If sections already exist and we have no new citations, preserve existing sections
     // This handles the case where useEffect runs again after placeholders are replaced
     if ((existingFootnotes || existingReferences) && citationsRef.current.length === 0) {
-      console.log('AsciidocArticle: Sections already exist, preserving them', {
-        hasFootnotes: !!existingFootnotes,
-        hasReferences: !!existingReferences
-      })
+      postProcessedHtmlRef.current = parsedHtml
       return
     }
     
@@ -1284,16 +1270,6 @@ export default function AsciidocArticle({
     if (existingReferences && endCitations.length > 0) {
       existingReferences.remove()
     }
-    
-    console.log('AsciidocArticle: Rendering citation sections', {
-      footnotesCount: footnotes.length,
-      endCitationsCount: endCitations.length,
-      totalCitations: citationsRef.current.length,
-      parentContainer: parentContainer.tagName,
-      hasContentRef: !!contentRef.current,
-      hadExistingFootnotes: !!existingFootnotes,
-      hadExistingReferences: !!existingReferences
-    })
     
     // Render footnotes section
     if (footnotes.length > 0) {
@@ -1376,17 +1352,6 @@ export default function AsciidocArticle({
       footnotesSection.appendChild(ol)
       // Footnotes always stay at the bottom of this section.
       contentRef.current.insertAdjacentElement('afterend', footnotesSection)
-      
-      // Verify insertion
-      const insertedFootnotes = parentContainer.querySelector(`#${footnotesSectionId}`)
-      console.log('AsciidocArticle: Footnotes section created and inserted', { 
-        footnotesCount: footnotes.length,
-        parentTagName: parentContainer.tagName,
-        sectionId: footnotesSection.id,
-        isInDOM: !!insertedFootnotes,
-        sectionVisible: insertedFootnotes ? window.getComputedStyle(insertedFootnotes).display !== 'none' : false,
-        sectionText: insertedFootnotes?.textContent?.substring(0, 100)
-      })
     }
     
     // Render references section
@@ -1473,16 +1438,6 @@ export default function AsciidocArticle({
       } else {
         contentRef.current.insertAdjacentElement('afterend', referencesSection)
       }
-      
-      // Verify insertion
-      const insertedReferences = referencesTargetContainer.querySelector(`#${referencesSectionId}`)
-      console.log('AsciidocArticle: References section created and inserted', { 
-        endCitationsCount: endCitations.length,
-        hasFootnotesSection: !!insertedFootnotesSection,
-        sectionId: referencesSection.id,
-        isInDOM: !!insertedReferences,
-        sectionHTML: insertedReferences?.outerHTML?.substring(0, 200)
-      })
     }
     
     // Process LaTeX math expressions - render with KaTeX
@@ -1617,7 +1572,7 @@ export default function AsciidocArticle({
           link.addEventListener('click', (e) => {
             e.stopPropagation()
             e.preventDefault()
-            navigateToHashtag(`/notes?t=${match[1].toLowerCase()}`)
+            navigateToHashtagRef.current(`/notes?t=${match[1].toLowerCase()}`)
           })
           fragment.appendChild(link)
           
@@ -1660,21 +1615,21 @@ export default function AsciidocArticle({
         link.addEventListener('click', (e) => {
           e.stopPropagation()
           e.preventDefault()
-          navigateToRelay(relayPath)
+          navigateToRelayRef.current(relayPath)
         })
       }
     })
     
     // No cleanup needed here - we only clean up disconnected roots above
     // Full cleanup happens on component unmount
-  }, [parsedHtml, isLoading, navigateToHashtag, navigateToRelay, footnotesContainerId, citationAnchorPrefix, event.id])
+    postProcessedHtmlRef.current = parsedHtml
+  }, [parsedHtml, isLoading, footnotesContainerId, citationAnchorPrefix, event.id])
   
   // Cleanup on component unmount
   useEffect(() => {
     return () => {
       const rootsToCleanup = Array.from(reactRootsRef.current.values())
       reactRootsRef.current.clear()
-      processedPlaceholdersRef.current.clear()
       
       // Unmount asynchronously
       setTimeout(() => {
