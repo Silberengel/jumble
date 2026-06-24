@@ -51,6 +51,15 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
 
   const isSearchPending = searchLoading || relaySearchLoading
   const showSearchStatus = isSearchPending && entries.length > 0
+  const searchStatusMessage = !loading
+    ? searchLoading
+      ? t('Library search loading', { searchButton: t('Search') })
+      : relaySearchLoading
+        ? t('Library relay search loading')
+        : mineFilterLoading
+          ? t('Library mine filter loading')
+          : null
+    : null
 
   const statusLine =
     !loading && !error && entries.length > 0
@@ -92,14 +101,8 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
         {loading ? (
           <p className="mb-4 text-xs text-muted-foreground">{t('Library loading')}</p>
         ) : null}
-        {showSearchStatus ? (
-          <p className="mb-4 text-xs text-muted-foreground">{t('Library search loading')}</p>
-        ) : !loading && searchLoading ? (
-          <p className="mb-4 text-xs text-muted-foreground">{t('Library search loading')}</p>
-        ) : !loading && mineFilterLoading ? (
-          <p className="mb-4 text-xs text-muted-foreground">{t('Library mine filter loading')}</p>
-        ) : !loading && relaySearchLoading ? (
-          <p className="mb-4 text-xs text-muted-foreground">{t('Library relay search loading')}</p>
+        {searchStatusMessage ? (
+          <p className="mb-4 text-xs text-muted-foreground">{searchStatusMessage}</p>
         ) : null}
         {statusLine ? (
           <p className="mb-4 text-xs text-muted-foreground">{statusLine}</p>

@@ -1676,7 +1676,8 @@ export default {
     'Library loading': 'Publikationen werden von Dokument-Relays geladen…',
     'Library mine filter loading': 'Deine Publikationen werden gefiltert…',
     'Library engagement loading': 'Engagement-Filter werden aktualisiert…',
-    'Library search loading': 'Publikationen werden durchsucht…',
+    'Library search loading':
+      'Lokal gespeicherte Publikationen werden durchsucht. Für eine vollständige Relay-Suche die Schaltfläche „{{searchButton}}“ verwenden.',
     'Library search relays': 'Relays durchsuchen',
     'Library relay search loading': 'Dokument-Relays werden durchsucht…',
     'Library status line': '{{shown}} angezeigt · {{topLevel}} Top-Level · {{total}} Indizes geladen',

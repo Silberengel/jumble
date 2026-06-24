@@ -1732,7 +1732,8 @@ export default {
     'Library loading': 'Loading publications from document relays…',
     'Library mine filter loading': 'Filtering your publications…',
     'Library engagement loading': 'Updating engagement filters…',
-    'Library search loading': 'Searching publications…',
+    'Library search loading':
+      'Searching locally stored publications. For a full relay search, press the "{{searchButton}}" button.',
     'Library search relays': 'Search the relays',
     'Library relay search loading': 'Searching document relays…',
     'Library status line': '{{shown}} shown · {{topLevel}} top-level · {{total}} indexes loaded',
