@@ -89,6 +89,30 @@ function extractTKeys(content: string): Set<string> {
   return keys
 }
 
+/** Must stay in sync with fauxSpellLabelKey() in fauxSpellConfig.ts */
+const FAUX_SPELL_LABEL_KEYS = [
+  'Notifications',
+  'Discussions',
+  'Following',
+  'Heat map',
+  'Follow Packs',
+  'Media',
+  'Interests',
+  'Nostr specs',
+  'Bookmarks',
+  'Calendar'
+] as const
+
+/** SidebarItem passes `title` through t() — string literals on `title="…"`. */
+const SIDEBAR_TITLE_KEYS = [
+  'Notifications',
+  'Settings',
+  'Search',
+  'Spells',
+  'New post',
+  'Discussions'
+] as const
+
 /** Keys returned from composerBlockReasonMessageKey (t(key) in composer-block-reason.ts). */
 function composerBlockReasonKeys(): string[] {
   return [
@@ -114,6 +138,8 @@ export function collectUsedTranslationKeys(srcDir = path.join(__dirname, '..', '
     const content = fs.readFileSync(f, 'utf8')
     for (const k of extractTKeys(content)) used.add(k)
   }
+  for (const k of FAUX_SPELL_LABEL_KEYS) used.add(k)
+  for (const k of SIDEBAR_TITLE_KEYS) used.add(k)
   for (const k of composerBlockReasonKeys()) used.add(k)
   for (const c of PAYTO_CATEGORIES) used.add(`paytoCategory.${c}`)
   for (const t of RELAY_SOURCE_TYPES) used.add(`relayType_${t}`)
