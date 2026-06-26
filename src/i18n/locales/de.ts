@@ -1142,6 +1142,17 @@ export default {
     "Search on Alexandria": "Mit Alexandria suchen",
     Library: "Bibliothek",
     "Library page title": "Bibliothek",
+    "Library help button": "Bibliothek-Hilfe",
+    "Library help title": "Bibliothek verwenden",
+    "Library help browse":
+      "Bücher sind Nostr-Publikationen – entweder massenweise aus Quellen wie Project Gutenberg importiert oder direkt auf Nostr veröffentlicht – von den Dokument-/Bibliotheks-Relays der App sowie deinen eigenen Relays. Zuerst wird eine zwischengespeicherte Kopie geladen, dann kommen weitere von den Relays hinzu.",
+    "Library help search":
+      "Die Suche umfasst die bereits geladenen Bücher und fragt die Dokument-Relays ab. Suche nach Titel, Autor, Quelle, Tag oder Abschnitt; mit der erweiterten Suche gezielt nach Titel, Autor, d-Tag oder einer Textpassage.",
+    "Library help mine":
+      '„Meine Publikationen“ zeigt nur Bücher, die du geschrieben oder gespeichert hast – verfasst, als Lesezeichen, angepinnt oder auf einer deiner Bücherlisten.',
+    "Library help open":
+      "Klicke auf ein Buch, um es zu öffnen und zu lesen. Über das Optionsmenü (⋯) lädst du es als AsciiDoc, EPUB oder PDF herunter; mit dem grünen Button fügst du es zu einer Bücherliste hinzu.",
+    "Library help refresh": "Aktualisieren lädt die neuesten Publikationen erneut von den Relays.",
     "Library search placeholder": "Publikationen nach Titel, Autor, Quelle, Tag oder Abschnitt suchen…",
     "Library search advanced": "Erweiterte Suche",
     "Library search field title": "Titel",

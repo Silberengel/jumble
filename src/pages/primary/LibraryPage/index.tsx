@@ -2,12 +2,22 @@ import LibraryPublicationGrid from '@/components/Library/LibraryPublicationGrid'
 import LibrarySearchBar from '@/components/Library/LibrarySearchBar'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger
+} from '@/components/ui/drawer'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import PrimaryPageLayout, { TPrimaryPageLayoutRef } from '@/layouts/PrimaryPageLayout'
 import { useLibraryPublications } from '@/hooks/useLibraryPublications'
 import { LIBRARY_PAGE_SIZE } from '@/lib/library-publication-index'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
+import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { TPageRef } from '@/types'
-import { BookOpen } from 'lucide-react'
+import { BookOpen, HelpCircle } from 'lucide-react'
 import { forwardRef, useImperativeHandle, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -140,7 +150,62 @@ function LibraryPageTitlebar({ onRefresh }: { onRefresh: () => void }) {
         <BookOpen className="size-5" />
         <div className="app-chrome-title">{t('Library page title')}</div>
       </div>
-      <RefreshButton onClick={onRefresh} />
+      <div className="flex shrink-0 items-center gap-1">
+        <LibraryHelpButton />
+        <RefreshButton onClick={onRefresh} />
+      </div>
     </div>
+  )
+}
+
+function LibraryHelpButton() {
+  const { t } = useTranslation()
+  const { isSmallScreen } = useScreenSize()
+
+  const triggerButton = (
+    <Button
+      variant="ghost"
+      size="titlebar-icon"
+      className="shrink-0 cursor-help text-muted-foreground focus:text-foreground"
+      aria-label={t('Library help button')}
+    >
+      <HelpCircle className="size-5" aria-hidden />
+    </Button>
+  )
+
+  const helpList = (
+    <ul className="list-disc space-y-1.5 pl-4 text-sm text-muted-foreground">
+      <li>{t('Library help browse')}</li>
+      <li>{t('Library help search')}</li>
+      <li>{t('Library help mine')}</li>
+      <li>{t('Library help open')}</li>
+      <li>{t('Library help refresh')}</li>
+    </ul>
+  )
+
+  // Mobile: tap opens a bottom sheet (hover is unavailable on touch). Desktop: hover/focus popover.
+  if (isSmallScreen) {
+    return (
+      <Drawer>
+        <DrawerTrigger asChild>{triggerButton}</DrawerTrigger>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle>{t('Library help title')}</DrawerTitle>
+            <DrawerDescription className="sr-only">{t('Library help button')}</DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4 pb-8">{helpList}</div>
+        </DrawerContent>
+      </Drawer>
+    )
+  }
+
+  return (
+    <HoverCard openDelay={150} closeDelay={100}>
+      <HoverCardTrigger asChild>{triggerButton}</HoverCardTrigger>
+      <HoverCardContent align="end" className="w-[min(20rem,calc(100vw-1.5rem))] space-y-2">
+        <p className="text-sm font-semibold">{t('Library help title')}</p>
+        {helpList}
+      </HoverCardContent>
+    </HoverCard>
   )
 }
