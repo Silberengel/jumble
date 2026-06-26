@@ -85,10 +85,19 @@ export function generalSearchHaystack(ev: Event): string {
   return chunks.join('\n').toLowerCase()
 }
 
+/**
+ * Fold typographic quotes/apostrophes to their ASCII equivalents so a straight apostrophe typed by the
+ * user (o'clock) matches the curly one stored in the text (o’clock), and vice versa.
+ */
+export function foldTypographicQuotes(text: string): string {
+  return text
+    .replace(/[\u2018\u2019\u201A\u201B\u2032\u0060\u00B4]/g, "'")
+    .replace(/[\u201C\u201D\u201E\u201F\u2033\u00AB\u00BB]/g, '"')
+}
+
 /** Collapse whitespace (incl. hard line breaks) and normalize dash runs for phrase matching. */
 export function normalizeSearchMatchText(text: string): string {
-  return text
-    .toLowerCase()
+  return foldTypographicQuotes(text.toLowerCase())
     .replace(/[‐‑‒–—―\-]+/gu, ' ')
     .replace(/--+/g, ' ')
     .replace(/\s+/g, ' ')
@@ -137,7 +146,7 @@ export function scoreHaystackSearchQuery(haystack: string, query: string): numbe
   const raw = query.trim()
   if (!raw) return 0
 
-  const lower = haystack.toLowerCase()
+  const lower = foldTypographicQuotes(haystack.toLowerCase())
 
   if (isQuotedSearchQuery(raw)) {
     return haystackMatchesPhraseQuery(haystack, raw) ? 10_000 + normalizeGeneralSearchQuery(raw).length : 0
@@ -147,7 +156,7 @@ export function scoreHaystackSearchQuery(haystack: string, query: string): numbe
     if (needle && haystackIncludesPhrase(haystack, needle)) return 10_000 + needle.length
   }
 
-  const words = generalSearchQueryTerms(raw)
+  const words = generalSearchQueryTerms(raw).map(foldTypographicQuotes)
   if (words.length >= 2) {
     const matched = words.filter((w) => lower.includes(w))
     if (matched.length === words.length) {
@@ -211,7 +220,11 @@ function escapeRegExpLiteral(s: string): string {
  * whole matched passage can be highlighted, not just the first word.
  */
 function findFlexiblePhraseSlice(haystack: string, raw: string): string | null {
-  const words = generalSearchQueryTerms(raw)
+  // Split on every non-alphanumeric run so punctuation between words (incl. apostrophes like the one in
+  // "o'clock"/"o’clock") becomes a flexible separator and the whole passage is highlighted.
+  const words = normalizeGeneralSearchQuery(raw)
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 0)
   if (words.length === 0) return null
   const pattern = words.map(escapeRegExpLiteral).join('[^\\p{L}\\p{N}]+')
   try {
@@ -226,7 +239,7 @@ export function findSearchHighlightNeedle(haystack: string, query: string): stri
   const raw = query.trim()
   if (!raw) return null
 
-  const lowerHaystack = haystack.toLowerCase()
+  const lowerHaystack = foldTypographicQuotes(haystack.toLowerCase())
 
   for (const needle of phraseNeedlesForQuery(raw)) {
     if (haystackIncludesPhrase(haystack, needle)) {
@@ -237,7 +250,7 @@ export function findSearchHighlightNeedle(haystack: string, query: string): stri
     }
   }
 
-  const words = generalSearchQueryTerms(raw)
+  const words = generalSearchQueryTerms(raw).map(foldTypographicQuotes)
   if (words.length >= 2 && words.every((w) => lowerHaystack.includes(w))) {
     for (const word of words) {
       const idx = lowerHaystack.indexOf(word)
