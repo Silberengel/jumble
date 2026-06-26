@@ -72,7 +72,18 @@ export default function VideoPlayer({
 
     const hls = new Hls({
       enableWorker: true,
-      lowLatencyMode: true
+      lowLatencyMode: true,
+      // A dead/empty HLS manifest (e.g. 404) never recovers, so hls.js's default 1 error-retry just
+      // fires a second wasted request and delays the fallback UI. Don't retry manifest load errors;
+      // keep the timeout-retry so genuinely slow (but live) manifests still get a second chance.
+      manifestLoadPolicy: {
+        default: {
+          maxTimeToFirstByteMs: Infinity,
+          maxLoadTimeMs: 20000,
+          timeoutRetry: { maxNumRetry: 2, retryDelayMs: 0, maxRetryDelayMs: 0 },
+          errorRetry: { maxNumRetry: 0, retryDelayMs: 1000, maxRetryDelayMs: 8000 }
+        }
+      }
     })
     hls.loadSource(src)
     hls.attachMedia(video)

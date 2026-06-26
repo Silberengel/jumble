@@ -3082,10 +3082,12 @@ export async function searchLibraryPublicationsOnRelays(
     const phraseEntries = sortedEntries.filter(
       (entry) => (entry.contentSearchMatch?.matchScore ?? 0) >= 10_000
     )
+    // For a passage/content search, only surface publications whose section actually contains the
+    // query phrase. The scattered-word fallback (any ≥2 query words present) matches every long
+    // text on common words, so it returned the same handful of unrelated books for every query.
+    // No phrase match → no result, which is correct here rather than dumping false positives.
     const entries =
-      preferContentRelaySearch && !options?.axis && phraseEntries.length > 0
-        ? phraseEntries
-        : sortedEntries
+      preferContentRelaySearch && !options?.axis ? phraseEntries : sortedEntries
     return {
       entries,
       mergedIndexEvents: mergedIndex,
