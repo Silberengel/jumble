@@ -1,12 +1,14 @@
 import { DOCUMENT_RELAY_URLS, ExtendedKind, LIBRARY_RELAY_URLS } from '@/constants'
 import { tryParseCitationEventIdFromQuery } from '@/lib/citation-picker-search'
 import {
+  buildRelayContentSearchQuery,
   generalSearchQueryTerms,
   haystackMatchesPhraseQuery,
   haystackMatchesSearchQuery,
   isQuotedSearchQuery,
   metadataSearchHaystack,
   normalizeGeneralSearchQuery,
+  publicationContentSectionTitle,
   scorePublicationContentEventSearchQuery
 } from '@/lib/general-search-text-match'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
@@ -66,6 +68,8 @@ const MAX_ENGAGEMENT_HTTP_CHUNKS = 6
 const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
 export const LIBRARY_PAGE_SIZE = 120
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
+/** Cap on kind-30040 indexes pulled from the reading cache to resolve content hits to their root. */
+const LIBRARY_CONTENT_ROOT_INDEX_SCAN_LIMIT = 4000
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
 
@@ -325,6 +329,32 @@ function isFinalLibrarySearchSessionRow(row: LibrarySearchSessionRow): boolean {
   return row.entries.length > 0 || row.relaySearched
 }
 
+/**
+ * Passage / full-text ("content-primary") searches must never be satisfied by a cached *empty* result.
+ * Their hit set depends on data that changes during a session: kind-30041 content only lands in the
+ * reading cache when a publication is opened, and the full-text relay path is best-effort. The session
+ * cache fingerprint (index size + engagement) does NOT change when that content cache grows, so caching
+ * an empty content result as "final" would wrongly report "nothing found" forever — even after the user
+ * has the matching publication stored locally.
+ */
+function isContentPrimarySearch(
+  query: string,
+  axis?: LibraryPublicationRelaySearchAxis | null
+): boolean {
+  return !axis && shouldSearchPublicationContentOnRelays(query)
+}
+
+/** A cached row that can be trusted: final, and (for content searches) not a stale empty result. */
+function isServableLibrarySearchSessionRow(
+  row: LibrarySearchSessionRow,
+  query: string,
+  axis?: LibraryPublicationRelaySearchAxis | null
+): boolean {
+  if (!isFinalLibrarySearchSessionRow(row)) return false
+  if (row.entries.length === 0 && isContentPrimarySearch(query, axis)) return false
+  return true
+}
+
 /** Sync read of cached search hits for the current index + engagement snapshot. */
 export function peekLibrarySearchResults(
   query: string,
@@ -333,7 +363,7 @@ export function peekLibrarySearchResults(
 ): LibraryPublicationEntry[] | null {
   const row = getLibrarySearchSessionRow(query, context, { axis })
   if (!row) return null
-  if (!isFinalLibrarySearchSessionRow(row)) return null
+  if (!isServableLibrarySearchSessionRow(row, query, axis)) return null
   return row.entries
 }
 
@@ -1673,6 +1703,42 @@ export function findLibraryPublicationContentSearchMatches(
   return matches.sort((a, b) => b.match.matchScore - a.match.matchScore)
 }
 
+/**
+ * DEV-only funnel report for the local full-text path: scan → phrase match → mappable address → root.
+ * Pinpoints where a "stored locally" excerpt drops out (not in cache, phrase mismatch, or no kind-30040
+ * index to map the section to a publication).
+ */
+function diagnoseLocalContentSearch(
+  query: string,
+  contentEvents: Event[],
+  ctx: { contentPrimary: boolean; cachedIndexCount: number; mappedRoots: number }
+): void {
+  const q = query.trim()
+  const sections = contentEvents.filter((ev) => ev.kind === ExtendedKind.PUBLICATION_CONTENT)
+  const phraseMatched = sections.filter((ev) => scorePublicationContentEventSearchQuery(ev, q) > 0)
+  const matchedWithAddress = phraseMatched.filter((ev) => !!eventTagAddress(ev))
+
+  const sampleUnmapped =
+    ctx.mappedRoots === 0 && matchedWithAddress.length > 0
+      ? matchedWithAddress.slice(0, 3).map((ev) => ({
+          d: ev.tags?.find((t) => t[0] === 'd')?.[1] ?? '',
+          a: ev.tags?.find((t) => t[0] === 'a')?.[1] ?? '',
+          title: publicationContentSectionTitle(ev)
+        }))
+      : undefined
+
+  logger.info('[Library] local content funnel', {
+    query: q.length > 60 ? `${q.slice(0, 60)}…` : q,
+    contentPrimary: ctx.contentPrimary,
+    scanned: sections.length,
+    phraseMatched: phraseMatched.length,
+    matchedWithAddress: matchedWithAddress.length,
+    cachedIndexEvents: ctx.cachedIndexCount,
+    mappedRoots: ctx.mappedRoots,
+    ...(sampleUnmapped ? { unmappedSampleSections: sampleUnmapped } : {})
+  })
+}
+
 export function libraryPublicationRootsForContentEvents(
   query: string,
   contentEvents: Event[],
@@ -1847,7 +1913,7 @@ export async function searchLibraryPublications(
 
   if (!options?.forceRefresh) {
     const cached = getLibrarySearchSessionRow(q, context, { axis })
-    if (cached && isFinalLibrarySearchSessionRow(cached)) {
+    if (cached && isServableLibrarySearchSessionRow(cached, q, axis)) {
       if (import.meta.env.DEV) {
         logger.info('[Library] search cache hit', {
           query: q,
@@ -1925,14 +1991,45 @@ export async function searchLibraryPublications(
         [ExtendedKind.PUBLICATION_CONTENT],
         { scanBudget: 20_000, collectCap: 400 }
       )
+      // A kind-30041 content hit only resolves to a publication via a kind-30040 index whose `a` tags
+      // reference it. A book the user has *opened* stores its index in the reading cache, which may not be
+      // part of the library index cache — so merge cached indexes into the mapping pool. Without this, a
+      // locally-stored excerpt scores a match but maps to no root and silently drops out of the results.
+      let mappingIndexEvents = indexEvents
+      let mappingIndexByAddress = indexByAddress
+      let cachedIndexCount = 0
+      if (fromContentCache.length > 0) {
+        const cachedIndexes = filterValidIndexEvents(
+          await indexedDb.getCachedPublicationEventsByKinds(
+            LIBRARY_CONTENT_ROOT_INDEX_SCAN_LIMIT,
+            [ExtendedKind.PUBLICATION],
+            { scanBudget: 50_000 }
+          )
+        )
+        cachedIndexCount = cachedIndexes.length
+        if (cachedIndexes.length > 0) {
+          mappingIndexEvents = dedupeEventsById([...indexEvents, ...cachedIndexes])
+          mappingIndexByAddress = buildIndexByAddress(mappingIndexEvents)
+        }
+      }
+      let mappedRoots = 0
       for (const { root, match } of findLibraryPublicationContentSearchMatches(
         q,
         fromContentCache,
-        indexEvents,
-        indexByAddress
+        mappingIndexEvents,
+        mappingIndexByAddress
       )) {
+        mappedRoots++
         contentMatchesByRootId.set(root.id, match)
         if (!rootMap.has(root.id)) rootMap.set(root.id, root)
+      }
+
+      if (import.meta.env.DEV) {
+        diagnoseLocalContentSearch(q, fromContentCache, {
+          contentPrimary,
+          cachedIndexCount,
+          mappedRoots
+        })
       }
     } catch (e) {
       if (import.meta.env.DEV) {
@@ -1948,7 +2045,10 @@ export async function searchLibraryPublications(
 
   const searchContext: LibrarySearchContext = { indexEvents, engagement }
   const prev = getLibrarySearchSessionRow(q, searchContext, { axis })
-  if (entries.length > 0 || prev?.relaySearched) {
+  // Never persist an empty content-primary result — it would block the next attempt from re-scanning the
+  // (now possibly populated) reading cache. Non-empty results and metadata searches cache as before.
+  const cacheableEmpty = !!prev?.relaySearched && !contentPrimary
+  if (entries.length > 0 || cacheableEmpty) {
     putLibrarySearchSessionRow(
       q,
       searchContext,
@@ -2740,6 +2840,18 @@ export async function fetchPublicationContentFromRelays(
   const q = query.trim()
   if (!q) return []
 
+  // Long passages make relay token-AND search return nothing or bury the right section, so send the relay
+  // a bounded, distinctive window. Ranking/highlighting still use the full query `q`.
+  const relayQuery = buildRelayContentSearchQuery(q)
+  if (import.meta.env.DEV && relayQuery !== q) {
+    logger.info('[Library] relay content query capped', {
+      original: q,
+      originalWords: q.split(/\s+/).filter(Boolean).length,
+      relayQuery,
+      relayWords: relayQuery.split(/\s+/).filter(Boolean).length
+    })
+  }
+
   const relayCandidates = filterBlockedLibraryRelays(
     [
       ...new Set([
@@ -2781,7 +2893,7 @@ export async function fetchPublicationContentFromRelays(
     primaryTasks.push(
       Promise.all(
         httpRelays.map((relay) =>
-          queryIndexRelayPublicationContentSearch(relay, q, {
+          queryIndexRelayPublicationContentSearch(relay, relayQuery, {
             limit: LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT
           })
             .then((page) => {
@@ -2801,7 +2913,7 @@ export async function fetchPublicationContentFromRelays(
   }
   if (wsDocumentRelays.length > 0) {
     primaryTasks.push(
-      searchWsRelaysForPublicationContentNip50(q, wsDocumentRelays, {
+      searchWsRelaysForPublicationContentNip50(relayQuery, wsDocumentRelays, {
         onPartialEvents: emitMatches
       }).catch(() => [] as Event[])
     )
@@ -3130,12 +3242,15 @@ export async function searchLibraryPublicationsOnRelays(
     return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
   }
 
+  const contentPrimary = isContentPrimarySearch(q, options?.axis)
   if (!options?.forceRefresh) {
     const cached = getLibrarySearchSessionRow(q, context, {
       requireRelaySearch: true,
       axis: options?.axis
     })
-    if (cached) {
+    // A stale empty content-primary row must not short-circuit the relay pass (best-effort full-text +
+    // dynamically-cached content mean a later attempt can still succeed).
+    if (cached && !(contentPrimary && cached.entries.length === 0)) {
       if (import.meta.env.DEV) {
         logger.info('[Library] relay search cache hit', { query: q })
       }
@@ -3162,9 +3277,38 @@ export async function searchLibraryPublicationsOnRelays(
   const contentMatchesByRootId = new Map<string, LibraryPublicationContentSearchMatch>()
   const preferContentRelaySearch = shouldSearchPublicationContentOnRelays(q, options?.axis)
 
+  // For content/passage searches, resolve relay content hits against indexes the user already has cached
+  // from reading too — a hit's parent kind-30040 may live only in the reading cache, not in the library
+  // index or the relay response. Kept separate from the reported merged index so the library isn't polluted.
+  let contentRootResolverIndexes: Event[] = []
+  if (preferContentRelaySearch && !options?.axis) {
+    try {
+      contentRootResolverIndexes = filterValidIndexEvents(
+        await indexedDb.getCachedPublicationEventsByKinds(
+          LIBRARY_CONTENT_ROOT_INDEX_SCAN_LIMIT,
+          [ExtendedKind.PUBLICATION],
+          { scanBudget: 50_000 }
+        )
+      )
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[Library] relay content root index preload failed', {
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
+    }
+  }
+
   const buildProgress = (): LibrarySearchProgress => {
     const mergedIndex = publicationIndexMapValues(structuralMap)
     const indexByAddress = buildIndexByAddress(mergedIndex)
+    // Augmented pool (relay/library index + cached reading indexes) used only to resolve content hits to a
+    // root and to render entries — never reported back as the library index.
+    const resolverIndex = contentRootResolverIndexes.length
+      ? dedupeEventsById([...mergedIndex, ...contentRootResolverIndexes])
+      : mergedIndex
+    const resolverByAddress =
+      resolverIndex === mergedIndex ? indexByAddress : buildIndexByAddress(resolverIndex)
     const rootMap = new Map<string, Event>()
     if (!preferContentRelaySearch || options?.axis) {
       for (const root of searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)) {
@@ -3175,15 +3319,15 @@ export async function searchLibraryPublicationsOnRelays(
       for (const { root, match } of findLibraryPublicationContentSearchMatches(
         q,
         [...accumulatedContent.values()],
-        mergedIndex,
-        indexByAddress
+        resolverIndex,
+        resolverByAddress
       )) {
         contentMatchesByRootId.set(root.id, match)
         rootMap.set(root.id, root)
       }
     }
     const sortedEntries = sortLibrarySearchPublications(
-      libraryEntriesFromRoots([...rootMap.values()], indexByAddress, engagement, contentMatchesByRootId)
+      libraryEntriesFromRoots([...rootMap.values()], resolverByAddress, engagement, contentMatchesByRootId)
     )
     const phraseEntries = sortedEntries.filter(
       (entry) => (entry.contentSearchMatch?.matchScore ?? 0) >= 10_000
@@ -3421,7 +3565,8 @@ export async function searchLibraryPublicationsOnRelays(
   }
   const relaySearchHit =
     valid.length > 0 || accumulatedContent.size > 0 || entries.length > 0
-  if (relaySearchHit) {
+  // Don't persist an empty content-primary result; it would wrongly mark the query "searched, no hits".
+  if (relaySearchHit && !(contentPrimary && entries.length === 0)) {
     putLibrarySearchSessionRow(
       q,
       searchContext,

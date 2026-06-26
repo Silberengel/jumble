@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildRelayContentSearchQuery,
   eventMatchesGeneralSearchQuery,
   findSearchHighlightNeedle,
   generalSearchHaystack,
@@ -173,5 +174,38 @@ describe('eventMatchesGeneralSearchQuery', () => {
     expect(scorePublicationContentSearchQuery(section.content, '"Having determined that the many"')).toBe(
       0
     )
+  })
+})
+
+describe('buildRelayContentSearchQuery', () => {
+  it('returns short queries unchanged', () => {
+    expect(buildRelayContentSearchQuery('inferno dante')).toBe('inferno dante')
+  })
+
+  it('caps a long passage to the configured word budget', () => {
+    const passage =
+      'Not at all, not at all! How coarsely, how stupidly—excuse me saying so—you misunderstand the word development!'
+    const relayQuery = buildRelayContentSearchQuery(passage, { maxWords: 6, maxChars: 200 })
+    expect(relayQuery.split(/\s+/).filter(Boolean).length).toBeLessThanOrEqual(6)
+  })
+
+  it('keeps the most distinctive window rather than leading stopwords', () => {
+    const passage =
+      'Not at all, not at all! How coarsely, how stupidly—excuse me saying so—you misunderstand the word development!'
+    const relayQuery = buildRelayContentSearchQuery(passage, { maxWords: 6, maxChars: 200 })
+    // The window should favor content words, not the opening "not at all, not at all" stopword run.
+    expect(relayQuery).toContain('misunderstand')
+    expect(relayQuery.startsWith('not at all')).toBe(false)
+  })
+
+  it('respects the character budget at word boundaries', () => {
+    const passage = 'alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima'
+    const relayQuery = buildRelayContentSearchQuery(passage, { maxWords: 12, maxChars: 20 })
+    expect(relayQuery.length).toBeLessThanOrEqual(20)
+    expect(relayQuery).not.toMatch(/\s$/)
+  })
+
+  it('never returns an empty string for non-empty input', () => {
+    expect(buildRelayContentSearchQuery('supercalifragilisticexpialidocious', { maxChars: 5 })).not.toBe('')
   })
 })

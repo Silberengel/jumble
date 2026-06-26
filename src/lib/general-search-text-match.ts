@@ -27,6 +27,71 @@ export function generalSearchQueryTerms(raw: string): string[] {
     .filter((w) => w.length > 1)
 }
 
+/**
+ * Common English function words that carry little discriminating power for relay token search. Used only
+ * to pick the most distinctive window of a long passage for the relay query; never affects local matching.
+ */
+const RELAY_QUERY_STOPWORDS = new Set([
+  'a', 'an', 'the', 'and', 'or', 'but', 'if', 'of', 'to', 'in', 'on', 'at', 'by', 'for', 'with', 'as',
+  'is', 'are', 'was', 'were', 'be', 'been', 'am', 'it', 'its', 'this', 'that', 'these', 'those', 'i',
+  'you', 'he', 'she', 'we', 'they', 'not', 'no', 'so', 'do', 'does', 'did', 'me', 'my', 'him', 'her',
+  'them', 'his', 'their', 'our', 'all', 'how', 'what', 'when', 'where', 'who', 'why', 'from', 'up'
+])
+
+const DEFAULT_RELAY_QUERY_MAX_WORDS = 12
+const DEFAULT_RELAY_QUERY_MAX_CHARS = 96
+
+function relayQueryWordScore(word: string): number {
+  const w = word.toLowerCase()
+  if (!w || RELAY_QUERY_STOPWORDS.has(w)) return 0
+  return w.length
+}
+
+/**
+ * Long passages make relay content search (loose token-AND ranking) return nothing or bury the right
+ * section, so we send the relay a bounded, distinctive contiguous window instead of the whole quote.
+ * The full passage is still used for local matching, ranking, and highlighting — this only shapes the
+ * string handed to the relay. Returns the query unchanged when it already fits the budget.
+ */
+export function buildRelayContentSearchQuery(
+  raw: string,
+  opts?: { maxWords?: number; maxChars?: number }
+): string {
+  const normalized = normalizeGeneralSearchQuery(raw)
+  if (!normalized) return ''
+
+  const maxWords = Math.max(1, opts?.maxWords ?? DEFAULT_RELAY_QUERY_MAX_WORDS)
+  const maxChars = Math.max(1, opts?.maxChars ?? DEFAULT_RELAY_QUERY_MAX_CHARS)
+
+  if (normalized.length <= maxChars) {
+    const wordCount = normalized.split(/\s+/).filter(Boolean).length
+    if (wordCount <= maxWords) return normalized
+  }
+
+  const words = normalized.split(/\s+/).filter(Boolean)
+  if (words.length <= 1) return normalized.slice(0, maxChars).trim()
+
+  const windowLen = Math.min(maxWords, words.length)
+  let bestStart = 0
+  let bestScore = -1
+  for (let start = 0; start + windowLen <= words.length; start++) {
+    let score = 0
+    for (let i = start; i < start + windowLen; i++) score += relayQueryWordScore(words[i])
+    if (score > bestScore) {
+      bestScore = score
+      bestStart = start
+    }
+  }
+
+  const windowWords = words.slice(bestStart, bestStart + windowLen)
+  // Clamp to the character budget at word boundaries (the window was chosen for distinctiveness, so
+  // trimming trailing words keeps the most discriminating terms).
+  while (windowWords.length > 1 && windowWords.join(' ').length > maxChars) {
+    windowWords.pop()
+  }
+  return windowWords.join(' ')
+}
+
 /** Nostr tag names whose values are human-readable text for general search. */
 const GENERAL_SEARCH_TEXT_TAG_NAMES = new Set([
   'title',
