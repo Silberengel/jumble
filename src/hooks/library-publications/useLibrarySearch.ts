@@ -3,18 +3,61 @@ import {
   peekLibrarySearchResults,
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
-  searchLibraryPublicationsViaDocumentRelays,
-  shouldSearchPublicationContentOnRelays,
+  sortLibrarySearchPublications,
   type LibraryPublicationEntry,
   type LibraryPublicationRelaySearchAxis
 } from '@/lib/library-publication-index'
-import { getTopLevelIndexEvents } from '@/lib/publication-index'
+import { eventTagAddress, getTopLevelIndexEvents } from '@/lib/publication-index'
 import logger from '@/lib/logger'
 import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RELAY_SEARCH_TIMEOUT_MS, SEARCH_DEBOUNCE_MS, SEARCH_PROGRESS_THROTTLE_MS } from './config'
+import { SEARCH_PROGRESS_THROTTLE_MS } from './config'
 import { EMPTY_ENGAGEMENT } from './constants'
+
+/** Stable key matching the grid: replaceable address when present, else the event id. */
+function entryKey(entry: LibraryPublicationEntry): string {
+  return eventTagAddress(entry.event) ?? entry.event.id
+}
+
+/**
+ * Merge a streamed result into the relevance map. Local and remote (Mercury + relay) sources are
+ * folded into the same keyed map so duplicates collapse and the best match for each publication wins:
+ * higher content-match score first, then the newest replaceable event; engagement flags are unioned.
+ */
+function mergeEntryIntoMap(
+  map: Map<string, LibraryPublicationEntry>,
+  incoming: LibraryPublicationEntry
+): void {
+  const key = entryKey(incoming)
+  const existing = map.get(key)
+  if (!existing) {
+    map.set(key, incoming)
+    return
+  }
+  const incomingScore = incoming.contentSearchMatch?.matchScore ?? 0
+  const existingScore = existing.contentSearchMatch?.matchScore ?? 0
+  const useIncomingEvent =
+    incomingScore > existingScore ||
+    (incomingScore === existingScore && incoming.event.created_at > existing.event.created_at)
+  const bestMatch = incomingScore >= existingScore ? incoming.contentSearchMatch : existing.contentSearchMatch
+  map.set(key, {
+    ...(useIncomingEvent ? incoming : existing),
+    event: useIncomingEvent ? incoming.event : existing.event,
+    hasLabel: existing.hasLabel || incoming.hasLabel,
+    labelNames: existing.labelNames.length ? existing.labelNames : incoming.labelNames,
+    hasBooklistLabel: existing.hasBooklistLabel || incoming.hasBooklistLabel,
+    hasMyBooklistLabel: existing.hasMyBooklistLabel || incoming.hasMyBooklistLabel,
+    hasMyComment: existing.hasMyComment || incoming.hasMyComment,
+    hasMyHighlight: existing.hasMyHighlight || incoming.hasMyHighlight,
+    hasComment: existing.hasComment || incoming.hasComment,
+    hasHighlight: existing.hasHighlight || incoming.hasHighlight,
+    hasBookmark: existing.hasBookmark || incoming.hasBookmark,
+    hasPin: existing.hasPin || incoming.hasPin,
+    engagementCount: Math.max(existing.engagementCount, incoming.engagementCount),
+    contentSearchMatch: bestMatch
+  })
+}
 
 export function useLibrarySearch(params: {
   pubkey: string | null | undefined
@@ -45,22 +88,21 @@ export function useLibrarySearch(params: {
   const [searchQuery, setSearchQuery] = useState('')
   const [committedSearch, setCommittedSearch] = useState('')
   const [searchAxis, setSearchAxis] = useState<LibraryPublicationRelaySearchAxis | null>(null)
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // Bumped on every explicit commit so re-running the same query (e.g. clicking Search again) still
+  // re-triggers the search effect for a fresh remote pass.
+  const [searchToken, setSearchToken] = useState(0)
   const [searchLoading, setSearchLoading] = useState(false)
-  const [relaySearchLoading, setRelaySearchLoading] = useState(false)
   const [searchResults, setSearchResults] = useState<LibraryPublicationEntry[] | null>(null)
   const progressThrottleRef = useRef<number | null>(null)
-  const latestProgressRef = useRef<{
-    entries: LibraryPublicationEntry[]
-    mergedIndexEvents?: Event[]
-  } | null>(null)
-  const relayProgressRef = useRef<LibraryPublicationEntry[]>([])
-  const relaySearchActiveRef = useRef(false)
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedSearch(committedSearch), SEARCH_DEBOUNCE_MS)
-    return () => window.clearTimeout(timer)
-  }, [committedSearch])
+  // Search is intentional now: the effect only runs in response to commitSearch (the Search button or
+  // Enter), never as a side effect of typing.
+  const debouncedSearch = committedSearch
+
+  // Read the latest index without re-running the search effect when it grows mid-search (relay
+  // discovery streams new index events back in via setIndexEvents).
+  const indexEventsRef = useRef(indexEvents)
+  indexEventsRef.current = indexEvents
 
   useEffect(() => {
     if (!searchQuery.trim()) {
@@ -72,7 +114,7 @@ export function useLibrarySearch(params: {
 
   useEffect(() => {
     setFeedPageIndex(0)
-  }, [debouncedSearch, showOnlyMine, searchAxis, setFeedPageIndex])
+  }, [committedSearch, showOnlyMine, searchAxis, setFeedPageIndex])
 
   const commitSearch = useCallback(
     (query: string, axis: LibraryPublicationRelaySearchAxis | null) => {
@@ -81,12 +123,13 @@ export function useLibrarySearch(params: {
       setSearchQuery(trimmed)
       setCommittedSearch(trimmed)
       setSearchAxis(axis)
+      setSearchToken((token) => token + 1)
     },
     []
   )
 
   useEffect(() => {
-    const q = debouncedSearch.trim()
+    const q = committedSearch.trim()
     if (!q) {
       setSearchResults(null)
       setSearchLoading(false)
@@ -94,86 +137,105 @@ export function useLibrarySearch(params: {
       return
     }
 
-    if (relaySearchActiveRef.current) {
-      return
-    }
-
-    if (settledIndexCount === 0 && indexEvents.length === 0) {
+    // Wait for the local index to settle before searching so the first pass has data to match.
+    if (settledIndexCount === 0 && indexEventsRef.current.length === 0) {
       setSearchLoading(true)
       return
     }
 
-    const cached = peekLibrarySearchResults(q, { indexEvents, engagement: EMPTY_ENGAGEMENT }, searchAxis)
-    if (cached) {
-      setSearchResults(cached)
-      setSearchLoading(false)
-      return
-    }
-
     let cancelled = false
+    const resultMap = new Map<string, LibraryPublicationEntry>()
     setSearchLoading(true)
-    latestProgressRef.current = null
+    setError(null)
     if (progressThrottleRef.current !== null) {
       window.clearTimeout(progressThrottleRef.current)
       progressThrottleRef.current = null
     }
 
-    const flushProgress = () => {
+    const flush = () => {
       if (cancelled) return
-      const latest = latestProgressRef.current
-      if (!latest) return
-      setSearchResults(latest.entries)
-      if (latest.mergedIndexEvents) {
-        setIndexEvents(latest.mergedIndexEvents)
-        setAllIndexCount(latest.mergedIndexEvents.length)
-        setTopLevelCount(getTopLevelIndexEvents(latest.mergedIndexEvents).length)
-      }
+      setSearchResults(sortLibrarySearchPublications([...resultMap.values()]))
+    }
+
+    const scheduleFlush = () => {
+      if (cancelled || progressThrottleRef.current !== null) return
+      flush()
+      progressThrottleRef.current = window.setTimeout(() => {
+        progressThrottleRef.current = null
+        flush()
+      }, SEARCH_PROGRESS_THROTTLE_MS)
+    }
+
+    const applyMergedIndex = (mergedIndexEvents?: Event[]) => {
+      if (cancelled || !mergedIndexEvents) return
+      setIndexEvents(mergedIndexEvents)
+      setAllIndexCount(mergedIndexEvents.length)
+      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
+    }
+
+    const mergeEntries = (entries: LibraryPublicationEntry[], mergedIndexEvents?: Event[]) => {
+      if (cancelled) return
+      for (const entry of entries) mergeEntryIntoMap(resultMap, entry)
+      applyMergedIndex(mergedIndexEvents)
+      scheduleFlush()
+    }
+
+    // Instant: render any session-cached results synchronously before the async passes run.
+    const cached = peekLibrarySearchResults(
+      q,
+      { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+      searchAxis
+    )
+    if (cached) {
+      for (const entry of cached) mergeEntryIntoMap(resultMap, entry)
+      flush()
     }
 
     void (async () => {
-      const applyProgress = (entries: LibraryPublicationEntry[], mergedIndexEvents?: Event[]) => {
-        if (cancelled) return
-        latestProgressRef.current = { entries, mergedIndexEvents }
-        if (progressThrottleRef.current !== null) return
-        flushProgress()
-        progressThrottleRef.current = window.setTimeout(() => {
-          progressThrottleRef.current = null
-          flushProgress()
-        }, SEARCH_PROGRESS_THROTTLE_MS)
-      }
-
-      let results = await searchLibraryPublications(
-        q,
-        { indexEvents, engagement: EMPTY_ENGAGEMENT },
-        searchAxis,
-        {
-          onProgress: ({ entries, mergedIndexEvents }) => applyProgress(entries, mergedIndexEvents)
-        }
-      )
-
-      if (
-        !cancelled &&
-        results.length === 0 &&
-        searchAxis &&
-        (searchAxis === 'd-tag' || searchAxis === 'title' || searchAxis === 'author')
-      ) {
-        const doc = await searchLibraryPublicationsViaDocumentRelays(
+      // 1) Local search first — render local results immediately.
+      try {
+        const local = await searchLibraryPublications(
           q,
-          { indexEvents, engagement: EMPTY_ENGAGEMENT },
+          { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
           searchAxis,
-          blockedRelays ?? [],
-          {
-            onProgress: ({ entries, mergedIndexEvents }) =>
-              applyProgress(entries, mergedIndexEvents)
-          }
+          { onProgress: ({ entries, mergedIndexEvents }) => mergeEntries(entries, mergedIndexEvents) }
         )
-        if (doc.entries.length > 0) {
-          results = doc.entries
+        mergeEntries(local)
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          logger.warn('[Library] local search failed', {
+            message: e instanceof Error ? e.message : String(e)
+          })
         }
       }
       if (cancelled) return
-      flushProgress()
-      setSearchResults(results)
+
+      // 2) Mercury API + remote relay search in parallel — both stream into the same merge map as
+      // their results arrive (the orchestrator runs HTTP index relays and WS relays concurrently).
+      try {
+        const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
+        await searchLibraryPublicationsOnRelays(
+          q,
+          relays,
+          { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+          {
+            axis: searchAxis,
+            blockedRelays: blockedRelays ?? [],
+            onProgress: ({ entries, mergedIndexEvents }) => mergeEntries(entries, mergedIndexEvents)
+          }
+        )
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Relay search failed'
+        if (import.meta.env.DEV) {
+          logger.warn('[Library] relay search failed', { message })
+        }
+        // Keep whatever local/partial results we have; only surface an error if nothing matched.
+        if (!cancelled && resultMap.size === 0) {
+          setError(message.includes('timed out') ? t('Library relay search timed out') : message)
+        }
+      }
+      if (cancelled) return
+      flush()
       setSearchLoading(false)
     })()
 
@@ -185,104 +247,18 @@ export function useLibrarySearch(params: {
       }
     }
   }, [
-    debouncedSearch,
-    settledIndexCount,
+    committedSearch,
     searchAxis,
+    searchToken,
+    settledIndexCount,
+    pubkey,
     blockedRelays,
-    indexEvents,
+    setError,
     setIndexEvents,
     setAllIndexCount,
-    setTopLevelCount
+    setTopLevelCount,
+    t
   ])
-
-  const searchOnRelays = useCallback(async () => {
-    const q = searchQuery.trim()
-    if (!q) return
-    setCommittedSearch(q)
-    setRelaySearchLoading(true)
-    setError(null)
-    relayProgressRef.current = []
-    relaySearchActiveRef.current = true
-
-    const applyRelayProgress = (progress: {
-      entries: LibraryPublicationEntry[]
-      mergedIndexEvents?: Event[]
-    }) => {
-      relayProgressRef.current = progress.entries
-      setSearchResults(progress.entries)
-      if (progress.entries.length > 0) {
-        setError(null)
-      }
-      if (progress.mergedIndexEvents) {
-        setIndexEvents(progress.mergedIndexEvents)
-        setAllIndexCount(progress.mergedIndexEvents.length)
-        setTopLevelCount(getTopLevelIndexEvents(progress.mergedIndexEvents).length)
-      }
-    }
-
-    try {
-      const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
-      const timeoutMs = shouldSearchPublicationContentOnRelays(q, searchAxis) ? 90_000 : RELAY_SEARCH_TIMEOUT_MS
-
-      let timeoutId: number | undefined
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = window.setTimeout(
-          () => reject(new Error('Relay search timed out')),
-          timeoutMs
-        )
-      })
-      let events: Event[]
-      let fromCache: boolean
-      try {
-        ;({ events, fromCache } = await Promise.race([
-          searchLibraryPublicationsOnRelays(q, relays, { indexEvents, engagement: EMPTY_ENGAGEMENT }, {
-            axis: searchAxis,
-            blockedRelays: blockedRelays ?? [],
-            forceRefresh: true,
-            onProgress: applyRelayProgress
-          }),
-          timeoutPromise
-        ]))
-      } finally {
-        if (timeoutId !== undefined) window.clearTimeout(timeoutId)
-      }
-      if (import.meta.env.DEV) {
-        logger.info('[Library] relay search merged', {
-          newEvents: events.length,
-          fromCache
-        })
-      }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Relay search failed'
-      const partialResults = relayProgressRef.current
-      if (partialResults.length > 0) {
-        setSearchResults(partialResults)
-        setError(null)
-      } else {
-        const local = await searchLibraryPublications(
-          q,
-          { indexEvents, engagement: EMPTY_ENGAGEMENT },
-          searchAxis,
-          { forceRefresh: true }
-        )
-        if (local.length > 0) {
-          setSearchResults(local)
-          setError(null)
-        } else {
-          setError(message === 'Relay search timed out' ? t('Library relay search timed out') : message)
-        }
-      }
-      if (import.meta.env.DEV) {
-        logger.warn('[Library] relay search failed', {
-          message,
-          partialResults: partialResults.length
-        })
-      }
-    } finally {
-      relaySearchActiveRef.current = false
-      setRelaySearchLoading(false)
-    }
-  }, [searchQuery, searchAxis, pubkey, indexEvents, blockedRelays, setError, setIndexEvents, setAllIndexCount, setTopLevelCount, t])
 
   return {
     searchQuery,
@@ -292,8 +268,6 @@ export function useLibrarySearch(params: {
     commitSearch,
     debouncedSearch,
     searchLoading,
-    relaySearchLoading,
-    searchResults,
-    searchOnRelays
+    searchResults
   }
 }

@@ -21,19 +21,16 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     searchQuery,
     setSearchQuery,
     committedSearch,
-    searchAxis,
     commitSearch,
     showOnlyMine,
     setShowOnlyMine,
     mineFilterLoading,
     loading,
     searchLoading,
-    relaySearchLoading,
     error,
     allIndexCount,
     topLevelCount,
     refresh,
-    searchOnRelays,
     hasIndexData,
     loadMoreFeed,
     defaultFeedHasMore,
@@ -49,15 +46,13 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     [refresh]
   )
 
-  const isSearchPending = searchLoading || relaySearchLoading
+  const isSearchPending = searchLoading
   const searchStatusMessage = !loading
     ? searchLoading
-      ? t('Library search loading', { searchButton: t('Search') })
-      : relaySearchLoading
-        ? t('Library relay search loading')
-        : mineFilterLoading
-          ? t('Library mine filter loading')
-          : null
+      ? t('Library search loading')
+      : mineFilterLoading
+        ? t('Library mine filter loading')
+        : null
     : null
 
   const statusLine =
@@ -81,14 +76,11 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           <LibrarySearchBar
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
-            committedSearch={committedSearch}
-            searchAxis={searchAxis}
             onCommitSearch={commitSearch}
+            searchLoading={searchLoading}
             showOnlyMine={showOnlyMine}
             onShowOnlyMineChange={setShowOnlyMine}
             mineFilterLoading={mineFilterLoading}
-            onSearchRelays={() => void searchOnRelays()}
-            relaySearchLoading={relaySearchLoading}
             disabled={loading && !hasIndexData}
           />
         </div>

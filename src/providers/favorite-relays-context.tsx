@@ -34,3 +34,8 @@ export function useFavoriteRelays(): TFavoriteRelaysContext {
   }
   return context
 }
+
+/** Returns undefined when outside provider (e.g. embedded notes in createRoot trees). */
+export function useFavoriteRelaysOptional(): TFavoriteRelaysContext | undefined {
+  return useContext(FavoriteRelaysContext)
+}

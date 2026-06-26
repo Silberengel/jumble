@@ -48,9 +48,7 @@ export function useLibraryPublications(isActive: boolean) {
     commitSearch,
     debouncedSearch,
     searchLoading,
-    relaySearchLoading,
-    searchResults,
-    searchOnRelays
+    searchResults
   } = useLibrarySearch({
     pubkey,
     blockedRelays: blockedRelays ?? [],
@@ -143,12 +141,10 @@ export function useLibraryPublications(isActive: boolean) {
     mineFilterLoading: mineFilterComputing || (showOnlyMine && booklistTargetsLoading),
     loading,
     searchLoading,
-    relaySearchLoading,
     error,
     allIndexCount,
     topLevelCount,
     refresh,
-    searchOnRelays,
     hasIndexData: indexEvents.length > 0,
     loadMoreFeed,
     defaultFeedHasMore,

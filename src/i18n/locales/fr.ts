@@ -1157,7 +1157,7 @@ export default {
     "Library empty filtered": "No publications match your filters.",
     "Library loading": "Loading publications from document relays…",
     "Library mine filter loading": "Filtering your publications…",
-    "Library search loading": "Searching locally stored publications. For a full relay search, press the \"{{searchButton}}\" button.",
+    "Library search loading": "Searching publications…",
     "Library relay search loading": "Searching document relays…",
     "Library status line": "{{shown}} shown · {{topLevel}} top-level · {{total}} indexes loaded",
     "Library load more": "Load next {{count}} books",

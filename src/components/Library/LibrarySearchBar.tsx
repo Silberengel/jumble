@@ -9,6 +9,7 @@ import { FileText, Loader2, Search, User } from 'lucide-react'
 import {
   HTMLAttributes,
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState
@@ -24,33 +25,29 @@ type LibrarySearchOption = {
 export default function LibrarySearchBar({
   searchQuery,
   onSearchQueryChange,
-  committedSearch,
-  searchAxis,
   onCommitSearch,
+  searchLoading,
   showOnlyMine,
   onShowOnlyMineChange,
   mineFilterLoading,
-  onSearchRelays,
-  relaySearchLoading,
   disabled
 }: {
   searchQuery: string
   onSearchQueryChange: (value: string) => void
-  committedSearch: string
-  searchAxis: LibraryPublicationRelaySearchAxis | null
   onCommitSearch: (query: string, axis: LibraryPublicationRelaySearchAxis | null) => void
+  searchLoading?: boolean
   showOnlyMine: boolean
   onShowOnlyMineChange: (value: boolean) => void
   mineFilterLoading?: boolean
-  onSearchRelays?: () => void
-  relaySearchLoading?: boolean
   disabled?: boolean
 }) {
   const { t } = useTranslation()
   const [searching, setSearching] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
+  // The scope picked from the dropdown for the *next* search. null = all fields. Selecting a scope
+  // never runs a search by itself; the search only fires from the Search button or Enter.
+  const [pendingAxis, setPendingAxis] = useState<LibraryPublicationRelaySearchAxis | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
-  const canSearchRelays = searchQuery.trim().length > 0 && !relaySearchLoading
 
   const selectableOptions = useMemo((): LibrarySearchOption[] => {
     const search = searchQuery.trim()
@@ -69,16 +66,33 @@ export default function LibrarySearchBar({
 
   const displayList = searching && selectableOptions.length > 0
 
-  const blur = () => {
+  // A fresh query resets the pending scope back to "all fields".
+  useEffect(() => {
+    if (!searchQuery.trim()) setPendingAxis(null)
+  }, [searchQuery])
+
+  const closeDropdown = () => {
     setSearching(false)
     setSelectedIndex(-1)
-    searchInputRef.current?.blur()
   }
 
-  const applyOption = useCallback(
+  // Pick a scope for the next search. This only configures the search — it never runs it.
+  const selectOption = useCallback(
     (option: LibrarySearchOption) => {
-      onCommitSearch(option.input ?? option.search, option.axis)
-      blur()
+      onSearchQueryChange(option.input ?? option.search)
+      setPendingAxis(option.axis)
+      closeDropdown()
+    },
+    [onSearchQueryChange]
+  )
+
+  const runSearch = useCallback(
+    (query: string, axis: LibraryPublicationRelaySearchAxis | null) => {
+      if (!query.trim()) return
+      setPendingAxis(axis)
+      onCommitSearch(query, axis)
+      closeDropdown()
+      searchInputRef.current?.blur()
     },
     [onCommitSearch]
   )
@@ -87,14 +101,19 @@ export default function LibrarySearchBar({
     (e: React.KeyboardEvent) => {
       if (e.key === 'Enter') {
         e.stopPropagation()
-        if (selectableOptions.length <= 0) return
-        applyOption(selectableOptions[selectedIndex >= 0 ? selectedIndex : 0])
+        // While navigating the dropdown, Enter just locks in the highlighted scope (no search).
+        if (displayList && selectedIndex >= 0) {
+          selectOption(selectableOptions[selectedIndex])
+          return
+        }
+        runSearch(searchQuery, pendingAxis)
         return
       }
 
       if (e.key === 'ArrowDown') {
         e.preventDefault()
         if (selectableOptions.length <= 0) return
+        setSearching(true)
         setSelectedIndex((prev) => (prev + 1) % selectableOptions.length)
         return
       }
@@ -102,15 +121,16 @@ export default function LibrarySearchBar({
       if (e.key === 'ArrowUp') {
         e.preventDefault()
         if (selectableOptions.length <= 0) return
+        setSearching(true)
         setSelectedIndex((prev) => (prev - 1 + selectableOptions.length) % selectableOptions.length)
         return
       }
 
       if (e.key === 'Escape') {
-        blur()
+        closeDropdown()
       }
     },
-    [applyOption, selectableOptions, selectedIndex]
+    [displayList, pendingAxis, runSearch, searchQuery, selectOption, selectableOptions, selectedIndex]
   )
 
   const list = useMemo(() => {
@@ -124,7 +144,7 @@ export default function LibrarySearchBar({
                 key="all"
                 search={option.search}
                 selected={selectedIndex === index}
-                onClick={() => applyOption(option)}
+                onClick={() => selectOption(option)}
               />
             )
           }
@@ -134,7 +154,7 @@ export default function LibrarySearchBar({
                 key="title"
                 search={option.search}
                 selected={selectedIndex === index}
-                onClick={() => applyOption(option)}
+                onClick={() => selectOption(option)}
               />
             )
           }
@@ -144,7 +164,7 @@ export default function LibrarySearchBar({
                 key="author"
                 search={option.search}
                 selected={selectedIndex === index}
-                onClick={() => applyOption(option)}
+                onClick={() => selectOption(option)}
               />
             )
           }
@@ -153,28 +173,28 @@ export default function LibrarySearchBar({
               key="dtag"
               dtag={option.search}
               selected={selectedIndex === index}
-              onClick={() => applyOption(option)}
+              onClick={() => selectOption(option)}
             />
           )
         })}
       </>
     )
-  }, [applyOption, selectableOptions, selectedIndex])
-
-  const isCommitted = committedSearch.trim().length > 0 && committedSearch.trim() === searchQuery.trim()
+  }, [selectOption, selectableOptions, selectedIndex])
 
   const scopeLabel =
-    isCommitted && searchAxis === 'title'
+    pendingAxis === 'title'
       ? t('Library search scope title')
-      : isCommitted && searchAxis === 'author'
+      : pendingAxis === 'author'
         ? t('Library search scope author')
-        : isCommitted && searchAxis === 'd-tag'
+        : pendingAxis === 'd-tag'
           ? t('Library search scope dtag')
           : null
 
+  const canSearch = !disabled && !!searchQuery.trim()
+
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-2">
+      <div className="flex items-stretch gap-2">
         <div className="relative min-w-0 flex-1">
           {displayList && list ? (
             <div
@@ -203,27 +223,23 @@ export default function LibrarySearchBar({
             aria-label={t('Library search placeholder')}
           />
         </div>
-        {onSearchRelays ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-9 shrink-0"
-            disabled={disabled || !canSearchRelays}
-            onClick={onSearchRelays}
-          >
-            {relaySearchLoading ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-            ) : (
-              <Search className="size-4" aria-hidden />
-            )}
-            {t('Search')}
-          </Button>
-        ) : null}
+        <Button
+          type="button"
+          className="shrink-0 gap-1.5"
+          disabled={!canSearch || !!searchLoading}
+          onClick={() => runSearch(searchQuery, pendingAxis)}
+        >
+          {searchLoading ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden />
+          ) : (
+            <Search className="size-4" aria-hidden />
+          )}
+          <span>{t('Search')}</span>
+        </Button>
       </div>
       {scopeLabel ? (
         <p className="text-xs text-muted-foreground">{scopeLabel}</p>
-      ) : searchQuery.trim() && !isCommitted ? (
+      ) : searchQuery.trim() ? (
         <p className="text-xs text-muted-foreground">{t('Library search commit hint')}</p>
       ) : null}
       <div className="flex items-center gap-2">
