@@ -4300,7 +4300,7 @@ export default function PostContent({
                     <Button
                       variant="outline"
                       size="sm"
-                      className="h-8 min-w-0 max-w-[6.75rem] shrink gap-1 px-2 text-xs font-normal sm:max-w-[9rem] sm:text-sm"
+                      className="h-8 min-w-0 max-w-[11rem] shrink gap-1 px-2 text-xs font-normal sm:max-w-[15rem] sm:text-sm"
                     >
                       <ActiveIcon className="h-3.5 w-3.5 shrink-0" />
                       <span className="min-w-0 truncate">{activeLabel}</span>
@@ -4583,11 +4583,11 @@ export default function PostContent({
             : 'pb-2'
         )}
       >
-      <div className="flex min-w-0 w-full items-center gap-1.5">
-        <div className="min-w-0 flex-1 overflow-x-auto overscroll-x-contain">
+      <div className="flex min-w-0 w-full flex-col items-stretch gap-2">
+        <div className="min-w-0 w-full overflow-x-auto overscroll-x-contain">
           {renderComposerFormatToolbar()}
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center justify-end gap-1.5">
           <div className="flex gap-2 items-center max-sm:hidden">
             <Button
               type="button"

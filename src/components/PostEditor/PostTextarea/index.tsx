@@ -483,7 +483,7 @@ const PostTextarea = forwardRef<
           composerUsesPageShell && pageEditorShellClass
         )}
       >
-        <div className="flex min-w-0 shrink-0 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2">
+        <div className="flex min-w-0 shrink-0 flex-col gap-2">
           <TabsList className="h-8 w-full shrink-0 justify-start sm:w-auto">
             <TabsTrigger value="edit" className="h-7 px-2.5 text-xs sm:text-sm" title={t('Edit')}>
               {t('Edit')}
@@ -500,7 +500,7 @@ const PostTextarea = forwardRef<
             </TabsTrigger>
           </TabsList>
           {headerActions && activeTab === 'edit' ? (
-            <div className="flex min-w-0 w-full flex-wrap items-center gap-1 sm:ml-auto sm:w-auto sm:flex-nowrap sm:justify-end sm:overflow-x-auto sm:overscroll-x-contain">
+            <div className="flex min-w-0 w-full flex-nowrap items-center justify-end gap-1 overflow-x-auto overscroll-x-contain">
               {headerActions}
             </div>
           ) : null}

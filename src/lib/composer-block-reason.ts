@@ -173,7 +173,8 @@ export function composerBlockReasonMessageKey(
     case 'uploading':
       return 'Uploading...'
     case 'empty':
-      return 'Write something...'
+      // No banner: the editor placeholder already says this and the submit button is disabled.
+      return null
     case 'relay_cap':
       return 'Publish relay cap hint'
     case 'poll_options':
