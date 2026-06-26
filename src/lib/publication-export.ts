@@ -129,12 +129,15 @@ export async function exportPublicationDownload(
   }
 
   const serverFormat = format === 'epub' ? 'epub3' : 'pdf'
+  // The cover is set via the document's `:front-cover-image:` (+ `:allow-uri-read:` so the converter
+  // fetches it). Do NOT pass the image separately: the server's own handling injects a broken cover
+  // (manifest references a jacket file it never creates, no `cover-image` property).
   const converted = await convertAsciiDocViaServer(
     serverFormat,
     assembled.content,
     assembled.title,
     assembled.author,
-    assembled.image || null
+    null
   )
   const filename = safeFilename(assembled.title, converted.extension)
   downloadBlob(filename, converted.blob)

@@ -61,7 +61,12 @@ describe('assemblePublicationAsciidoc', () => {
     expect(assembled.content).toContain('= Book my-book')
     expect(assembled.content).toContain('Jane Author (writer)')
     expect(assembled.content).toContain(':doctype: book')
-    expect(assembled.content).toContain(':epub-cover-image: https://example.com/cover.jpg')
+    expect(assembled.content).toContain(':allow-uri-read:')
+    // Real cover (thumbnail / PDF cover page) plus a page-fitted copy on the title page.
+    expect(assembled.content).toContain(':front-cover-image: image:https://example.com/cover.jpg[]')
+    expect(assembled.content).toContain('image::https://example.com/cover.jpg[Cover,400]')
+    expect(assembled.content).toContain('_by Jane Author (writer)_')
+    expect(assembled.content).toContain('Edition:: 1.2')
     expect(assembled.content).toContain('[abstract]')
     expect(assembled.content).toContain('A short summary.')
     expect(assembled.content).toContain('== Introduction')
