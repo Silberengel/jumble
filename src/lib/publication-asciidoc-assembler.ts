@@ -26,6 +26,21 @@ function escapeInline(value: string): string {
   return value.replace(/\n/g, ' ')
 }
 
+/** Escape text for inclusion in the XHTML passthrough title page (EPUB). */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** Escape a value for use inside a double-quoted XHTML attribute. */
+function escapeHtmlAttr(value: string): string {
+  return escapeHtml(value).replace(/"/g, '&quot;')
+}
+
 /**
  * Reduce a publication `l` tag value (e.g. `"en, ISO-639-1"`) to a bare BCP-47 code so the
  * converter emits a valid `xml:lang` / `dc:language`. Returns undefined when no usable code.
@@ -36,15 +51,36 @@ function sanitizeLanguageCode(value: string | undefined): string | undefined {
   return /^[a-z]{2,3}(-[a-z0-9]+)*$/i.test(first) ? first : undefined
 }
 
-/** Max width (px) for the cover shown on the title page. Also capped by the EPUB `img { max-width }`. */
+/** Max width (px) for the cover shown on the EPUB title page. Also capped by `img { max-width }`. */
 const TITLE_PAGE_COVER_WIDTH = 250
+
+type TitlePageRow = { label: string; value: string; href?: string }
+
+/** Secondary metadata shown below the title (omits anything already on the title heading/cover). */
+function titlePageRows(metadata: PublicationIndexMetadata): TitlePageRow[] {
+  const rows: TitlePageRow[] = []
+  if (metadata.version?.trim()) rows.push({ label: 'Edition', value: metadata.version.trim() })
+  const type = metadata.type?.trim()
+  if (type && type.toLowerCase() !== 'book') rows.push({ label: 'Type', value: type })
+  const language = sanitizeLanguageCode(metadata.language)
+  if (language) rows.push({ label: 'Language', value: language })
+  if (metadata.releaseDate?.trim()) {
+    rows.push({ label: 'Released', value: metadata.releaseDate.trim() })
+  }
+  const source = metadata.source?.trim()
+  if (source) rows.push({ label: 'Source', value: source, href: source })
+  if (metadata.tags.length > 0) rows.push({ label: 'Keywords', value: metadata.tags.join(', ') })
+  return rows
+}
 
 /**
  * Build a visible title page (cover + key metadata) as the document preamble.
  *
- * This is shown in addition to the real `:front-cover-image:` cover. The title-page copy is a plain
- * block image constrained to {@link TITLE_PAGE_COVER_WIDTH} (and the bundled stylesheet's
- * `img { max-width: 100% }`), so it scales to the page, and it surfaces the NKBIP-01 index metadata.
+ * - EPUB: asciidoctor-epub3 has no built-in title page and its stylesheet has no text-centering
+ *   utility, so we emit an elegant, centered page as scoped XHTML via a passthrough block. The cover
+ *   is a centered block image capped at {@link TITLE_PAGE_COVER_WIDTH} (and `img { max-width: 100% }`).
+ * - PDF (and other backends): asciidoctor already renders a themed title page from the document
+ *   header, and `:front-cover-image:` supplies the cover, so we only add the remaining metadata.
  */
 function buildTitlePage(
   title: string,
@@ -52,26 +88,51 @@ function buildTitlePage(
   image: string,
   metadata: PublicationIndexMetadata
 ): string[] {
+  const rows = titlePageRows(metadata)
   const parts: string[] = []
-  if (image) {
-    parts.push(`image::${image}[Cover,${TITLE_PAGE_COVER_WIDTH}]`, '')
+
+  parts.push('ifdef::backend-epub3[]')
+  if (image) parts.push(`image::${image}[Cover,${TITLE_PAGE_COVER_WIDTH}]`, '')
+  parts.push('++++')
+  parts.push('<div style="text-align: center; margin: 1.5em 1em;">')
+  parts.push(
+    `<div style="font-size: 1.8em; font-weight: bold; line-height: 1.25;">${escapeHtml(title)}</div>`
+  )
+  if (author) {
+    parts.push(
+      `<div style="font-style: italic; font-size: 1.1em; margin-top: 0.5em;">by ${escapeHtml(author)}</div>`
+    )
   }
-  parts.push('[discrete]', `== ${escapeInline(title)}`, '')
-  if (author) parts.push(`_by ${escapeInline(author)}_`, '')
+  if (rows.length > 0) {
+    parts.push(
+      '<hr style="width: 35%; max-width: 12em; border: 0; border-top: 1px solid #999; margin: 1.5em auto;"/>'
+    )
+    parts.push('<div style="font-size: 0.95em; line-height: 1.7;">')
+    parts.push(
+      rows
+        .map((row) => {
+          const value = row.href
+            ? `<a href="${escapeHtmlAttr(row.href)}">${escapeHtml(row.value)}</a>`
+            : escapeHtml(row.value)
+          return `<span style="color: #555;">${escapeHtml(row.label)}:</span> ${value}`
+        })
+        .join('<br/>\n')
+    )
+    parts.push('</div>')
+  }
+  parts.push('</div>')
+  parts.push('++++')
+  parts.push('endif::[]')
+  parts.push('')
 
-  const rows: Array<[string, string]> = []
-  if (metadata.version?.trim()) rows.push(['Edition', metadata.version.trim()])
-  if (metadata.type?.trim()) rows.push(['Type', metadata.type.trim()])
-  const language = sanitizeLanguageCode(metadata.language)
-  if (language) rows.push(['Language', language])
-  if (metadata.releaseDate?.trim()) rows.push(['Released', metadata.releaseDate.trim()])
-  if (metadata.source?.trim()) rows.push(['Source', metadata.source.trim()])
-  if (metadata.tags.length > 0) rows.push(['Keywords', metadata.tags.join(', ')])
-
-  for (const [term, value] of rows) {
-    parts.push(`${escapeInline(term)}:: ${escapeInline(value)}`)
+  parts.push('ifndef::backend-epub3[]')
+  if (image) parts.push(`image::${image}[Cover,${TITLE_PAGE_COVER_WIDTH},align=center]`, '')
+  for (const row of rows) {
+    parts.push(`${escapeInline(row.label)}:: ${escapeInline(row.value)}`)
   }
   if (rows.length > 0) parts.push('')
+  parts.push('endif::[]')
+  parts.push('')
 
   return parts
 }
@@ -95,10 +156,17 @@ function titleFromIndex(event: Event): string {
   return uppercaseRomanNumeralsInText(raw)
 }
 
+const GENERIC_AUTHOR_ROLES = new Set(['author', 'aut'])
+
 function authorFromMetadata(metadata: PublicationIndexMetadata, pubkey: string): string {
   if (metadata.authors.length > 0) {
     return metadata.authors
-      .map((a) => (a.role ? `${a.name} (${a.role})` : a.name))
+      .map((a) => {
+        const role = a.role?.trim()
+        return role && !GENERIC_AUTHOR_ROLES.has(role.toLowerCase())
+          ? `${a.name} (${role})`
+          : a.name
+      })
       .join('; ')
   }
   return pubkeyToNpub(pubkey) ?? pubkey

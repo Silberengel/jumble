@@ -430,7 +430,13 @@ async function main () {
   }
   log('NIP-66 monitor cron started (nsec configured)')
 
-  const publishRelays = parseListEnv('PUBLISH_RELAYS', DEFAULT_PUBLISH_RELAYS)
+  // Normalize/dedupe/validate like resolveRelaysToMonitor does, so env-provided URLs (e.g. ws://,
+  // trailing slashes, mixed case) match the rest of the pipeline.
+  let publishRelays = mergeRelayUrlLists(parseListEnv('PUBLISH_RELAYS', DEFAULT_PUBLISH_RELAYS))
+  if (publishRelays.length === 0) {
+    log('PUBLISH_RELAYS contained no valid relay URLs; falling back to defaults')
+    publishRelays = mergeRelayUrlLists(DEFAULT_PUBLISH_RELAYS)
+  }
 
   await run10166(sk, publishRelays)
 
