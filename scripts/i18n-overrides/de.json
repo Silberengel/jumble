@@ -343,7 +343,7 @@
   "Publication version": "v {{version}}",
   "Asciidoc parse warning title": "AsciiDoc konnte nicht vollständig analysiert werden",
   "Asciidoc parse warning body": "Einige AsciiDoc in diesem Abschnitt sind ungültig oder verwenden eine nicht unterstützte Syntax. Der unten stehende Text wird nach Möglichkeit as-is angezeigt.",
-  "Loading feed…": "Beladefutter ..",
+  "Loading feed…": "Laden..",
   "Wallet connector": "Wallet Connector",
   "NWC relay": "NWC-Relais",
   "Not an NWC connection (no relay URL in config).": "Keine NWC-Verbindung (keine Relay-URL in config).",

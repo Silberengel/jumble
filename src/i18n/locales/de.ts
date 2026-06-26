@@ -1213,7 +1213,7 @@ export default {
     "libraryIndexCache.clearConfirm": "Bibliotheksindex-Cache leeren? Beim nächsten Besuch werden Indizes erneut von Relays geladen. Geöffnete Publikationen bleiben im Lese-Cache.",
     "libraryIndexCache.clearedToast": "Bibliotheksindex-Cache geleert.",
     "libraryIndexCache.clearFailed": "Bibliotheksindex-Cache konnte nicht geleert werden.",
-    "Loading feed…": "Beladefutter ..",
+    "Loading feed…": "Laden..",
     "Loading recent posts from follows…": "Neueste Beiträge der Follows werden geladen …",
     "Trending on Nostr": "Trending auf Nostr",
     "Connected to": "Verbunden mit",
