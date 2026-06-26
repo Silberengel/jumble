@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
   eventMatchesGeneralSearchQuery,
+  findSearchHighlightNeedle,
   generalSearchHaystack,
   generalSearchQueryTerms,
+  haystackMatchesPhraseQuery,
   normalizeGeneralSearchQuery,
+  normalizeSearchMatchText,
   scorePublicationContentEventSearchQuery,
   scorePublicationContentSearchQuery
 } from '@/lib/general-search-text-match'
@@ -108,6 +111,51 @@ describe('eventMatchesGeneralSearchQuery', () => {
 
     expect(scorePublicationContentEventSearchQuery(section, query)).toBeGreaterThan(10_000)
     expect(scorePublicationContentSearchQuery(section.content, query)).toBeGreaterThan(10_000)
+  })
+
+  // AsciiDoctor rewrites source markup when rendering (double hyphen -> em dash + zero-width space,
+  // ... -> ellipsis, straight quotes -> curly). The query a user types and the text Ctrl+F finds in the
+  // DOM therefore differ by punctuation/markup only; phrase matching must look through all of it.
+  describe('punctuation and markup tolerance', () => {
+    // \u2014 = em dash, \u200B = zero-width space AsciiDoctor inserts after it, \u2026 = ellipsis.
+    const rendered =
+      'Not at all, not at all! How coarsely, how stupidly\u2014\u200Bexcuse me saying\nso\u2014\u200Byou misunderstand the word development! Good heavens, how\u2026 crude\nyou still are! It was eight o\u2019clock now.'
+
+    it('matches a phrase whose source double-hyphen renders as em dash + zero-width space', () => {
+      const query =
+        'How coarsely, how stupidly\u2014excuse me saying so\u2014you misunderstand the word development'
+      expect(haystackMatchesPhraseQuery(rendered, query)).toBe(true)
+      expect(scorePublicationContentSearchQuery(rendered, query)).toBeGreaterThan(10_000)
+    })
+
+    it('matches across a typed double hyphen against rendered em dash', () => {
+      const query = 'how stupidly--excuse me saying so--you misunderstand'
+      expect(haystackMatchesPhraseQuery(rendered, query)).toBe(true)
+    })
+
+    it('matches "..." in the query against a rendered ellipsis', () => {
+      expect(haystackMatchesPhraseQuery(rendered, 'Good heavens, how... crude you still are')).toBe(true)
+    })
+
+    it('matches straight apostrophe against rendered curly apostrophe', () => {
+      expect(haystackMatchesPhraseQuery(rendered, "it was eight o'clock now")).toBe(true)
+    })
+
+    it('returns a highlight needle that spans em dash + zero-width space and exists verbatim in the text', () => {
+      const query =
+        'how stupidly\u2014excuse me saying so\u2014you misunderstand the word development'
+      const needle = findSearchHighlightNeedle(rendered, query)
+      expect(needle).toBeTruthy()
+      // The needle must be a verbatim slice of the haystack so DOM indexOf highlighting can locate it.
+      expect(rendered.includes(needle as string)).toBe(true)
+      expect((needle as string).includes('\u200B')).toBe(true)
+    })
+
+    it('normalizes ellipsis, em dash, curly quotes and zero-width to the same tokens', () => {
+      expect(normalizeSearchMatchText('how... crude\u2014\u200Bo\u2019clock')).toBe(
+        normalizeSearchMatchText("how crude -- o'clock")
+      )
+    })
   })
 
   it('matches kind-30041 title tag when phrase is only in title not body', () => {

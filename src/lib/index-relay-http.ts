@@ -509,12 +509,13 @@ export async function queryIndexRelayPublicationMetadataSearch(
     if (!res.ok) {
       if (res.status === 404 || res.status === 405) return { events: [], apiRowCount: 0 }
       if (res.status >= 500) {
-        markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
+        // Do NOT mark the whole dev index-relay session unavailable here: this best-effort search
+        // endpoint is slower/heavier than /api/events/filter, and a 5xx (often a dev-proxy timeout)
+        // must not disable the bulk metadata loader for the rest of the session.
         throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
       }
       return { events: [], apiRowCount: 0 }
     }
-    clearDevIndexRelayUnavailableThisSession()
     const json = (await res.json()) as { data?: unknown }
     const data = json.data
     if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }
@@ -584,12 +585,13 @@ export async function queryIndexRelayPublicationContentSearch(
     if (!res.ok) {
       if (res.status === 404 || res.status === 405) return { events: [], apiRowCount: 0 }
       if (res.status >= 500) {
-        markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
+        // Do NOT mark the whole dev index-relay session unavailable here: this best-effort full-text
+        // endpoint is slower/heavier than /api/events/filter, and a 5xx (often a dev-proxy timeout)
+        // must not disable the bulk metadata loader for the rest of the session.
         throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
       }
       return { events: [], apiRowCount: 0 }
     }
-    clearDevIndexRelayUnavailableThisSession()
     const json = (await res.json()) as { data?: unknown }
     const data = json.data
     if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }

@@ -87,12 +87,37 @@ export function usePublicationSearchHighlight(
       }, LAYOUT_WATCH_MS)
     }
 
+    let applied = false
+    let stopTimer: number | undefined
+
+    /**
+     * Apply (or re-apply) the highlight. Returns true when a mark is present afterwards. Cheap when a
+     * mark already exists (querySelector only): the mark can be wiped by AsciiDoc post-processing
+     * (embedded notes mounted via createRoot, progressive content, media extraction re-setting innerHTML),
+     * so this stays callable for the whole retry window and re-inserts the mark if it disappears.
+     */
     const tryHighlight = (): boolean => {
       if (cancelled) return true
-      if (Date.now() - startedAt > HIGHLIGHT_RETRY_MS) return true
 
       const root = containerRef.current
       if (!root) return false
+
+      const existingMark = root.querySelector(
+        `mark.${LIBRARY_SEARCH_TEXT_HIGHLIGHT_CLASS}`
+      ) as HTMLElement | null
+      if (existingMark) {
+        markEl = existingMark
+        applied = true
+        if (!hasAnchoredScroll) {
+          scrollHighlightIntoView(existingMark, 'instant')
+          hasAnchoredScroll = true
+          watchLayoutStability()
+          window.setTimeout(notifyAnchored, 400)
+        }
+        return true
+      }
+
+      if (Date.now() - startedAt > HIGHLIGHT_RETRY_MS) return applied
 
       const domHaystack = root.textContent ?? ''
       let needle = findSearchHighlightNeedle(domHaystack, query)
@@ -107,23 +132,10 @@ export function usePublicationSearchHighlight(
       }
       if (!needle) return false
 
-      const existingMark = root.querySelector(
-        `mark.${LIBRARY_SEARCH_TEXT_HIGHLIGHT_CLASS}`
-      ) as HTMLElement | null
-      if (existingMark) {
-        markEl = existingMark
-        if (!hasAnchoredScroll) {
-          scrollHighlightIntoView(existingMark, 'instant')
-          hasAnchoredScroll = true
-          watchLayoutStability()
-          window.setTimeout(notifyAnchored, 400)
-        }
-        return true
-      }
-
       clearHighlightsInElement(root)
       markEl = highlightTextInElement(root, needle)
       if (!markEl) return false
+      applied = true
 
       if (!hasAnchoredScroll) {
         scrollHighlightIntoView(markEl, 'instant')
@@ -135,18 +147,26 @@ export function usePublicationSearchHighlight(
       return true
     }
 
+    const stopWatching = () => {
+      contentObserver?.disconnect()
+      contentObserver = null
+      window.clearTimeout(pollTimer)
+    }
+
+    // Until first success: poll fast for the content to arrive. After that the MutationObserver
+    // re-applies on wipes, so a fast poll is no longer needed.
     const schedulePoll = () => {
-      if (cancelled || tryHighlight()) return
+      if (cancelled || applied) return
+      tryHighlight()
+      if (cancelled || applied) return
       pollTimer = window.setTimeout(schedulePoll, HIGHLIGHT_POLL_MS)
     }
 
     const root = containerRef.current
     if (root && typeof MutationObserver !== 'undefined') {
+      // Keep observing for the whole retry window: re-inserts the mark whenever async rendering wipes it.
       contentObserver = new MutationObserver(() => {
-        if (tryHighlight()) {
-          contentObserver?.disconnect()
-          contentObserver = null
-        }
+        tryHighlight()
       })
       contentObserver.observe(root, {
         childList: true,
@@ -154,6 +174,8 @@ export function usePublicationSearchHighlight(
         characterData: true
       })
     }
+
+    stopTimer = window.setTimeout(stopWatching, HIGHLIGHT_RETRY_MS)
 
     tryHighlight()
     schedulePoll()
@@ -165,6 +187,7 @@ export function usePublicationSearchHighlight(
       window.clearTimeout(layoutWatchTimer)
       window.clearTimeout(rescrollTimer)
       window.clearTimeout(pollTimer)
+      window.clearTimeout(stopTimer)
       clearHighlightsInElement(containerRef.current)
       markEl = null
     }

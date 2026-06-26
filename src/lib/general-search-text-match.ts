@@ -95,12 +95,21 @@ export function foldTypographicQuotes(text: string): string {
     .replace(/[\u201C\u201D\u201E\u201F\u2033\u00AB\u00BB]/g, '"')
 }
 
-/** Collapse whitespace (incl. hard line breaks) and normalize dash runs for phrase matching. */
+/**
+ * Reduce text to lowercase alphanumeric tokens joined by single spaces so neither punctuation nor
+ * typographic markup can block a phrase match. This deliberately mirrors how {@link findFlexiblePhraseSlice}
+ * tokenizes the query (split on every non-alphanumeric run), keeping the "does it match?" gate and the
+ * "where is it?" slice extractor in lockstep.
+ *
+ * Collapsing every non-`\p{L}\p{N}` run to a single space transparently handles, among others:
+ * letter case; ASCII vs. curly quotes/apostrophes (o'clock ↔ o’clock); every dash variant and the
+ * double-hyphen → em-dash rewrite; ellipsis (... ↔ …); the zero-width space AsciiDoctor inserts after
+ * em-dashes; thin/non-breaking spaces; hard line breaks; and arbitrary runs of commas/periods/etc.
+ */
 export function normalizeSearchMatchText(text: string): string {
-  return foldTypographicQuotes(text.toLowerCase())
-    .replace(/[‐‑‒–—―\-]+/gu, ' ')
-    .replace(/--+/g, ' ')
-    .replace(/\s+/g, ' ')
+  return text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
     .trim()
 }
 
