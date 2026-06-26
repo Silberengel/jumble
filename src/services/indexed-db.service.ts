@@ -42,8 +42,10 @@ import {
   type PublicationIndexMap
 } from '@/lib/publication-index'
 import {
+  buildEventSearchTokens,
   eventMatchesGeneralSearchQuery,
-  eventMatchesPhraseSearchQuery
+  eventMatchesPhraseSearchQuery,
+  searchQueryTokens
 } from '@/lib/general-search-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import {
@@ -99,6 +101,8 @@ type TValue<T = any> = {
   lastAccessAt?: number
   /** Approximate JSON size for catalog-master LRU pruning. */
   catalogBytes?: number
+  /** Distinct word tokens for the `searchTokens` multiEntry index (publication rows only). */
+  searchTokens?: string[]
 }
 
 /** One matching row from {@link IndexedDbService.searchAllCachedEventsFullText}. */
@@ -201,7 +205,10 @@ const ORPHAN_RSS_STORAGE_PURGE_KEY = 'orphanRssStoragePurgedV1'
 const TIMELINE_SHARD_LEGACY_GC_KEY = 'timelineShardLegacyGcV1'
 
 /** Schema version we expect. When adding stores or migrations, bump this. */
-const DB_VERSION = 43
+const DB_VERSION = 44
+
+/** multiEntry index name for the publication search-token fast path (see {@link buildEventSearchTokens}). */
+const PUBLICATION_SEARCH_TOKEN_INDEX = 'searchTokens'
 
 /** Hint age for profile/payment reads (stale rows still returned; background refresh). */
 const PROFILE_AND_PAYMENT_STALE_READ_MS = 5 * 60 * 1000
@@ -254,6 +261,9 @@ function buildPublicationStoreRow(
     addedAt: prev?.addedAt ?? now,
     ...(masterPublicationKey ? { masterPublicationKey } : {})
   }
+  if (storeRowIsPublicationEvent(event)) {
+    row.searchTokens = buildEventSearchTokens(event)
+  }
   if (isCatalogMaster) {
     row.catalogMaster = 1
     row.lastAccessAt = Math.max(prev?.lastAccessAt ?? 0, now)
@@ -277,6 +287,62 @@ function storeRowIsPublicationEvent(event: Event): boolean {
 function ensurePublicationEventsCatalogIndexes(store: IDBObjectStore): void {
   if (!store.indexNames.contains('catalogMaster')) {
     store.createIndex('catalogMaster', 'catalogMaster', { unique: false })
+  }
+  ensurePublicationEventsSearchTokenIndex(store)
+}
+
+/** multiEntry index on per-row word tokens, used by the {@link IndexedDbService.getCachedEventsForSearch} fast path. */
+function ensurePublicationEventsSearchTokenIndex(store: IDBObjectStore): void {
+  if (!store.indexNames.contains(PUBLICATION_SEARCH_TOKEN_INDEX)) {
+    store.createIndex(PUBLICATION_SEARCH_TOKEN_INDEX, 'searchTokens', {
+      unique: false,
+      multiEntry: true
+    })
+  }
+}
+
+/** Union or intersection of per-query-token candidate key sets, capped to `cap` keys. */
+function combineKeySets(sets: Set<string>[], mode: 'union' | 'intersect', cap: number): string[] {
+  if (sets.length === 0) return []
+  if (mode === 'intersect') {
+    const ordered = [...sets].sort((a, b) => a.size - b.size)
+    const smallest = ordered[0]
+    const rest = ordered.slice(1)
+    const out: string[] = []
+    for (const key of smallest) {
+      if (rest.every((s) => s.has(key))) {
+        out.push(key)
+        if (out.length >= cap) break
+      }
+    }
+    return out
+  }
+  const combined = new Set<string>()
+  for (const set of sets) {
+    for (const key of set) {
+      combined.add(key)
+      if (combined.size >= cap) return [...combined]
+    }
+  }
+  return [...combined]
+}
+
+/** v44: populate {@link TValue.searchTokens} on existing publication rows so the token index has full coverage. */
+function backfillPublicationSearchTokens(store: IDBObjectStore): void {
+  const req = store.openCursor()
+  req.onsuccess = () => {
+    const cursor = req.result as IDBCursorWithValue | null
+    if (!cursor) return
+    const row = cursor.value as TValue<Event>
+    const event = row?.value
+    if (event && storeRowIsPublicationEvent(event) && (!row.searchTokens || row.searchTokens.length === 0)) {
+      const next: TValue<Event> = { ...row, searchTokens: buildEventSearchTokens(event) }
+      const updateReq = cursor.update(next)
+      updateReq.onsuccess = () => cursor.continue()
+      updateReq.onerror = () => cursor.continue()
+    } else {
+      cursor.continue()
+    }
   }
 }
 
@@ -665,6 +731,14 @@ class IndexedDbService {
             }
             if (db.objectStoreNames.contains('libraryPublicationIndex')) {
               db.deleteObjectStore('libraryPublicationIndex')
+            }
+          }
+          if (event.oldVersion < 44) {
+            const tx = (event.target as IDBOpenDBRequest).transaction
+            if (tx && db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
+              const pubStore = tx.objectStore(StoreNames.PUBLICATION_EVENTS)
+              ensurePublicationEventsSearchTokenIndex(pubStore)
+              backfillPublicationSearchTokens(pubStore)
             }
           }
           ensureMissingObjectStores(db)
@@ -1826,6 +1900,142 @@ class IndexedDbService {
     const q = query.trim().toLowerCase()
     if (!q || allowedKinds.length === 0 || limit <= 0) return []
 
+    // Fast path: use the `searchTokens` multiEntry index to pull only the rows whose words overlap the
+    // query, then run the exact same matcher for precision. Falls back to the full cursor scan when the
+    // index can't apply (old DB, no usable query tokens) or finds nothing (e.g. an infix-only query that
+    // never appears at a word boundary), so recall is never worse than the scan.
+    try {
+      const indexed = await this.searchPublicationEventsViaTokenIndex(query, limit, allowedKinds, options)
+      if (indexed !== null) return indexed
+    } catch (e) {
+      if (import.meta.env.DEV) {
+        logger.warn('[IndexedDB] token-index search failed, falling back to scan', {
+          message: e instanceof Error ? e.message : String(e)
+        })
+      }
+    }
+
+    return this.scanCachedEventsForSearch(query, limit, allowedKinds, options)
+  }
+
+  /**
+   * Token-index candidate fast path for {@link getCachedEventsForSearch}. Returns matched events (newest
+   * first, capped to `limit`), or `null` when the caller should fall back to a full scan.
+   */
+  private async searchPublicationEventsViaTokenIndex(
+    query: string,
+    limit: number,
+    allowedKinds: number[],
+    options?: { collectCap?: number; phraseOnly?: boolean }
+  ): Promise<Event[] | null> {
+    const db = this.db
+    if (!db || !db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) return null
+    const tokens = searchQueryTokens(query)
+    if (tokens.length === 0) return null
+
+    const phraseOnly = !!options?.phraseOnly
+    const collectCap = Math.min(Math.max(options?.collectCap ?? 400, limit), 12_000)
+    const candidateCap = Math.min(Math.max(collectCap * 20, 2_000), 40_000)
+
+    // Phrase matches require every word present, so intersecting candidate sets is both correct and far more
+    // selective. Scattered multi-word / single-word matches need only some words, so union (a superset).
+    const candidateKeys = await this.collectPublicationSearchCandidateKeys(
+      tokens,
+      phraseOnly ? 'intersect' : 'union',
+      candidateCap
+    )
+    if (candidateKeys === null) return null
+    if (candidateKeys.length === 0) return null
+
+    const kindSet = new Set(allowedKinds)
+    const matches = phraseOnly ? eventMatchesPhraseSearchQuery : eventMatchesGeneralSearchQuery
+    const rows = await this.getPublicationRowsByKeys(candidateKeys)
+    const results: Event[] = []
+    for (const item of rows) {
+      const event = item?.value
+      if (event && kindSet.has(event.kind) && matches(event, query)) {
+        results.push(event)
+      }
+    }
+    results.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
+    return results.slice(0, limit)
+  }
+
+  /**
+   * Collect publication-row primary keys whose tokens match the query tokens (prefix ranges, so a query
+   * word also matches longer words it starts). Returns `null` when the token index is absent.
+   */
+  private collectPublicationSearchCandidateKeys(
+    tokens: string[],
+    mode: 'union' | 'intersect',
+    cap: number
+  ): Promise<string[] | null> {
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+      if (!store.indexNames.contains(PUBLICATION_SEARCH_TOKEN_INDEX)) {
+        resolve(null)
+        return
+      }
+      const index = store.index(PUBLICATION_SEARCH_TOKEN_INDEX)
+      const perTokenSets: Set<string>[] = new Array(tokens.length)
+      let pending = tokens.length
+
+      tokens.forEach((token, i) => {
+        const range = IDBKeyRange.bound(token, token + '\uffff')
+        const req = index.getAllKeys(range, cap)
+        req.onsuccess = () => {
+          perTokenSets[i] = new Set((req.result as IDBValidKey[]).map((k) => String(k)))
+          pending -= 1
+          if (pending === 0) {
+            transaction.commit()
+            resolve(combineKeySets(perTokenSets, mode, cap))
+          }
+        }
+        req.onerror = () => {
+          transaction.commit()
+          reject(req.error)
+        }
+      })
+    })
+  }
+
+  /** Fetch publication rows for the given primary keys within a single readonly transaction. */
+  private getPublicationRowsByKeys(keys: string[]): Promise<(TValue<Event> | undefined)[]> {
+    return new Promise((resolve, reject) => {
+      if (keys.length === 0) {
+        resolve([])
+        return
+      }
+      const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
+      const store = transaction.objectStore(StoreNames.PUBLICATION_EVENTS)
+      const out: (TValue<Event> | undefined)[] = new Array(keys.length)
+      let pending = keys.length
+
+      keys.forEach((key, i) => {
+        const req = store.get(key)
+        req.onsuccess = () => {
+          out[i] = req.result as TValue<Event> | undefined
+          pending -= 1
+          if (pending === 0) {
+            transaction.commit()
+            resolve(out)
+          }
+        }
+        req.onerror = () => {
+          transaction.commit()
+          reject(req.error)
+        }
+      })
+    })
+  }
+
+  private scanCachedEventsForSearch(
+    query: string,
+    limit: number,
+    allowedKinds: number[],
+    options?: { scanBudget?: number; collectCap?: number; scanMaxMs?: number; phraseOnly?: boolean }
+  ): Promise<Event[]> {
     const kindSet = new Set(allowedKinds)
     const scanBudget = Math.min(Math.max(options?.scanBudget ?? 28_000, 400), 120_000)
     const collectCap = Math.min(

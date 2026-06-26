@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildEventSearchTokens,
   buildRelayContentSearchQuery,
   eventMatchesGeneralSearchQuery,
   findSearchHighlightNeedle,
@@ -9,7 +10,9 @@ import {
   normalizeGeneralSearchQuery,
   normalizeSearchMatchText,
   scorePublicationContentEventSearchQuery,
-  scorePublicationContentSearchQuery
+  scorePublicationContentSearchQuery,
+  searchQueryTokens,
+  searchTextTokens
 } from '@/lib/general-search-text-match'
 import type { Event } from 'nostr-tools'
 
@@ -207,5 +210,52 @@ describe('buildRelayContentSearchQuery', () => {
 
   it('never returns an empty string for non-empty input', () => {
     expect(buildRelayContentSearchQuery('supercalifragilisticexpialidocious', { maxChars: 5 })).not.toBe('')
+  })
+})
+
+describe('searchTextTokens / searchQueryTokens', () => {
+  it('lowercases, splits on punctuation, and drops sub-2-char tokens', () => {
+    expect(searchTextTokens('Pride and Prejudice — a Novel!')).toEqual([
+      'pride',
+      'and',
+      'prejudice',
+      'novel'
+    ])
+  })
+
+  it('deduplicates repeated words preserving first-seen order', () => {
+    expect(searchTextTokens('dog cat dog bird cat')).toEqual(['dog', 'cat', 'bird'])
+  })
+
+  it('honors the max-token cap', () => {
+    expect(searchTextTokens('one two three four five', 3)).toEqual(['one', 'two', 'three'])
+  })
+
+  it('returns [] for empty or all-short input', () => {
+    expect(searchTextTokens('')).toEqual([])
+    expect(searchTextTokens('a I !')).toEqual([])
+  })
+
+  it('searchQueryTokens tokenizes a query the same way (for index lookup)', () => {
+    expect(searchQueryTokens('"Universally acknowledged"')).toEqual(['universally', 'acknowledged'])
+  })
+})
+
+describe('buildEventSearchTokens', () => {
+  it('indexes tokens from content and readable metadata tags', () => {
+    const event = ev({
+      kind: 30040,
+      content: '',
+      tags: [
+        ['d', 'pg1342-pride-and-prejudice'],
+        ['title', 'Pride and Prejudice'],
+        ['author', 'Jane Austen']
+      ]
+    })
+    const tokens = buildEventSearchTokens(event)
+    expect(tokens).toContain('pride')
+    expect(tokens).toContain('prejudice')
+    expect(tokens).toContain('austen')
+    expect(tokens).toContain('pg1342')
   })
 })

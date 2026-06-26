@@ -1,5 +1,6 @@
 # NIP-66 monitor cron: runs alongside the app, keeps nsec on server only.
-FROM node:20-alpine
+# Node 22 to match the main app Dockerfile and the root package.json engines (>=22.6.0).
+FROM node:22-alpine
 
 WORKDIR /app
 

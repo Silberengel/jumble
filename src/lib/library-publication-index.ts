@@ -13,6 +13,7 @@ import {
   scorePublicationContentEventSearchQuery
 } from '@/lib/general-search-text-match'
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
+import { scoreContentEventsForSearch } from '@/lib/library-search-worker-client'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
 import logger from '@/lib/logger'
 import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label'
@@ -1651,32 +1652,90 @@ function buildAddressToRootMap(
   return map
 }
 
+// Search-path recomputation memoization.
+//
+// `buildIndexByAddress`, `getTopLevelIndexEvents`, `getReferencedChild30040Addresses`, and
+// `buildAddressToRootMap` are pure over their inputs, and the search pipeline only ever rebuilds the
+// underlying event arrays / maps (never mutates them in place) when the index actually changes. The
+// streaming search paths previously recomputed these on every progress flush and, worst of all, once
+// per matched content section (`findPublicationRootForContentAddress`). Caching by reference collapses
+// that into a single computation per distinct index snapshot, which dominates search CPU on large
+// libraries. A new array/map reference (e.g. a freshly merged index between batches) is a cache miss by
+// design, so results stay correct as the index grows.
+const indexByAddressMemo = new WeakMap<Event[], Map<string, Event>>()
+function buildIndexByAddressMemo(events: Event[]): Map<string, Event> {
+  let cached = indexByAddressMemo.get(events)
+  if (!cached) {
+    cached = buildIndexByAddress(events)
+    indexByAddressMemo.set(events, cached)
+  }
+  return cached
+}
+
+const topLevelIndexMemo = new WeakMap<Event[], Event[]>()
+function getTopLevelIndexEventsMemo(events: Event[]): Event[] {
+  let cached = topLevelIndexMemo.get(events)
+  if (!cached) {
+    cached = getTopLevelIndexEvents(events)
+    topLevelIndexMemo.set(events, cached)
+  }
+  return cached
+}
+
+const referencedChild30040Memo = new WeakMap<Event[], Set<string>>()
+function getReferencedChild30040AddressesMemo(events: Event[]): Set<string> {
+  let cached = referencedChild30040Memo.get(events)
+  if (!cached) {
+    cached = getReferencedChild30040Addresses(events)
+    referencedChild30040Memo.set(events, cached)
+  }
+  return cached
+}
+
+// Keyed by the `indexByAddress` map reference. Callers always pass a `topLevel` derived from the same
+// index snapshot as `indexByAddress`, so the map reference uniquely identifies the result.
+const addressToRootMemo = new WeakMap<Map<string, Event>, Map<string, Event>>()
+function buildAddressToRootMapMemo(
+  topLevel: Event[],
+  indexByAddress: Map<string, Event>
+): Map<string, Event> {
+  let cached = addressToRootMemo.get(indexByAddress)
+  if (!cached) {
+    cached = buildAddressToRootMap(topLevel, indexByAddress)
+    addressToRootMemo.set(indexByAddress, cached)
+  }
+  return cached
+}
+
 function findPublicationRootForContentAddress(
   contentAddress: string,
   indexEvents: Event[],
   indexByAddress: Map<string, Event>
 ): Event | undefined {
-  const topLevel = getTopLevelIndexEvents(indexEvents)
-  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+  const topLevel = getTopLevelIndexEventsMemo(indexEvents)
+  const addressToRoot = buildAddressToRootMapMemo(topLevel, indexByAddress)
   return addressToRoot.get(contentAddress)
 }
 
-/** Map kind-30041 content hits to top-level kind-30040 publication roots via `a` tag refs. */
-export function findLibraryPublicationContentSearchMatches(
-  query: string,
+/**
+ * Given a per-content-event score array (aligned to `contentEvents`), resolve the best-scoring section per
+ * kind-30040 root via `a` tag refs. Shared by the sync and worker-backed entry points so the (cheap) root
+ * mapping stays identical regardless of where scoring ran.
+ */
+function mapContentScoresToRoots(
+  q: string,
   contentEvents: Event[],
+  scores: number[],
   indexEvents: Event[],
   indexByAddress: Map<string, Event>
 ): Array<{ root: Event; match: LibraryPublicationContentSearchMatch }> {
-  const q = query.trim()
-  if (!q || contentEvents.length === 0 || indexEvents.length === 0) return []
-
   const matches: Array<{ root: Event; match: LibraryPublicationContentSearchMatch }> = []
   const bestByRootId = new Map<string, LibraryPublicationContentSearchMatch>()
 
-  for (const ev of contentEvents) {
+  for (let i = 0; i < contentEvents.length; i++) {
+    const ev = contentEvents[i]
     if (ev.kind !== ExtendedKind.PUBLICATION_CONTENT) continue
-    const matchScore = scorePublicationContentEventSearchQuery(ev, q)
+    const matchScore = scores[i] ?? 0
     if (matchScore <= 0) continue
 
     const addr = eventTagAddress(ev)
@@ -1702,6 +1761,44 @@ export function findLibraryPublicationContentSearchMatches(
   }
 
   return matches.sort((a, b) => b.match.matchScore - a.match.matchScore)
+}
+
+/** Map kind-30041 content hits to top-level kind-30040 publication roots via `a` tag refs. */
+export function findLibraryPublicationContentSearchMatches(
+  query: string,
+  contentEvents: Event[],
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): Array<{ root: Event; match: LibraryPublicationContentSearchMatch }> {
+  const q = query.trim()
+  if (!q || contentEvents.length === 0 || indexEvents.length === 0) return []
+
+  const scores = contentEvents.map((ev) =>
+    ev.kind === ExtendedKind.PUBLICATION_CONTENT ? scorePublicationContentEventSearchQuery(ev, q) : 0
+  )
+  return mapContentScoresToRoots(q, contentEvents, scores, indexEvents, indexByAddress)
+}
+
+/**
+ * Worker-backed variant of {@link findLibraryPublicationContentSearchMatches}: the CPU-heavy content
+ * scoring is offloaded to the library search Web Worker (with a synchronous main-thread fallback), then
+ * the cheap root mapping runs here. Identical results to the sync version.
+ */
+export async function findLibraryPublicationContentSearchMatchesAsync(
+  query: string,
+  contentEvents: Event[],
+  indexEvents: Event[],
+  indexByAddress: Map<string, Event>
+): Promise<Array<{ root: Event; match: LibraryPublicationContentSearchMatch }>> {
+  const q = query.trim()
+  if (!q || contentEvents.length === 0 || indexEvents.length === 0) return []
+
+  const hits = await scoreContentEventsForSearch(q, contentEvents)
+  const scores = new Array<number>(contentEvents.length).fill(0)
+  for (const [index, score] of hits) {
+    if (index >= 0 && index < scores.length) scores[index] = score
+  }
+  return mapContentScoresToRoots(q, contentEvents, scores, indexEvents, indexByAddress)
 }
 
 /**
@@ -1808,9 +1905,9 @@ export function searchLibraryPublicationIndex(
   const q = query.trim()
   if (!q || indexEvents.length === 0) return []
 
-  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const topLevel = getTopLevelIndexEventsMemo(indexEvents)
   const topLevelIds = new Set(topLevel.map((ev) => ev.id))
-  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+  const addressToRoot = buildAddressToRootMapMemo(topLevel, indexByAddress)
   const roots = new Map<string, Event>()
   collectLibraryPublicationIndexSearchRoots(
     q,
@@ -1836,9 +1933,9 @@ export function searchLibraryPublicationIndexAsync(
   const q = query.trim()
   if (!q || indexEvents.length === 0) return Promise.resolve([])
 
-  const topLevel = getTopLevelIndexEvents(indexEvents)
+  const topLevel = getTopLevelIndexEventsMemo(indexEvents)
   const topLevelIds = new Set(topLevel.map((ev) => ev.id))
-  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+  const addressToRoot = buildAddressToRootMapMemo(topLevel, indexByAddress)
   const roots = new Map<string, Event>()
   let i = 0
   const signal = options?.signal
@@ -1902,7 +1999,7 @@ export async function searchLibraryPublications(
     indexEvents: Event[],
     contentMatches?: Map<string, LibraryPublicationContentSearchMatch>
   ) => {
-    const indexByAddress = buildIndexByAddress(indexEvents)
+    const indexByAddress = buildIndexByAddressMemo(indexEvents)
     const sortedEntries = sortLibrarySearchPublications(
       libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT, contentMatches)
     )
@@ -1937,7 +2034,7 @@ export async function searchLibraryPublications(
   }
 
   const engagement = context.engagement ?? EMPTY_ENGAGEMENT
-  const indexByAddress = buildIndexByAddress(indexEvents)
+  const indexByAddress = buildIndexByAddressMemo(indexEvents)
   const contentMatchesByRootId = new Map<string, LibraryPublicationContentSearchMatch>()
   const rootMap = new Map<string, Event>()
 
@@ -1951,8 +2048,8 @@ export async function searchLibraryPublications(
     for (const root of fromIndex) rootMap.set(root.id, root)
   }
 
-  const topLevel = getTopLevelIndexEvents(indexEvents)
-  const addressToRoot = buildAddressToRootMap(topLevel, indexByAddress)
+  const topLevel = getTopLevelIndexEventsMemo(indexEvents)
+  const addressToRoot = buildAddressToRootMapMemo(topLevel, indexByAddress)
 
   if (!contentPrimary) {
     try {
@@ -1962,6 +2059,9 @@ export async function searchLibraryPublications(
       [ExtendedKind.PUBLICATION],
       { scanBudget: 12_000, collectCap: 400 }
     )
+    // Hoisted out of the per-candidate loop below: the referenced-child set is derived purely from the
+    // (fixed) index snapshot, so recomputing it per matched row was pure waste.
+    const referencedChild30040 = getReferencedChild30040AddressesMemo(indexEvents)
     for (const ev of fromReadingCache) {
       if (ev.kind !== ExtendedKind.PUBLICATION) continue
       if (!publicationIndexMatchesSearchQueryWithAxis(ev, q, axis)) continue
@@ -1975,8 +2075,7 @@ export async function searchLibraryPublications(
       }
 
       if (filterValidIndexEvents([ev]).length === 0) continue
-      const referenced = getReferencedChild30040Addresses(indexEvents)
-      if (addr && referenced.has(addr)) continue
+      if (addr && referencedChild30040.has(addr)) continue
       rootMap.set(ev.id, ev)
     }
     } catch (e) {
@@ -2016,11 +2115,13 @@ export async function searchLibraryPublications(
         cachedIndexCount = cachedIndexes.length
         if (cachedIndexes.length > 0) {
           mappingIndexEvents = dedupeEventsById([...indexEvents, ...cachedIndexes])
-          mappingIndexByAddress = buildIndexByAddress(mappingIndexEvents)
+          mappingIndexByAddress = buildIndexByAddressMemo(mappingIndexEvents)
         }
       }
       let mappedRoots = 0
-      for (const { root, match } of findLibraryPublicationContentSearchMatches(
+      // Content scoring of cached sections is the heaviest local-search CPU cost; offload it to the
+      // search worker (sync fallback inside) so the Library UI stays responsive on large reading caches.
+      for (const { root, match } of await findLibraryPublicationContentSearchMatchesAsync(
         q,
         fromContentCache,
         mappingIndexEvents,
@@ -3308,14 +3409,14 @@ export async function searchLibraryPublicationsOnRelays(
 
   const buildProgress = (): LibrarySearchProgress => {
     const mergedIndex = publicationIndexMapValues(structuralMap)
-    const indexByAddress = buildIndexByAddress(mergedIndex)
+    const indexByAddress = buildIndexByAddressMemo(mergedIndex)
     // Augmented pool (relay/library index + cached reading indexes) used only to resolve content hits to a
     // root and to render entries — never reported back as the library index.
     const resolverIndex = contentRootResolverIndexes.length
       ? dedupeEventsById([...mergedIndex, ...contentRootResolverIndexes])
       : mergedIndex
     const resolverByAddress =
-      resolverIndex === mergedIndex ? indexByAddress : buildIndexByAddress(resolverIndex)
+      resolverIndex === mergedIndex ? indexByAddress : buildIndexByAddressMemo(resolverIndex)
     const rootMap = new Map<string, Event>()
     if (!preferContentRelaySearch || options?.axis) {
       for (const root of searchLibraryPublicationIndex(q, mergedIndex, indexByAddress, options?.axis)) {
