@@ -29,7 +29,10 @@ services:
       - '127.0.0.1:8090:8090'
     environment:
       PROXY_PORT: '8090'
-      PROXY_ALLOW_ORIGIN: ${OG_PROXY_ALLOW_ORIGIN:-http://localhost:5173}
+      # Must match the browser origin of the dockerized app (jumble publishes on :8089). The browser
+      # hits og-proxy directly (VITE_PROXY_SERVER defaults to http://localhost:8090), so this is the
+      # CORS allow-origin. (npm run dev proxies /sites server-side, where CORS does not apply.)
+      PROXY_ALLOW_ORIGIN: ${OG_PROXY_ALLOW_ORIGIN:-http://localhost:8089}
       PROXY_TIMEOUT_MS: '30000'
       PROXY_MAX_BODY_BYTES: '5242880'
       PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'

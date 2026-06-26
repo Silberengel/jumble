@@ -31,9 +31,10 @@ import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { collectRemoteReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { collectWriteOutboxUrlsFromRelayList } from '@/lib/viewer-write-outboxes'
-import { useFavoriteRelays } from '@/providers/favorite-relays-context'
+import { useFavoriteRelaysOptional } from '@/providers/favorite-relays-context'
 import { useIsEventDeleted } from '@/providers/DeletedEventProvider'
-import { useNostr } from '@/providers/NostrProvider'
+import { useNostrOptional } from '@/providers/nostr-context'
+import { TRelaySet } from '@/types'
 import { useReply } from '@/providers/ReplyProvider'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -89,6 +90,10 @@ function embedIngestOptsForNoteKey(noteKey: string): ShouldDropEventOnIngestOpti
 /** Background retries after a miss — hint-only, capped (no infinite wide-relay hammering). */
 const EMBED_BACKGROUND_RETRY_MAX = 3
 const EMBED_BACKGROUND_RETRY_MS = 30_000
+// Stable empty fallbacks so memo deps don't churn when the favorite-relays context is absent (e.g.
+// embedded notes rendered in isolated Asciidoc createRoot trees without app-level providers).
+const EMPTY_RELAY_URLS: string[] = []
+const EMPTY_RELAY_SETS: TRelaySet[] = []
 
 /** True if `fetchEventWithExternalRelays(noteId, …)` can build a REQ filter (hex, note, nevent, naddr). */
 function canSearchOnExternalRelays(noteId: string): boolean {
@@ -232,8 +237,13 @@ function EmbeddedNoteFetched({
   const { t } = useTranslation()
   const isEventDeleted = useIsEventDeleted()
   const { addReplies } = useReply()
-  const { favoriteRelays, blockedRelays, relaySets } = useFavoriteRelays()
-  const { relayList, cacheRelayListEvent } = useNostr()
+  const favoriteRelaysCtx = useFavoriteRelaysOptional()
+  const favoriteRelays = favoriteRelaysCtx?.favoriteRelays ?? EMPTY_RELAY_URLS
+  const blockedRelays = favoriteRelaysCtx?.blockedRelays ?? EMPTY_RELAY_URLS
+  const relaySets = favoriteRelaysCtx?.relaySets ?? EMPTY_RELAY_SETS
+  const nostr = useNostrOptional()
+  const relayList = nostr?.relayList
+  const cacheRelayListEvent = nostr?.cacheRelayListEvent
   const { inboxRelayUrls } = useViewerInboxRelayUrls()
   const [event, setEvent] = useState<Event | undefined>(undefined)
   const [isFetching, setIsFetching] = useState(true)
