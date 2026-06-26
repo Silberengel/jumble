@@ -545,7 +545,16 @@ export async function queryIndexRelayPublicationMetadataSearch(
   }
 }
 
-/** Kind-30041 section body search on Mercury-style index relays. */
+/**
+ * Kind-30041 section body search on Mercury-style index relays.
+ *
+ * FOLLOW-UP (separate repo, mercury-relay / gc_index_relay): the server-side `/api/publications/content/search`
+ * endpoint currently does loose word-token matching with poor ranking and misses exact phrases that are
+ * present in its own index. It should implement real NIP-50 full-text search (phrase/substring ranking)
+ * so multi-word passages resolve reliably. Until then, the client also issues WS NIP-50 `search` queries
+ * to document relays that advertise NIP-50 (see searchWsRelaysForPublicationContentNip50) and falls back
+ * to client-side paginated matching.
+ */
 export async function queryIndexRelayPublicationContentSearch(
   baseUrl: string,
   query: string,

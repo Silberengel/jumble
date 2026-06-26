@@ -4,8 +4,11 @@ import {
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
   sortLibrarySearchPublications,
+  structuredQueryFilledFields,
+  structuredQueryToString,
   type LibraryPublicationEntry,
-  type LibraryPublicationRelaySearchAxis
+  type LibraryPublicationRelaySearchAxis,
+  type LibraryStructuredSearchQuery
 } from '@/lib/library-publication-index'
 import { eventTagAddress, getTopLevelIndexEvents } from '@/lib/publication-index'
 import logger from '@/lib/logger'
@@ -59,6 +62,21 @@ function mergeEntryIntoMap(
   })
 }
 
+/**
+ * Rank structured-search results by how many of the filled fields each publication matched (soft-AND:
+ * more matched fields first), falling back to the standard relevance order within an equal field count.
+ */
+function sortByFieldMatchCount(
+  entries: LibraryPublicationEntry[],
+  fieldHits: Map<string, Set<string>>
+): LibraryPublicationEntry[] {
+  const matchCount = (entry: LibraryPublicationEntry) => fieldHits.get(entryKey(entry))?.size ?? 0
+  // sortLibrarySearchPublications gives the per-entry relevance order; Array.sort is stable, so equal
+  // field counts keep that order.
+  const base = sortLibrarySearchPublications(entries)
+  return base.sort((a, b) => matchCount(b) - matchCount(a))
+}
+
 export function useLibrarySearch(params: {
   pubkey: string | null | undefined
   blockedRelays: readonly string[]
@@ -88,6 +106,8 @@ export function useLibrarySearch(params: {
   const [searchQuery, setSearchQuery] = useState('')
   const [committedSearch, setCommittedSearch] = useState('')
   const [searchAxis, setSearchAxis] = useState<LibraryPublicationRelaySearchAxis | null>(null)
+  // Structured (multi-field) search. When set, it takes over from the simple single-box search.
+  const [structuredSearch, setStructuredSearch] = useState<LibraryStructuredSearchQuery | null>(null)
   // Bumped on every explicit commit so re-running the same query (e.g. clicking Search again) still
   // re-triggers the search effect for a fresh remote pass.
   const [searchToken, setSearchToken] = useState(0)
@@ -95,9 +115,11 @@ export function useLibrarySearch(params: {
   const [searchResults, setSearchResults] = useState<LibraryPublicationEntry[] | null>(null)
   const progressThrottleRef = useRef<number | null>(null)
 
-  // Search is intentional now: the effect only runs in response to commitSearch (the Search button or
+  // The active search string: the structured query (flattened) when in advanced mode, else the simple
+  // committed query. Search is intentional: effects only run in response to a commit (Search button or
   // Enter), never as a side effect of typing.
-  const debouncedSearch = committedSearch
+  const activeSearch = structuredSearch ? structuredQueryToString(structuredSearch) : committedSearch
+  const debouncedSearch = activeSearch
 
   // Read the latest index without re-running the search effect when it grows mid-search (relay
   // discovery streams new index events back in via setIndexEvents).
@@ -114,12 +136,13 @@ export function useLibrarySearch(params: {
 
   useEffect(() => {
     setFeedPageIndex(0)
-  }, [committedSearch, showOnlyMine, searchAxis, setFeedPageIndex])
+  }, [activeSearch, showOnlyMine, searchAxis, setFeedPageIndex])
 
   const commitSearch = useCallback(
     (query: string, axis: LibraryPublicationRelaySearchAxis | null) => {
       const trimmed = query.trim()
       if (!trimmed) return
+      setStructuredSearch(null)
       setSearchQuery(trimmed)
       setCommittedSearch(trimmed)
       setSearchAxis(axis)
@@ -128,7 +151,21 @@ export function useLibrarySearch(params: {
     []
   )
 
+  const commitStructuredSearch = useCallback((query: LibraryStructuredSearchQuery) => {
+    const fields = structuredQueryFilledFields(query)
+    if (fields.length === 0) {
+      setStructuredSearch(null)
+      return
+    }
+    setCommittedSearch('')
+    setSearchAxis(null)
+    setStructuredSearch(query)
+    setSearchToken((token) => token + 1)
+  }, [])
+
   useEffect(() => {
+    // The structured-search effect owns rendering while advanced mode is active.
+    if (structuredSearch) return
     const q = committedSearch.trim()
     if (!q) {
       setSearchResults(null)
@@ -247,8 +284,184 @@ export function useLibrarySearch(params: {
       }
     }
   }, [
+    structuredSearch,
     committedSearch,
     searchAxis,
+    searchToken,
+    settledIndexCount,
+    pubkey,
+    blockedRelays,
+    setError,
+    setIndexEvents,
+    setAllIndexCount,
+    setTopLevelCount,
+    t
+  ])
+
+  // Structured (multi-field) search: local-first per field, ranked by how many fields each publication
+  // matched, with an early stop that cancels the remote pass once a strong-enough local match is found.
+  useEffect(() => {
+    if (!structuredSearch) return
+    const fields = structuredQueryFilledFields(structuredSearch)
+    if (fields.length === 0) {
+      setSearchResults(null)
+      setSearchLoading(false)
+      setError(null)
+      return
+    }
+
+    // Wait for the local index to settle before searching so the first pass has data to match.
+    if (settledIndexCount === 0 && indexEventsRef.current.length === 0) {
+      setSearchLoading(true)
+      return
+    }
+
+    let cancelled = false
+    const resultMap = new Map<string, LibraryPublicationEntry>()
+    // entryKey -> set of structured field names that matched the publication.
+    const fieldHits = new Map<string, Set<string>>()
+    // A local match must satisfy this many fields to skip the remote pass (two terms, or every filled
+    // field when fewer than two were given).
+    const requiredFieldCount = Math.min(2, fields.length)
+    setSearchLoading(true)
+    setError(null)
+    if (progressThrottleRef.current !== null) {
+      window.clearTimeout(progressThrottleRef.current)
+      progressThrottleRef.current = null
+    }
+
+    const flush = () => {
+      if (cancelled) return
+      setSearchResults(sortByFieldMatchCount([...resultMap.values()], fieldHits))
+    }
+
+    const scheduleFlush = () => {
+      if (cancelled || progressThrottleRef.current !== null) return
+      flush()
+      progressThrottleRef.current = window.setTimeout(() => {
+        progressThrottleRef.current = null
+        flush()
+      }, SEARCH_PROGRESS_THROTTLE_MS)
+    }
+
+    const applyMergedIndex = (mergedIndexEvents?: Event[]) => {
+      if (cancelled || !mergedIndexEvents) return
+      setIndexEvents(mergedIndexEvents)
+      setAllIndexCount(mergedIndexEvents.length)
+      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
+    }
+
+    const mergeFieldEntries = (
+      fieldName: string,
+      entries: LibraryPublicationEntry[],
+      mergedIndexEvents?: Event[]
+    ) => {
+      if (cancelled) return
+      for (const entry of entries) {
+        mergeEntryIntoMap(resultMap, entry)
+        const key = entryKey(entry)
+        let hits = fieldHits.get(key)
+        if (!hits) {
+          hits = new Set<string>()
+          fieldHits.set(key, hits)
+        }
+        hits.add(fieldName)
+      }
+      applyMergedIndex(mergedIndexEvents)
+      scheduleFlush()
+    }
+
+    const hasEarlyStopMatch = () => {
+      for (const hits of fieldHits.values()) {
+        if (hits.size >= requiredFieldCount) return true
+      }
+      return false
+    }
+
+    void (async () => {
+      // Phase A: local search for each filled field, ranked by matched-field count.
+      await Promise.all(
+        fields.map(async (f) => {
+          try {
+            const local = await searchLibraryPublications(
+              f.value,
+              { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+              f.axis,
+              {
+                onProgress: ({ entries, mergedIndexEvents }) =>
+                  mergeFieldEntries(f.field, entries, mergedIndexEvents)
+              }
+            )
+            mergeFieldEntries(f.field, local)
+          } catch (e) {
+            if (import.meta.env.DEV) {
+              logger.warn('[Library] structured local search failed', {
+                field: f.field,
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+          }
+        })
+      )
+      if (cancelled) return
+      flush()
+
+      // Early stop: a strong-enough local match means we skip the remote pass entirely.
+      if (hasEarlyStopMatch()) {
+        setSearchLoading(false)
+        return
+      }
+
+      // Phase B: remote search per field, merged into the same map (full-text uses the content path).
+      try {
+        const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
+        await Promise.all(
+          fields.map(async (f) => {
+            try {
+              await searchLibraryPublicationsOnRelays(
+                f.value,
+                relays,
+                { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+                {
+                  axis: f.axis,
+                  blockedRelays: blockedRelays ?? [],
+                  onProgress: ({ entries, mergedIndexEvents }) =>
+                    mergeFieldEntries(f.field, entries, mergedIndexEvents)
+                }
+              )
+            } catch (e) {
+              if (import.meta.env.DEV) {
+                logger.warn('[Library] structured relay search failed', {
+                  field: f.field,
+                  message: e instanceof Error ? e.message : String(e)
+                })
+              }
+            }
+          })
+        )
+      } catch (e) {
+        const message = e instanceof Error ? e.message : 'Relay search failed'
+        if (import.meta.env.DEV) {
+          logger.warn('[Library] structured relay search failed', { message })
+        }
+        if (!cancelled && resultMap.size === 0) {
+          setError(message.includes('timed out') ? t('Library relay search timed out') : message)
+        }
+      }
+      if (cancelled) return
+      flush()
+      setSearchLoading(false)
+    })()
+
+    return () => {
+      cancelled = true
+      if (progressThrottleRef.current !== null) {
+        window.clearTimeout(progressThrottleRef.current)
+        progressThrottleRef.current = null
+      }
+    }
+  }, [
+    structuredSearch,
     searchToken,
     settledIndexCount,
     pubkey,
@@ -263,9 +476,11 @@ export function useLibrarySearch(params: {
   return {
     searchQuery,
     setSearchQuery,
-    committedSearch,
+    committedSearch: activeSearch,
     searchAxis,
     commitSearch,
+    commitStructuredSearch,
+    structuredSearch,
     debouncedSearch,
     searchLoading,
     searchResults

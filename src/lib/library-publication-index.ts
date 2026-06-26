@@ -40,6 +40,7 @@ import {
 } from '@/lib/library-index-idb-cache'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
+import relayInfoService from '@/services/relay-info.service'
 import {
   canonicalRelaySessionKey,
   httpIndexBasesForRelayQuery,
@@ -1994,6 +1995,47 @@ export const LIBRARY_PUBLICATION_RELAY_SEARCH_AXES: LibraryPublicationRelaySearc
   'author'
 ]
 
+/**
+ * Structured (multi-field) library search. Each field is optional; empty/whitespace fields are
+ * ignored. `fullText` runs the no-axis content path (kind-30041 body); the rest map to their axis.
+ */
+export type LibraryStructuredSearchQuery = {
+  title?: string
+  author?: string
+  dTag?: string
+  fullText?: string
+}
+
+/** A filled field of a structured query, with the relay-search axis it maps to (null = content). */
+export type LibraryStructuredSearchField = {
+  field: keyof LibraryStructuredSearchQuery
+  axis: LibraryPublicationRelaySearchAxis | null
+  value: string
+}
+
+/** Non-empty fields of a structured query, in a stable order, with their search axis. */
+export function structuredQueryFilledFields(
+  query: LibraryStructuredSearchQuery
+): LibraryStructuredSearchField[] {
+  const fields: LibraryStructuredSearchField[] = []
+  const title = query.title?.trim()
+  if (title) fields.push({ field: 'title', axis: 'title', value: title })
+  const author = query.author?.trim()
+  if (author) fields.push({ field: 'author', axis: 'author', value: author })
+  const dTag = query.dTag?.trim()
+  if (dTag) fields.push({ field: 'dTag', axis: 'd-tag', value: dTag })
+  const fullText = query.fullText?.trim()
+  if (fullText) fields.push({ field: 'fullText', axis: null, value: fullText })
+  return fields
+}
+
+/** Compact display string for a structured query (used for cache keys, status, and empty-state checks). */
+export function structuredQueryToString(query: LibraryStructuredSearchQuery): string {
+  return structuredQueryFilledFields(query)
+    .map(({ field, value }) => `${field}:${value}`)
+    .join(' ')
+}
+
 /** d-tag filter values: hyphenated slug variants for relay `#d` REQ. */
 export function publicationQueryDTagVariants(query: string): string[] {
   const raw = query.trim()
@@ -2495,6 +2537,56 @@ async function scanWsRelayForPublicationContent(
   return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
 }
 
+/**
+ * Document relays that advertise NIP-50 (`supported_nips` includes 50): query kind-30041 body with a
+ * server-side `search` filter for true full-text matching. Relays without NIP-50 are skipped here and
+ * left to the paginated scan fallback.
+ */
+async function searchWsRelaysForPublicationContentNip50(
+  query: string,
+  wsRelays: string[],
+  options?: { onPartialEvents?: (events: Event[]) => void }
+): Promise<Event[]> {
+  const q = query.trim()
+  if (!q || wsRelays.length === 0) return []
+
+  let nip50Relays: string[] = []
+  try {
+    const infos = await relayInfoService.getRelayInfos(wsRelays)
+    nip50Relays = wsRelays.filter((_, i) => infos[i]?.supported_nips?.includes(50))
+  } catch {
+    nip50Relays = []
+  }
+  if (nip50Relays.length === 0) return []
+
+  const filter: Filter = {
+    kinds: [ExtendedKind.PUBLICATION_CONTENT],
+    search: q,
+    limit: LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT
+  }
+  const collected: Event[] = []
+  await Promise.all(
+    nip50Relays.map((relay) =>
+      queryService
+        .fetchEvents([relay], [filter], LIBRARY_CONTENT_RELAY_SEARCH_OPTS)
+        .then((events) => {
+          if (events.length === 0) return
+          collected.push(...events)
+          options?.onPartialEvents?.(events)
+        })
+        .catch((e) => {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] WS NIP-50 publication content search failed', {
+              relay,
+              message: e instanceof Error ? e.message : String(e)
+            })
+          }
+        })
+    )
+  )
+  return collected
+}
+
 type PublicationSectionRootRef = { sectionAddress: string; authorPubkey: string }
 
 const MAX_PUBLICATION_ROOT_LOOKUP_PASSES = 4
@@ -2682,28 +2774,41 @@ export async function fetchPublicationContentFromRelays(
     }
   }
 
+  // Mercury HTTP full-text search and WS NIP-50 search run in parallel; both stream into emitMatches.
+  const primaryTasks: Promise<unknown>[] = []
   if (httpRelays.length > 0) {
-    await Promise.all(
-      httpRelays.map((relay) =>
-        queryIndexRelayPublicationContentSearch(relay, q, {
-          limit: LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT
-        })
-          .then((page) => {
-            emitMatches(page.events as Event[])
+    primaryTasks.push(
+      Promise.all(
+        httpRelays.map((relay) =>
+          queryIndexRelayPublicationContentSearch(relay, q, {
+            limit: LIBRARY_CONTENT_RELAY_HTTP_RESULT_LIMIT
           })
-          .catch((e) => {
-            if (import.meta.env.DEV) {
-              logger.warn('[Library] HTTP publication content search failed', {
-                relay,
-                message: e instanceof Error ? e.message : String(e)
-              })
-            }
-          })
+            .then((page) => {
+              emitMatches(page.events as Event[])
+            })
+            .catch((e) => {
+              if (import.meta.env.DEV) {
+                logger.warn('[Library] HTTP publication content search failed', {
+                  relay,
+                  message: e instanceof Error ? e.message : String(e)
+                })
+              }
+            })
+        )
       )
     )
   }
+  if (wsDocumentRelays.length > 0) {
+    primaryTasks.push(
+      searchWsRelaysForPublicationContentNip50(q, wsDocumentRelays, {
+        onPartialEvents: emitMatches
+      }).catch(() => [] as Event[])
+    )
+  }
+  await Promise.all(primaryTasks)
 
-  // Mercury HTTP search is server-side; WS pagination only adds noisy word matches for long quotes.
+  // Fallback for relays without server-side full-text: paginate kind-30041 and match client-side.
+  // WS pagination only adds noisy word matches for long quotes, so it runs only when nothing matched.
   if (globalMatched.length === 0 && wsDocumentRelays.length > 0) {
     await Promise.all(
       wsDocumentRelays.map((relay) =>

@@ -22,6 +22,7 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     setSearchQuery,
     committedSearch,
     commitSearch,
+    commitStructuredSearch,
     showOnlyMine,
     setShowOnlyMine,
     mineFilterLoading,
@@ -77,6 +78,7 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
             searchQuery={searchQuery}
             onSearchQueryChange={setSearchQuery}
             onCommitSearch={commitSearch}
+            onCommitStructuredSearch={commitStructuredSearch}
             searchLoading={searchLoading}
             showOnlyMine={showOnlyMine}
             onShowOnlyMineChange={setShowOnlyMine}
