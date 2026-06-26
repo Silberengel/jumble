@@ -1838,8 +1838,9 @@ export async function searchLibraryPublications(
     const phraseEntries = sortedEntries.filter(
       (entry) => (entry.contentSearchMatch?.matchScore ?? 0) >= 10_000
     )
-    const entries =
-      contentPrimary && phraseEntries.length > 0 ? phraseEntries : sortedEntries
+    // For passage/content searches, only true phrase matches count — never fall back to scattered-word
+    // matches (those surface unrelated long books). No phrase match => empty, matching the relay path.
+    const entries = contentPrimary ? phraseEntries : sortedEntries
     options?.onProgress?.({ entries, mergedIndexEvents: indexEvents })
     return entries
   }

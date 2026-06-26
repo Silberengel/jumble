@@ -5,9 +5,12 @@ import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { normalizeToDTag } from '@/lib/search-parser'
-import type { LibraryStructuredSearchQuery } from '@/lib/library-publication-index'
+import {
+  shouldSearchPublicationContentOnRelays,
+  type LibraryStructuredSearchQuery
+} from '@/lib/library-publication-index'
 import { cn } from '@/lib/utils'
-import { ChevronDown, ChevronUp, Loader2, Search } from 'lucide-react'
+import { ChevronDown, ChevronUp, Loader2, Search, X } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -67,6 +70,8 @@ export default function LibrarySearchBar({
     [author, dTag, fullText, title]
   )
 
+  const hasStructuredInput = !!(title.trim() || author.trim() || dTag.trim() || fullText.trim())
+
   const canStructuredSearch =
     !disabled &&
     !!(structuredQuery.title || structuredQuery.author || structuredQuery.dTag || structuredQuery.fullText)
@@ -75,6 +80,32 @@ export default function LibrarySearchBar({
     if (!canStructuredSearch) return
     onCommitStructuredSearch(structuredQuery)
   }, [canStructuredSearch, onCommitStructuredSearch, structuredQuery])
+
+  const clearStructuredSearch = useCallback(() => {
+    setTitle('')
+    setAuthor('')
+    setDTag('')
+    setFullText('')
+  }, [])
+
+  // When opening advanced search, carry over whatever was typed in the simple box so it isn't lost.
+  // A passage-like query seeds the full-text field; a short query seeds the title field.
+  const toggleAdvanced = useCallback(() => {
+    setAdvanced((prev) => {
+      const opening = !prev
+      if (opening && !hasStructuredInput) {
+        const seed = searchQuery.trim()
+        if (seed) {
+          if (shouldSearchPublicationContentOnRelays(seed)) {
+            setFullText(seed)
+          } else {
+            setTitle(seed)
+          }
+        }
+      }
+      return opening
+    })
+  }, [hasStructuredInput, searchQuery])
 
   // Enter commits a structured search from the single-line fields (the full-text textarea allows newlines).
   const handleStructuredKeyDown = useCallback(
@@ -159,7 +190,17 @@ export default function LibrarySearchBar({
               disabled={disabled}
             />
           </StructuredField>
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="gap-1.5"
+              disabled={disabled || !hasStructuredInput}
+              onClick={clearStructuredSearch}
+            >
+              <X className="size-4" aria-hidden />
+              <span>{t('Library search clear')}</span>
+            </Button>
             <Button
               type="button"
               className="gap-1.5"
@@ -183,7 +224,7 @@ export default function LibrarySearchBar({
             'flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground',
             disabled && 'pointer-events-none opacity-50'
           )}
-          onClick={() => setAdvanced((prev) => !prev)}
+          onClick={toggleAdvanced}
           aria-expanded={advanced}
         >
           {advanced ? (

@@ -77,6 +77,23 @@ function sortByFieldMatchCount(
   return base.sort((a, b) => matchCount(b) - matchCount(a))
 }
 
+/**
+ * Strict cross-field AND with a soft-AND fallback: when at least one publication matches every filled
+ * field, return only those (true AND). Otherwise fall back to the soft-AND ranking (best partial matches
+ * first) so the user still sees the closest results instead of an empty list.
+ */
+function selectStructuredResults(
+  entries: LibraryPublicationEntry[],
+  fieldHits: Map<string, Set<string>>,
+  filledFieldCount: number
+): LibraryPublicationEntry[] {
+  const ranked = sortByFieldMatchCount(entries, fieldHits)
+  const strict = ranked.filter(
+    (entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) >= filledFieldCount
+  )
+  return strict.length > 0 ? strict : ranked
+}
+
 export function useLibrarySearch(params: {
   pubkey: string | null | undefined
   blockedRelays: readonly string[]
@@ -320,9 +337,8 @@ export function useLibrarySearch(params: {
     const resultMap = new Map<string, LibraryPublicationEntry>()
     // entryKey -> set of structured field names that matched the publication.
     const fieldHits = new Map<string, Set<string>>()
-    // A local match must satisfy this many fields to skip the remote pass (two terms, or every filled
-    // field when fewer than two were given).
-    const requiredFieldCount = Math.min(2, fields.length)
+    // Skip the remote pass once one publication matches every filled field locally (a complete AND hit).
+    const requiredFieldCount = fields.length
     setSearchLoading(true)
     setError(null)
     if (progressThrottleRef.current !== null) {
@@ -332,7 +348,7 @@ export function useLibrarySearch(params: {
 
     const flush = () => {
       if (cancelled) return
-      setSearchResults(sortByFieldMatchCount([...resultMap.values()], fieldHits))
+      setSearchResults(selectStructuredResults([...resultMap.values()], fieldHits, fields.length))
     }
 
     const scheduleFlush = () => {

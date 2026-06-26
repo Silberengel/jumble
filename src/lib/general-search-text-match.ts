@@ -201,6 +201,27 @@ export function scorePublicationContentSearchQuery(content: string, query: strin
 }
 
 /** Best substring to highlight for a query that matched {@code haystack} (case preserved in caller). */
+function escapeRegExpLiteral(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+/**
+ * Locate the full phrase as it actually appears in {@code haystack}, tolerating any whitespace and
+ * punctuation between query words (line breaks, commas, etc.). Returns the original-cased slice so the
+ * whole matched passage can be highlighted, not just the first word.
+ */
+function findFlexiblePhraseSlice(haystack: string, raw: string): string | null {
+  const words = generalSearchQueryTerms(raw)
+  if (words.length === 0) return null
+  const pattern = words.map(escapeRegExpLiteral).join('[^\\p{L}\\p{N}]+')
+  try {
+    const match = new RegExp(pattern, 'iu').exec(haystack)
+    return match?.[0] ?? null
+  } catch {
+    return null
+  }
+}
+
 export function findSearchHighlightNeedle(haystack: string, query: string): string | null {
   const raw = query.trim()
   if (!raw) return null
@@ -209,11 +230,9 @@ export function findSearchHighlightNeedle(haystack: string, query: string): stri
 
   for (const needle of phraseNeedlesForQuery(raw)) {
     if (haystackIncludesPhrase(haystack, needle)) {
-      const words = generalSearchQueryTerms(raw)
-      if (words.length > 0) {
-        const idx = lowerHaystack.indexOf(words[0])
-        if (idx !== -1) return haystack.slice(idx, idx + words[0].length)
-      }
+      // Highlight the entire matched phrase as it appears in the text, not just the first word.
+      const phraseSlice = findFlexiblePhraseSlice(haystack, raw)
+      if (phraseSlice) return phraseSlice
       return needle
     }
   }

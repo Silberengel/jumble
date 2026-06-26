@@ -1150,6 +1150,7 @@ export default {
     "Library search field dtag placeholder": "e.g. the-divine-comedy",
     "Library search field fulltext": "Full text",
     "Library search field fulltext placeholder": "A passage to find within publications…",
+    "Library search clear": "Clear",
     "Library search dropdown all": "ALL FIELDS",
     "Library search dropdown title": "TITLE",
     "Library search dropdown author": "AUTHOR",
