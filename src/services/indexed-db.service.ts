@@ -41,7 +41,10 @@ import {
   pickNewerPublicationIndexEvent,
   type PublicationIndexMap
 } from '@/lib/publication-index'
-import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
+import {
+  eventMatchesGeneralSearchQuery,
+  eventMatchesPhraseSearchQuery
+} from '@/lib/general-search-text-match'
 import { eventMatchesAnyLocalFeedFilter } from '@/lib/feed-local-event-match'
 import {
   paymentAttestationIdbRowFromEvent,
@@ -1814,7 +1817,7 @@ class IndexedDbService {
     query: string,
     limit: number,
     allowedKinds: number[],
-    options?: { scanBudget?: number; collectCap?: number; scanMaxMs?: number }
+    options?: { scanBudget?: number; collectCap?: number; scanMaxMs?: number; phraseOnly?: boolean }
   ): Promise<Event[]> {
     await this.initPromise
     if (!this.db || !this.db.objectStoreNames.contains(StoreNames.PUBLICATION_EVENTS)) {
@@ -1831,6 +1834,10 @@ class IndexedDbService {
     )
     const scanMaxMs = options?.scanMaxMs
     const scanStart = Date.now()
+    // For long passage (content) searches the permissive scattered-word matcher matches almost every
+    // section on common words; the relevant section then loses the recency-sorted `limit` cut. Phrase-only
+    // collection keeps the budget focused on sections that actually contain the quote.
+    const matches = options?.phraseOnly ? eventMatchesPhraseSearchQuery : eventMatchesGeneralSearchQuery
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction(StoreNames.PUBLICATION_EVENTS, 'readonly')
@@ -1856,7 +1863,7 @@ class IndexedDbService {
         const item = cursor.value as TValue<Event> | undefined
         if (item?.value) {
           const event = item.value as Event
-          if (kindSet.has(event.kind) && eventMatchesGeneralSearchQuery(event, query)) {
+          if (kindSet.has(event.kind) && matches(event, query)) {
             results.push(event)
           }
         }

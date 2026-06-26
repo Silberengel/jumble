@@ -341,6 +341,17 @@ export function findSearchHighlightNeedle(haystack: string, query: string): stri
 }
 
 /**
+ * Strict contiguous-phrase match over an event's readable text. Unlike {@link eventMatchesGeneralSearchQuery},
+ * this never matches on scattered shared words, so long passage queries only match the section that actually
+ * contains the quote (used to keep the relevant section from being crowded out by recency-sorted noise).
+ */
+export function eventMatchesPhraseSearchQuery(ev: Event, query: string): boolean {
+  const raw = query.trim()
+  if (!raw) return false
+  return haystackMatchesPhraseQuery(generalSearchHaystack(ev), raw)
+}
+
+/**
  * Client-side “general search”: substring match over readable text fields (not raw id/pubkey/kind).
  * Still resolves npub/nprofile/hex author, note/nevent id, and kind-0 profile queries.
  */

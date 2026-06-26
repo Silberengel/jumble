@@ -8,6 +8,7 @@ import {
   isQuotedSearchQuery,
   metadataSearchHaystack,
   normalizeGeneralSearchQuery,
+  publicationContentSectionHaystack,
   publicationContentSectionTitle,
   scorePublicationContentEventSearchQuery
 } from '@/lib/general-search-text-match'
@@ -1715,7 +1716,10 @@ function diagnoseLocalContentSearch(
 ): void {
   const q = query.trim()
   const sections = contentEvents.filter((ev) => ev.kind === ExtendedKind.PUBLICATION_CONTENT)
-  const phraseMatched = sections.filter((ev) => scorePublicationContentEventSearchQuery(ev, q) > 0)
+  // `scoreMatched` includes scattered-word noise; `phraseMatched` is the strict contiguous-quote match
+  // that contentPrimary results actually require, so a big gap means the relevant section was crowded out.
+  const scoreMatched = sections.filter((ev) => scorePublicationContentEventSearchQuery(ev, q) > 0)
+  const phraseMatched = sections.filter((ev) => haystackMatchesPhraseQuery(publicationContentSectionHaystack(ev), q))
   const matchedWithAddress = phraseMatched.filter((ev) => !!eventTagAddress(ev))
 
   const sampleUnmapped =
@@ -1731,6 +1735,7 @@ function diagnoseLocalContentSearch(
     query: q.length > 60 ? `${q.slice(0, 60)}…` : q,
     contentPrimary: ctx.contentPrimary,
     scanned: sections.length,
+    scoreMatched: scoreMatched.length,
     phraseMatched: phraseMatched.length,
     matchedWithAddress: matchedWithAddress.length,
     cachedIndexEvents: ctx.cachedIndexCount,
@@ -1989,7 +1994,9 @@ export async function searchLibraryPublications(
         q,
         LIBRARY_SEARCH_READING_CACHE_LIMIT,
         [ExtendedKind.PUBLICATION_CONTENT],
-        { scanBudget: 20_000, collectCap: 400 }
+        contentPrimary
+          ? { scanBudget: 60_000, collectCap: 400, phraseOnly: true }
+          : { scanBudget: 20_000, collectCap: 400 }
       )
       // A kind-30041 content hit only resolves to a publication via a kind-30040 index whose `a` tags
       // reference it. A book the user has *opened* stores its index in the reading cache, which may not be
