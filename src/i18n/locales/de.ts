@@ -1153,6 +1153,7 @@ export default {
     "Library search field fulltext": "Volltext",
     "Library search field fulltext placeholder": "Eine Textstelle in Publikationen finden…",
     "Library search clear": "Leeren",
+    "Library search stop": "Stopp",
     "Library search dropdown all": "ALLE FELDER",
     "Library search dropdown title": "TITEL",
     "Library search dropdown author": "AUTOR",

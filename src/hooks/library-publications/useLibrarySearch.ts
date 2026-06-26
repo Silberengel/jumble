@@ -168,6 +168,24 @@ export function useLibrarySearch(params: {
     []
   )
 
+  // Thorough reset: cancels any in-flight search (clearing committed/structured state tears down the
+  // search effects via their cleanup) and wipes every piece of search panel state back to its initial
+  // value. Used by both the Clear button and the Search-button-as-Stop while a search is running.
+  const resetSearch = useCallback(() => {
+    if (progressThrottleRef.current !== null) {
+      window.clearTimeout(progressThrottleRef.current)
+      progressThrottleRef.current = null
+    }
+    setSearchQuery('')
+    setCommittedSearch('')
+    setSearchAxis(null)
+    setStructuredSearch(null)
+    setSearchResults(null)
+    setSearchLoading(false)
+    setError(null)
+    setSearchToken((token) => token + 1)
+  }, [setError])
+
   const commitStructuredSearch = useCallback((query: LibraryStructuredSearchQuery) => {
     const fields = structuredQueryFilledFields(query)
     if (fields.length === 0) {
@@ -496,6 +514,7 @@ export function useLibrarySearch(params: {
     searchAxis,
     commitSearch,
     commitStructuredSearch,
+    resetSearch,
     structuredSearch,
     debouncedSearch,
     searchLoading,

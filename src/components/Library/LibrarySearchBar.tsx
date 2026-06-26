@@ -19,6 +19,8 @@ export default function LibrarySearchBar({
   onSearchQueryChange,
   onCommitSearch,
   onCommitStructuredSearch,
+  onResetSearch,
+  searchActive,
   searchLoading,
   showOnlyMine,
   onShowOnlyMineChange,
@@ -29,6 +31,8 @@ export default function LibrarySearchBar({
   onSearchQueryChange: (value: string) => void
   onCommitSearch: (query: string, axis: null) => void
   onCommitStructuredSearch: (query: LibraryStructuredSearchQuery) => void
+  onResetSearch: () => void
+  searchActive?: boolean
   searchLoading?: boolean
   showOnlyMine: boolean
   onShowOnlyMineChange: (value: boolean) => void
@@ -81,12 +85,17 @@ export default function LibrarySearchBar({
     onCommitStructuredSearch(structuredQuery)
   }, [canStructuredSearch, onCommitStructuredSearch, structuredQuery])
 
-  const clearStructuredSearch = useCallback(() => {
+  // Thorough reset: stop any in-flight search, wipe every field (simple box + structured fields), drop
+  // committed results, and collapse back to the default simple view so the panel is completely fresh.
+  const resetPanel = useCallback(() => {
     setTitle('')
     setAuthor('')
     setDTag('')
     setFullText('')
-  }, [])
+    setAdvanced(false)
+    onResetSearch()
+    searchInputRef.current?.blur()
+  }, [onResetSearch])
 
   // When opening advanced search, carry over whatever was typed in the simple box so it isn't lost.
   // A passage-like query seeds the full-text field; a short query seeds the title field.
@@ -120,6 +129,9 @@ export default function LibrarySearchBar({
   )
 
   const canSimpleSearch = !disabled && !!searchQuery.trim()
+  // Anything worth clearing: typed text in any field, a committed/active search, or a search in flight.
+  const canReset =
+    !!searchLoading || hasStructuredInput || !!searchQuery.trim() || !!searchActive
 
   return (
     <div className="space-y-3">
@@ -138,19 +150,29 @@ export default function LibrarySearchBar({
               aria-label={t('Library search placeholder')}
             />
           </div>
-          <Button
-            type="button"
-            className="shrink-0 gap-1.5"
-            disabled={!canSimpleSearch || !!searchLoading}
-            onClick={runSimpleSearch}
-          >
-            {searchLoading ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden />
-            ) : (
+          {searchLoading ? (
+            <Button
+              type="button"
+              variant="destructive"
+              className="shrink-0 gap-1.5"
+              onClick={resetPanel}
+            >
+              <X className="size-4" aria-hidden />
+              <span>{t('Library search stop')}</span>
+            </Button>
+          ) : (
+            // The box's own in-field clear (SearchInput) already wipes the query, which cascades to drop
+            // committed results, so the simple bar doesn't need a second out-field clear button here.
+            <Button
+              type="button"
+              className="shrink-0 gap-1.5"
+              disabled={!canSimpleSearch}
+              onClick={runSimpleSearch}
+            >
               <Search className="size-4" aria-hidden />
-            )}
-            <span>{t('Search')}</span>
-          </Button>
+              <span>{t('Search')}</span>
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-3 rounded-lg border border-border/80 bg-surface-background p-3">
@@ -195,25 +217,28 @@ export default function LibrarySearchBar({
               type="button"
               variant="outline"
               className="gap-1.5"
-              disabled={disabled || !hasStructuredInput}
-              onClick={clearStructuredSearch}
+              disabled={!canReset}
+              onClick={resetPanel}
             >
               <X className="size-4" aria-hidden />
               <span>{t('Library search clear')}</span>
             </Button>
-            <Button
-              type="button"
-              className="gap-1.5"
-              disabled={!canStructuredSearch || !!searchLoading}
-              onClick={runStructuredSearch}
-            >
-              {searchLoading ? (
-                <Loader2 className="size-4 animate-spin" aria-hidden />
-              ) : (
+            {searchLoading ? (
+              <Button type="button" variant="destructive" className="gap-1.5" onClick={resetPanel}>
+                <X className="size-4" aria-hidden />
+                <span>{t('Library search stop')}</span>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                className="gap-1.5"
+                disabled={!canStructuredSearch}
+                onClick={runStructuredSearch}
+              >
                 <Search className="size-4" aria-hidden />
-              )}
-              <span>{t('Search')}</span>
-            </Button>
+                <span>{t('Search')}</span>
+              </Button>
+            )}
           </div>
         </div>
       )}

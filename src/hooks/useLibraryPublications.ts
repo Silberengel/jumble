@@ -47,6 +47,7 @@ export function useLibraryPublications(isActive: boolean) {
     searchAxis,
     commitSearch,
     commitStructuredSearch,
+    resetSearch,
     debouncedSearch,
     searchLoading,
     searchResults
@@ -138,6 +139,8 @@ export function useLibraryPublications(isActive: boolean) {
     searchAxis,
     commitSearch,
     commitStructuredSearch,
+    resetSearch,
+    searchActive: committedSearch.trim().length > 0,
     showOnlyMine,
     setShowOnlyMine,
     mineFilterLoading: mineFilterComputing || (showOnlyMine && booklistTargetsLoading),
