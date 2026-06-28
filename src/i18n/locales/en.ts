@@ -1773,6 +1773,8 @@ export default {
     "Full-text search source zero hits": "0 hits",
     "Full-text search source hits": "{{count}} hit(s)",
     "Full-text search source hits with raw": "{{shown}} shown ({{raw}} from source)",
+    "Wiki": "Wiki",
+    "Wiki search results": "Wiki search results",
     "See reference": "See reference",
     "Select Media Type": "Select Media Type",
     "Select relays": "Select relays",

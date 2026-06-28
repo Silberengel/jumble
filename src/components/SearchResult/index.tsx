@@ -9,6 +9,7 @@ import { TSearchParams } from '@/types'
 import { useMemo } from 'react'
 import NormalFeed from '../NormalFeed'
 import FullTextSearchByRelay from './FullTextSearchByRelay'
+import WikiSearchByRelay from './WikiSearchByRelay'
 import Profile from '../Profile'
 import { ProfileListBySearch } from '../ProfileListBySearch'
 import Relay from '../Relay'
@@ -101,12 +102,15 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
   }
   if (searchParams.type === 'notes') {
     return (
-      <FullTextSearchByRelay
-        searchQuery={searchParams.search}
-        relayUrls={generalSearchRelayUrls}
-        kinds={NIP_SEARCH_PAGE_KINDS}
-        alexandriaEmptyHref={alexandriaEmptyHref}
-      />
+      <div className="min-w-0 space-y-4">
+        <WikiSearchByRelay searchQuery={searchParams.search} />
+        <FullTextSearchByRelay
+          searchQuery={searchParams.search}
+          relayUrls={generalSearchRelayUrls}
+          kinds={NIP_SEARCH_PAGE_KINDS}
+          alexandriaEmptyHref={alexandriaEmptyHref}
+        />
+      </div>
     )
   }
   if (searchParams.type === 'hashtag') {

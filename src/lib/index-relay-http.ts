@@ -48,6 +48,10 @@ function indexRelayPublicationContentSearchUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/content/search`
 }
 
+function indexRelayWikiSearchUrl(baseUrl: string): string {
+  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/wiki/search`
+}
+
 /** Map a Nostr filter to gc_index_relay POST body (requires `limit` 1–100; strips unsupported keys). */
 function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> | null {
   const body: Record<string, unknown> = {}
@@ -615,6 +619,79 @@ export async function queryIndexRelayPublicationContentSearch(
       throw new IndexRelayTransportError(e)
     }
     warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] publication content search request error', {
+      endpoint,
+      error: e
+    })
+    return { events: [], apiRowCount: 0 }
+  }
+}
+
+/**
+ * Kind-30818 NIP-54 wiki article search on Mercury-style index relays via POST /api/wiki/search.
+ *
+ * Searches BOTH the article body (`content`) AND metadata tags (`d`, `title`, `summary`, `source`)
+ * server-side, ranked by exact-phrase-then-relevance-then-recency. This is the wiki analog of
+ * {@link queryIndexRelayPublicationContentSearch} and is driven by the generic Search page's
+ * FULL TEXT mode (see SearchResult). Exact `d`-tag lookups stay on the NIP-01 `#d` filter path.
+ */
+export async function queryIndexRelayWikiSearch(
+  baseUrl: string,
+  query: string,
+  options?: { limit?: number; signal?: AbortSignal }
+): Promise<TIndexRelayLibraryPage> {
+  const q = normalizeGeneralSearchQuery(query.trim())
+  if (!q) return { events: [], apiRowCount: 0 }
+
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayWikiSearchUrl(base)
+  if (shouldSkipDevIndexRelayFetch(endpoint)) {
+    return { events: [], apiRowCount: 0 }
+  }
+
+  const limit = Math.max(1, Math.min(options?.limit ?? 100, 100))
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ q, limit }),
+      signal: options?.signal,
+      timeoutMs: 45_000
+    })
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 405) return { events: [], apiRowCount: 0 }
+      if (res.status >= 500) {
+        // Best-effort search endpoint: a 5xx (often a dev-proxy timeout) must not disable the
+        // whole dev index-relay session, so surface a transport error without flagging it globally.
+        throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      }
+      return { events: [], apiRowCount: 0 }
+    }
+    const json = (await res.json()) as { data?: unknown }
+    const data = json.data
+    if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }
+
+    const events: NEvent[] = []
+    const seen = new Set<string>()
+    for (const item of data) {
+      if (!item || typeof item !== 'object') continue
+      const ev = rawToIndexRelayEvent(item as Record<string, unknown>)
+      if (ev && !seen.has(ev.id)) {
+        seen.add(ev.id)
+        events.push(ev)
+      }
+    }
+    return { events, apiRowCount: data.length }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] wiki search request error', {
       endpoint,
       error: e
     })
