@@ -5,6 +5,7 @@ import UserAvatar from '@/components/UserAvatar'
 import { MediaAutoLoadEventProvider } from '@/providers/MediaAutoLoadEventContext'
 import MediaPlayer from '@/components/MediaPlayer'
 import Wikilink from '@/components/UniversalContent/Wikilink'
+import { WIKILINK_INLINE_REGEX, isCitationWikilink, parseWikilinkInner } from '@/lib/wikilink'
 import { HttpUrlOpenGraphOrLink } from '@/components/Embedded'
 import SpotifyEmbeddedPlayer from '@/components/SpotifyEmbeddedPlayer'
 import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
@@ -3693,11 +3694,8 @@ function parseMarkdownContentMarked(
     }
 
     const wiki = paragraphText.match(/^\[\[([^\]]+)\]\]$/)
-    if (wiki) {
-      const linkContent = wiki[1].trim()
-      const target = linkContent.includes('|') ? linkContent.split('|')[0].trim() : linkContent
-      const displayText = linkContent.includes('|') ? linkContent.split('|')[1].trim() : linkContent
-      const dTag = target.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+    if (wiki && !isCitationWikilink(wiki[1])) {
+      const { dTag, displayText } = parseWikilinkInner(wiki[1])
       return <Wikilink key={`${key}-wikilink`} dTag={dTag} displayText={displayText} />
     }
 
@@ -5012,6 +5010,32 @@ function parseInlineMarkdownLegacy(
     }
   })
 
+  // Wiki links: [[Term]] or [[target|display]] (NIP-54). Citations ([[citation::...]]) are excluded.
+  const wikilinkRegex = new RegExp(WIKILINK_INLINE_REGEX.source, 'g')
+  const wikilinkMatches = Array.from(text.matchAll(wikilinkRegex))
+  wikilinkMatches.forEach((match) => {
+    if (match.index === undefined) return
+    const inner = match[1]
+    if (isCitationWikilink(inner)) return
+    const isInOther = inlinePatterns.some(
+      (p) =>
+        (p.type === 'link' ||
+          p.type === 'code' ||
+          p.type === 'math-inline' ||
+          p.type === 'math-block') &&
+        match.index! >= p.index &&
+        match.index! < p.end
+    )
+    if (!isInOther) {
+      inlinePatterns.push({
+        index: match.index,
+        end: match.index + match[0].length,
+        type: 'wikilink',
+        data: inner
+      })
+    }
+  })
+
   // Footnote references: [^id]
   // Only render as clickable refs when the referenced definition exists.
   const footnoteRefRegex = /\[\^([^\]]+)\]/g
@@ -5235,6 +5259,11 @@ function parseInlineMarkdownLegacy(
         >
           #{tag}
         </a>
+      )
+    } else if (pattern.type === 'wikilink') {
+      const { dTag, displayText } = parseWikilinkInner(pattern.data as string)
+      parts.push(
+        <Wikilink key={`${keyPrefix}-wikilink-${i}`} dTag={dTag} displayText={displayText} />
       )
     } else if (pattern.type === 'footnote-ref') {
       const footnoteId = pattern.data

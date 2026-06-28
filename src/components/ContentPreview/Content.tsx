@@ -1,4 +1,5 @@
 import { parseContent, PARSE_CONTENT_PARSERS_NOTE_TEXT } from '@/lib/content-parser'
+import { parseWikilinkInner } from '@/lib/wikilink'
 import { replaceStandardEmojiShortcodesInContent } from '@/lib/emoji-content'
 import { emojis, shortcodeToEmoji } from '@tiptap/extension-emoji'
 import { cn } from '@/lib/utils'
@@ -39,6 +40,9 @@ export default function Content({
         }
         if (node.type === 'mention') {
           return <EmbeddedMentionText key={index} userId={node.data.split(':')[1]} />
+        }
+        if (node.type === 'wikilink') {
+          return parseWikilinkInner(node.data).displayText
         }
         if (node.type === 'payto') {
           return (

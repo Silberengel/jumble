@@ -67,6 +67,23 @@ export function compareMergedGeneralSearchHits(
   return compareEventsForDTagQuery(needle, a.event, b.event)
 }
 
+/**
+ * Like {@link compareEventsForDTagQuery} but floats events of `priorityKind` to the very top
+ * (used by wikilinks, which target NIP-54 wiki pages → kind 30818). Within each tier the normal
+ * d-tag-match ordering applies.
+ */
+export function compareEventsForDTagQueryWithPriorityKind(
+  needle: string,
+  priorityKind: number,
+  a: Event,
+  b: Event
+): number {
+  const aTier = a.kind === priorityKind ? 0 : 1
+  const bTier = b.kind === priorityKind ? 0 : 1
+  if (aTier !== bTier) return aTier - bTier
+  return compareEventsForDTagQuery(needle, a, b)
+}
+
 /** For merged lists: better d-tag match first; tie-break newest first. Kind 30041 sinks unless `d` equals the needle. */
 export function compareEventsForDTagQuery(needle: string, a: Event, b: Event): number {
   const nl = needle.trim().toLowerCase()

@@ -5,7 +5,9 @@ import { useSecondaryPageOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { Event, kinds } from 'nostr-tools'
+import { BookMarked } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import ArticleCardCoverImage from './ArticleCardCoverImage'
 
 export default function WikiCard({
@@ -15,6 +17,7 @@ export default function WikiCard({
   event: Event
   className?: string
 }) {
+  const { t } = useTranslation()
   const screenSize = useScreenSizeOptional()
   const isSmallScreen = screenSize?.isSmallScreen ?? false
   const secondaryPage = useSecondaryPageOptional()
@@ -28,6 +31,13 @@ export default function WikiCard({
     e.stopPropagation()
     push(toNote(event))
   }
+
+  const labelComponent = (
+    <div className="inline-flex w-fit items-center gap-1 rounded-full bg-primary/10 text-primary text-xs font-medium px-2 py-0.5">
+      <BookMarked className="h-3 w-3" />
+      {t('Nostr Wiki')}
+    </div>
+  )
 
   const titleComponent = <div className="text-xl font-semibold break-words min-w-0 sm:line-clamp-2">{metadata.title}</div>
 
@@ -67,6 +77,7 @@ export default function WikiCard({
             hideImageIfError
           />
           <div className="space-y-2">
+            {labelComponent}
             {titleComponent}
             {summaryComponent}
             {tagsComponent}
@@ -91,6 +102,7 @@ export default function WikiCard({
             hideImageIfError
           />
           <div className="flex-1 w-0 space-y-2">
+            {labelComponent}
             {titleComponent}
             {summaryComponent}
             {tagsComponent}

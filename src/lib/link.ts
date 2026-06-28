@@ -69,13 +69,16 @@ export const toNoteList = ({
   search,
   externalContentId,
   domain,
-  kinds
+  kinds,
+  prioritizeKind
 }: {
   hashtag?: string
   search?: string
   externalContentId?: string
   domain?: string
   kinds?: number[]
+  /** Sort this kind to the top of a d-tag browse (e.g. wiki kind 30818 from a wikilink). */
+  prioritizeKind?: number
 }) => {
   const path = '/notes'
   const query = new URLSearchParams()
@@ -86,6 +89,7 @@ export const toNoteList = ({
   if (search) query.set('s', search)
   if (externalContentId) query.set('i', externalContentId)
   if (domain) query.set('d', domain)
+  if (prioritizeKind !== undefined) query.set('pk', prioritizeKind.toString())
   return `${path}?${query.toString()}`
 }
 export const toProfile = (userId: string) => {

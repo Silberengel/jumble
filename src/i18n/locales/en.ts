@@ -1,5 +1,6 @@
 export default {
   translation: {
+    "Nostr Wiki": "Nostr Wiki",
     About: "About",
     "New Note": "New Note",
     Post: "Post",

@@ -30,6 +30,8 @@ import {
   HttpUrlOpenGraphOrLink
 } from '../Embedded'
 import PaytoLink from '../PaytoLink'
+import Wikilink from '../UniversalContent/Wikilink'
+import { parseWikilinkInner } from '@/lib/wikilink'
 import Emoji from '../Emoji'
 import ImageGallery from '../ImageGallery'
 import MediaPlayer from '../MediaPlayer'
@@ -748,6 +750,10 @@ export default function Content({
         }
         if (node.type === 'hashtag') {
           return <EmbeddedHashtag hashtag={node.data} key={index} />
+        }
+        if (node.type === 'wikilink') {
+          const { dTag, displayText } = parseWikilinkInner(node.data)
+          return <Wikilink key={index} dTag={dTag} displayText={displayText} />
         }
         if (node.type === 'emoji') {
           const shortcode = node.data.slice(1, -1).trim()

@@ -1,7 +1,7 @@
-import { useState } from 'react'
-import { ExternalLink, ChevronDown, ChevronRight } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { ExtendedKind } from '@/constants'
+import { toNoteList } from '@/lib/link'
+import { cn } from '@/lib/utils'
+import { useSmartHashtagNavigationOptional } from '@/PageManager'
 
 interface WikilinkProps {
   dTag: string
@@ -10,37 +10,26 @@ interface WikilinkProps {
 }
 
 export default function Wikilink({ dTag, displayText, className }: WikilinkProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const { navigateToHashtag } = useSmartHashtagNavigationOptional()
 
-  const handleAlexandriaClick = () => {
-    const url = `https://next-alexandria.gitcitadel.eu/events?d=${dTag}`
-    window.open(url, '_blank', 'noopener,noreferrer')
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    if (!dTag) return
+    // Wikilinks target NIP-54 wiki pages, so surface kind 30818 events first in the d-tag browse.
+    navigateToHashtag(toNoteList({ domain: dTag, prioritizeKind: ExtendedKind.WIKI_ARTICLE }))
   }
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className={className}>
-      <CollapsibleTrigger asChild>
-        <Button
-          variant="link"
-          className="p-0 h-auto text-blue-600 hover:text-foreground hover:underline underline-offset-2 transition-colors inline-flex items-center gap-1"
-        >
-          <span>{displayText}</span>
-          {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-        </Button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1">
-        <div className="bg-muted/30 rounded-md p-2 text-xs space-y-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start text-xs h-6"
-            onClick={handleAlexandriaClick}
-          >
-            <ExternalLink className="h-3 w-3 mr-1" />
-            View on Alexandria
-          </Button>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+    <button
+      type="button"
+      className={cn(
+        'text-primary hover:text-foreground hover:underline underline-offset-2 transition-colors cursor-pointer',
+        className
+      )}
+      onClick={handleClick}
+    >
+      {displayText}
+    </button>
   )
 }

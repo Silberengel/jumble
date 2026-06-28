@@ -17,6 +17,7 @@ import { isSpotifyOpenUrl } from './spotify-url'
 import { isFountainOpenUrl } from './fountain-url'
 import { isWavlakeOpenUrl } from './wavlake-url'
 import { isZapStreamWatchUrl } from './zap-stream-url'
+import { WIKILINK_INLINE_REGEX, isCitationWikilink } from './wikilink'
 
 export type TEmbeddedNodeType =
   | 'text'
@@ -37,6 +38,7 @@ export type TEmbeddedNodeType =
   | 'fountain'
   | 'zapstream'
   | 'payto'
+  | 'wikilink'
 
 export type TEmbeddedNode =
   | {
@@ -90,6 +92,31 @@ export const EmbeddedPaytoParser: TContentParser = {
 
 /** `XMR: 4abc…` lines in profile about (catalog coin labels). */
 export const EmbeddedAboutCoinPaytoParser: TContentParser = parseAboutContentWithCoinPayto
+
+/**
+ * NIP-54-style wiki links: `[[Term]]` or `[[target|display]]`. The matched node stores the inner
+ * content (without brackets); citations (`[[citation::…]]`) are left as plain text.
+ */
+export const EmbeddedWikilinkParser: TContentParser = (content: string) => {
+  const result: TEmbeddedNode[] = []
+  let lastIndex = 0
+  const regex = new RegExp(WIKILINK_INLINE_REGEX.source, 'g')
+  let match: RegExpExecArray | null
+  while ((match = regex.exec(content)) !== null) {
+    const inner = match[1]
+    if (isCitationWikilink(inner)) continue
+    const matchStart = match.index
+    if (matchStart > lastIndex) {
+      result.push({ type: 'text', data: content.slice(lastIndex, matchStart) })
+    }
+    result.push({ type: 'wikilink', data: inner })
+    lastIndex = matchStart + match[0].length
+  }
+  if (lastIndex < content.length) {
+    result.push({ type: 'text', data: content.slice(lastIndex) })
+  }
+  return result
+}
 
 export const EmbeddedUrlParser: TContentParser = (content: string) => {
   const matches = findHttpUrlsInText(content)
@@ -150,6 +177,7 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
  */
 export const PARSE_CONTENT_PARSERS_NOTE_TEXT: TContentParser[] = [
   EmbeddedUrlParser,
+  EmbeddedWikilinkParser,
   EmbeddedLNInvoiceParser,
   EmbeddedPaytoParser,
   EmbeddedWebsocketUrlParser,

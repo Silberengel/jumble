@@ -22,7 +22,11 @@ import {
   buildAlexandriaEventsUrlForDTagParam,
   buildAlexandriaEventsUrlForHashtagParam
 } from '@/lib/alexandria-events-search-url'
-import { compareEventsForDTagQuery, eventMatchesDTagLooseQuery } from '@/lib/dtag-search'
+import {
+  compareEventsForDTagQuery,
+  compareEventsForDTagQueryWithPriorityKind,
+  eventMatchesDTagLooseQuery
+} from '@/lib/dtag-search'
 import { eventMatchesTopicOrContentHashtag, normalizeTopic, relayTopicTagFilterValues } from '@/lib/discussion-topics'
 import { fetchPubkeysFromDomain } from '@/lib/nip05'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
@@ -61,6 +65,8 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
         type: 'hashtag' | 'search' | 'externalContent' | 'dtag'
         kinds?: number[]
         dtag?: string
+        /** Kind to float to the top of a d-tag browse (e.g. wiki kind 30818 from a wikilink). */
+        priorityKind?: number
       }
     | {
         type: 'domain'
@@ -244,11 +250,14 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           }
         } else {
           // D-tag browse: exact `#d` REQ on index + user relays (no NIP-50 full-text — that is not the same as a d-tag pick).
+          const priorityKindRaw = parseInt(searchParams.get('pk') ?? '', 10)
+          const priorityKind = isNaN(priorityKindRaw) ? undefined : priorityKindRaw
           setTitle(`D-Tag: ${domain}`)
           setData({
             type: 'dtag',
             dtag: domain,
-            kinds: kinds.length > 0 ? kinds : undefined
+            kinds: kinds.length > 0 ? kinds : undefined,
+            priorityKind
           })
           const relayUrls = getRelayUrlsWithFavoritesFastReadAndInbox(
             favoriteRelays,
@@ -351,7 +360,11 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           progressiveWarmupQuery={data.dtag}
           progressiveWarmupMatch={(ev) => eventMatchesDTagLooseQuery(data.dtag!, ev)}
           progressiveDocumentKinds={NIP_SEARCH_DOCUMENT_KINDS}
-          oneShotAfterMergeComparator={(a, b) => compareEventsForDTagQuery(data.dtag!, a, b)}
+          oneShotAfterMergeComparator={(a, b) =>
+            data.priorityKind !== undefined
+              ? compareEventsForDTagQueryWithPriorityKind(data.dtag!, data.priorityKind, a, b)
+              : compareEventsForDTagQuery(data.dtag!, a, b)
+          }
           extraShouldHideEvent={(ev) => !eventMatchesDTagLooseQuery(data.dtag!, ev)}
           oneShotMergedCap={400}
           alexandriaEmptyUrl={alexandriaEmptyUrl}
