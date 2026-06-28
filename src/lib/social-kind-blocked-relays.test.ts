@@ -26,7 +26,7 @@ describe('social-kind-blocked-relays', () => {
 
   it('filterPublishingRelayUrls applies read-only and social filters', () => {
     const out = filterPublishingRelayUrls(
-      ['wss://nostr.land/', 'wss://essayist.decentnewsroom.com/', 'wss://relay.damus.io/'],
+      ['wss://aggr.nostr.land/', 'wss://essayist.decentnewsroom.com/', 'wss://relay.damus.io/'],
       ExtendedKind.COMMENT
     )
     expect(out).toEqual(['wss://relay.damus.io/'])

@@ -454,7 +454,6 @@ export const LIBRARY_RELAY_URLS = [
  */
 export const READ_ONLY_RELAY_URLS = [
   'wss://aggr.nostr.land',
-  'wss://nostr.land',
   'wss://relay.nostr.watch',
   'wss://relaypag.es',
   'wss://relay.noswhere.com',
@@ -463,7 +462,6 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://filter.nostr.wine',
   'wss://primus.nostr1.com',
   'wss://feeds.nostrarchives.com',
-  'wss://spatia-arcana.com',
   'wss://search.nostrarchives.com',
   'wss://nosmero.com/nip78-relay',
   'wss://njump.me'
@@ -492,7 +490,6 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://relay.nsec.app',
   'wss://bucket.coracle.social',
-  'wss://spatia-arcana.com',
   'wss://relay.wikifreedia.xyz',
   'wss://relay.gifbuddy.lol',
   'wss://hist.nostr.land',

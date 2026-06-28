@@ -948,6 +948,30 @@ class ClientService extends EventTarget {
     return filterPublishingRelayUrls(relays, event.kind)
   }
 
+  /**
+   * Like {@link filterPublishingRelays} but never drops relays the user explicitly selected
+   * (`keepUrls`, e.g. the relay picker / single-relay target). Read-only / social-kind heuristics
+   * must not override an explicit publish choice — see {@link TPublishEventExtras.forceRelayUrls}.
+   */
+  private filterPublishingRelaysKeeping(
+    relays: string[],
+    event: NEvent,
+    keepUrls?: readonly string[]
+  ): string[] {
+    const normalizedAll = dedupeNormalizeRelayUrlsOrdered(relays)
+    if (!keepUrls || keepUrls.length === 0) {
+      const allowed = new Set(this.filterPublishingRelays(relays, event))
+      return normalizedAll.filter((u) => allowed.has(u))
+    }
+    const allowed = new Set(this.filterPublishingRelays(relays, event))
+    const keepKeys = new Set(
+      keepUrls.map((u) => canonicalRelaySessionKey(normalizeRelayUrlByScheme(u) || u)).filter(Boolean)
+    )
+    return normalizedAll.filter(
+      (u) => allowed.has(u) || keepKeys.has(canonicalRelaySessionKey(u))
+    )
+  }
+
   /** Kind 31987: always attempt the reviewed relay (`d` tag) first in the publish stack. */
   private pinReviewedRelayForRelayReviewPublish(relays: string[], event: NEvent): string[] {
     if (event.kind !== ExtendedKind.RELAY_REVIEW) return relays
@@ -1108,7 +1132,8 @@ class ClientService extends EventTarget {
       else other.push(u)
     }
     const merged = dedupeNormalizeRelayUrlsOrdered([...outbox, ...favRest, ...other])
-    return this.filterPublishingRelays(merged, event).slice(0, MAX_PUBLISH_RELAYS)
+    // The picker URLs are the user's explicit choice — keep them all (read-only included) through the filter.
+    return this.filterPublishingRelaysKeeping(merged, event, pickerUrls).slice(0, MAX_PUBLISH_RELAYS)
   }
 
   /**
@@ -1548,7 +1573,7 @@ class ClientService extends EventTarget {
       }
     }
 
-    relays = this.filterPublishingRelays(relays, event)
+    relays = this.filterPublishingRelaysKeeping(relays, event, specifiedRelayUrls)
     relays = this.pinReviewedRelayForRelayReviewPublish(relays, event)
 
     if (specifiedRelayUrls?.length) {
@@ -1746,6 +1771,14 @@ class ClientService extends EventTarget {
           : relayUrls
     }
 
+    /**
+     * Relays the user explicitly selected (relay picker / single-relay "Share something on this relay").
+     * These are absolute publish targets: always attempted, bypassing read-only / social-kind / session-park
+     * filters and the publish cap. An admin using our client must be able to write to their own relay even
+     * when our heuristics would otherwise skip it.
+     */
+    const forcedRelayUrls = dedupeNormalizeRelayUrlsOrdered(publishExtras?.forceRelayUrls ?? [])
+
     let filtered = filterPublishingRelayUrls(mergedRelayUrls, event.kind)
     filtered = Array.from(new Set(filtered))
     const countAfterFiltersBeforeCap = filtered.length
@@ -1757,6 +1790,16 @@ class ClientService extends EventTarget {
 
     const uniqueRelayUrls = filtered
     const publishTargetUrls = relaySessionStrikes.filterPublishUrls(uniqueRelayUrls)
+    if (forcedRelayUrls.length) {
+      const present = new Set(publishTargetUrls.map((u) => canonicalRelaySessionKey(u)))
+      for (const url of forcedRelayUrls) {
+        const key = canonicalRelaySessionKey(url)
+        if (key && !present.has(key)) {
+          publishTargetUrls.push(url)
+          present.add(key)
+        }
+      }
+    }
     trace?.step('publishEvent targets ready', {
       afterOutboxMerge: mergedRelayUrls.length,
       afterFilters: countAfterFiltersBeforeCap,

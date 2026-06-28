@@ -189,6 +189,15 @@ export default function PostRelaySelector({
   }, [blockedRelays, isPublicMessage, _parentEvent, isDiscussionReply])
   const memoizedRelaySets = useMemo(() => relaySets, [relaySets])
   const memoizedOpenFrom = useMemo(() => openFrom, [openFrom])
+  /** Normalized keys of the explicit publish target(s) (e.g. "Share something on this relay"); pinned to the top. */
+  const openFromKeys = useMemo(() => {
+    const keys = new Set<string>()
+    ;(openFrom ?? []).forEach((url) => {
+      const key = normalizeRelayUrlByScheme(url)
+      if (key) keys.add(key)
+    })
+    return keys
+  }, [openFrom])
 
   // Background refresh: parent author + mention NIP-65 (IDB first in relay effect; network refines list).
   useEffect(() => {
@@ -374,8 +383,12 @@ export default function PostRelaySelector({
       ) : (
         <div className="space-y-1">
           {(() => {
-            // Sort relays so selected ones appear at the top
+            // Pin the explicit publish target(s) to the very top, then float other selected relays up.
             const sortedRelays = [...selectableRelays].sort((a, b) => {
+              const aPinned = openFromKeys.has(normalizeRelayUrlByScheme(a) || a)
+              const bPinned = openFromKeys.has(normalizeRelayUrlByScheme(b) || b)
+              if (aPinned && !bPinned) return -1
+              if (!aPinned && bPinned) return 1
               const aSelected = selectedRelayUrls.includes(a)
               const bSelected = selectedRelayUrls.includes(b)
               if (aSelected && !bSelected) return -1

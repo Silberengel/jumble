@@ -224,6 +224,12 @@ export type TPublishEventExtras = {
   favoriteRelayUrls?: string[]
   /** When true: publish only to the given URLs (no NIP-65 outbox prepend, no outbox retry wave). Use when the list is already authoritative (relay picker, relay set, monitoring list, …). */
   skipOutboxRetry?: boolean
+  /**
+   * Relays the user explicitly selected (e.g. relay picker / single-relay "Share something on this relay").
+   * These are always attempted, bypassing read-only / social-kind / session-park filters and the publish
+   * cap — an admin using our client must be able to write to their own relay regardless of heuristics.
+   */
+  forceRelayUrls?: string[]
   /** Shown in relay batch logs and an info line (e.g. "NIP-65 outbox retry — 2nd attempt"). */
   publishBatchLabel?: string
   publishTrace?: import('@/lib/publish-trace').PublishTrace

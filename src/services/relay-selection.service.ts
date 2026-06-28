@@ -279,8 +279,10 @@ class RelaySelectionService {
     })
 
     const deduplicatedRelays = order.map((o) => o.url)
-    const filtered = this.filterPublishPickerRelays(
-      this.filterBlockedRelays(deduplicatedRelays, context.blockedRelays)
+    const filtered = this.filterPickerRelaysKeepingOpenFrom(
+      deduplicatedRelays,
+      context.blockedRelays,
+      openFrom
     )
     const relayTypes: Record<string, RelaySourceType> = {}
     order.forEach(({ url, type }) => {
@@ -554,13 +556,23 @@ class RelaySelectionService {
       selectedRelays = Array.from(new Set([...selectedRelays, ...cacheRelays.map((url) => this.normRelay(url)).filter(Boolean)]))
     }
 
-    // When "add random relays" setting is ON, include random relays in selected by default; when OFF they are still in the list but unchecked
-    if (context.randomRelayUrls?.length && storage.getAddRandomRelaysToPublish()) {
+    // When "add random relays" setting is ON, include random relays in selected by default; when OFF
+    // they remain in the list but unchecked. Skip entirely when an explicit publish target (openFrom)
+    // is set — e.g. "Share something on this relay" must preselect only that relay, not random relays.
+    if (
+      context.randomRelayUrls?.length &&
+      storage.getAddRandomRelaysToPublish() &&
+      !(openFrom && openFrom.length > 0)
+    ) {
       selectedRelays = [...selectedRelays, ...context.randomRelayUrls]
       selectedRelays = Array.from(new Set(selectedRelays))
     }
 
-    return this.filterPublishPickerRelays(this.filterBlockedRelays(selectedRelays, context.blockedRelays))
+    return this.filterPickerRelaysKeepingOpenFrom(
+      selectedRelays,
+      context.blockedRelays,
+      openFrom
+    )
   }
 
   /**
@@ -930,6 +942,33 @@ class RelaySelectionService {
    */
   private filterPublishPickerRelays(relays: string[]): string[] {
     return filterRelaysForEventPublish(relays, kinds.ShortTextNote)
+  }
+
+  /**
+   * Apply the blocked-relay + publish-picker (read-only / social-kind) filters, but ALWAYS keep relays the
+   * caller explicitly targeted via {@link RelaySelectionContext.openFrom} (e.g. "Share something on this
+   * relay" in single-relay view). An explicit target overrides every block — read-only, profile-index,
+   * social-kind-blocked, and the viewer's own kind-10006 blocked list — so an admin can always post there.
+   */
+  private filterPickerRelaysKeepingOpenFrom(
+    relays: string[],
+    blockedRelays: string[],
+    openFrom?: string[]
+  ): string[] {
+    const allowed = new Set(
+      this.filterPublishPickerRelays(this.filterBlockedRelays(relays, blockedRelays))
+    )
+    if (!openFrom || openFrom.length === 0) {
+      return relays.filter((url) => allowed.has(url))
+    }
+    const exemptKeys = new Set(
+      openFrom
+        .map((url) => canonicalRelaySessionKey(normalizeRelayUrlByScheme(url) || url))
+        .filter(Boolean)
+    )
+    return relays.filter(
+      (url) => allowed.has(url) || exemptKeys.has(canonicalRelaySessionKey(url))
+    )
   }
 
   /**

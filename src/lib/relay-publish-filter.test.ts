@@ -30,7 +30,8 @@ describe('relay-publish-filter', () => {
       ],
       kinds.ShortTextNote
     )
-    expect(out).toEqual(['wss://relay.primal.net/'])
+    // wss://nostr.land is a writable inbox relay (only wss://aggr.nostr.land is the read-only aggregator).
+    expect(out).toEqual(['wss://nostr.land/', 'wss://relay.primal.net/'])
   })
 
   it('strips filter.nostr.wine broadcast paths (hostname match on READ_ONLY_RELAY_URLS)', () => {
