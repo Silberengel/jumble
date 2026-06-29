@@ -32,9 +32,11 @@ export default function ArticleCardCoverImage({
         className={
           layout === 'stacked'
             ? 'mb-3 aspect-video w-full max-w-[400px]'
-            : 'h-44 max-w-[400px] shrink rounded-lg bg-foreground object-cover aspect-[4/3] xl:aspect-video'
+            : 'w-full rounded-lg bg-foreground object-cover aspect-[4/3] xl:aspect-video'
         }
-        classNames={layout === 'row' ? { wrapper: 'w-auto max-w-[400px] shrink-0' } : undefined}
+        classNames={
+          layout === 'row' ? { wrapper: 'w-2/5 max-w-[200px] shrink-0' } : undefined
+        }
         hideIfError={hideImageIfError}
         holdUntilClick={!autoLoadMedia}
       />
@@ -44,17 +46,22 @@ export default function ArticleCardCoverImage({
   return (
     <div
       className={cn(
-        'flex items-center justify-center rounded-lg bg-muted',
+        'flex items-center justify-center overflow-hidden rounded-lg bg-muted',
         layout === 'stacked'
           ? 'mb-3 h-44 w-full max-w-[400px]'
-          : 'h-44 w-auto max-w-[400px] shrink-0 aspect-[4/3] xl:aspect-video'
+          : 'w-2/5 max-w-[200px] shrink-0 aspect-square'
       )}
     >
       <UserAvatar
         userId={event.pubkey}
         size="large"
         deferRemoteAvatar={false}
-        className="!h-[7.5rem] !w-[7.5rem] rounded-xl"
+        className={cn(
+          'rounded-xl',
+          layout === 'stacked'
+            ? '!h-[7.5rem] !w-[7.5rem]'
+            : '!h-3/5 !w-3/5 max-h-[7.5rem] max-w-[7.5rem]'
+        )}
       />
     </div>
   )

@@ -1,5 +1,6 @@
 import { cardEventBodyBlurb } from '@/lib/card-event-body-blurb'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
+import { cn } from '@/lib/utils'
 import { toNote, toNoteList } from '@/lib/link'
 import { useSecondaryPageOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
@@ -64,9 +65,9 @@ export default function WikiCard({
 
   if (isSmallScreen) {
     return (
-      <div className={className}>
+      <div className={cn('w-full min-w-0', className)}>
         <div 
-          className="cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
+          className="min-w-0 cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
           onClick={handleCardClick}
         >
           <ArticleCardCoverImage
@@ -76,7 +77,7 @@ export default function WikiCard({
             layout="stacked"
             hideImageIfError
           />
-          <div className="space-y-2">
+          <div className="min-w-0 space-y-2">
             {labelComponent}
             {titleComponent}
             {summaryComponent}
@@ -88,12 +89,12 @@ export default function WikiCard({
   }
 
   return (
-    <div className={className}>
+    <div className={cn('w-full min-w-0', className)}>
       <div 
-        className="cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
+        className="min-w-0 cursor-pointer rounded-lg border p-4 hover:bg-muted/50 transition-colors"
         onClick={handleCardClick}
       >
-        <div className="flex gap-4">
+        <div className="flex min-w-0 gap-4">
           <ArticleCardCoverImage
             event={event}
             imageUrl={metadata.image}
@@ -101,7 +102,7 @@ export default function WikiCard({
             layout="row"
             hideImageIfError
           />
-          <div className="flex-1 w-0 space-y-2">
+          <div className="min-w-0 flex-1 basis-0 space-y-2 overflow-hidden">
             {labelComponent}
             {titleComponent}
             {summaryComponent}

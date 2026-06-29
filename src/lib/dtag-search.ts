@@ -6,40 +6,26 @@ function getDTagValue(event: Event): string | undefined {
   return t
 }
 
-const TEXT_META_TAG_NAMES = new Set(['title', 'summary', 'description', 'subject', 'name'])
-
 /**
- * d-tag, content, or common text metadata tags (title, summary, description, subject, name)
- * contain the needle (case-insensitive).
+ * A d-tag search must only surface events whose **`d` tag** contains the needle — never events
+ * that merely mention the needle in their `content` or metadata tags (title/summary/…). So
+ * searching "istanbul" returns the `d` tags `istanbul`, `new-istanbul`, and `istanbul-3`, but not
+ * an article whose body happens to discuss Istanbul.
  *
- * NIP-50 full-text search can match on metadata tags not in the `d` tag or `content` field,
- * so we check them here to avoid incorrectly hiding those results.
- *
- * Also checks a space-separated variant of the needle so that a hyphenated d-tag slug like
- * "bitcoin-wallet" matches content/titles written as "Bitcoin Wallet".
+ * Matching is case-insensitive and treats hyphens and spaces as equivalent, so a query entered as
+ * "quantum mechanics" matches the NIP-54 slug `quantum-mechanics` (and vice versa).
  */
-export function eventMatchesDTagLooseQuery(needle: string, event: Event): boolean {
+export function eventMatchesDTagQuery(needle: string, event: Event): boolean {
   const q = needle.trim().toLowerCase()
   if (!q) return true
-  // Also try the space-separated variant (e.g. "bitcoin-wallet" → "bitcoin wallet")
-  const qSpace = q.replace(/-/g, ' ')
-  const checks = qSpace !== q ? [q, qSpace] : [q]
 
-  const d = getDTagValue(event)?.toLowerCase() ?? ''
-  for (const c of checks) {
-    if (d.includes(c)) return true
-  }
-  const content = (event.content ?? '').toLowerCase()
-  for (const c of checks) {
-    if (content.includes(c)) return true
-  }
-  for (const tag of event.tags) {
-    if (tag[1] && TEXT_META_TAG_NAMES.has(tag[0])) {
-      const val = tag[1].toLowerCase()
-      for (const c of checks) {
-        if (val.includes(c)) return true
-      }
-    }
+  const d = getDTagValue(event)?.toLowerCase()
+  if (!d) return false
+
+  // Hyphen/space-equivalent: collapse both the query and the d-tag to a common separator form.
+  const variants = new Set([q, q.replace(/-/g, ' '), q.replace(/\s+/g, '-')])
+  for (const v of variants) {
+    if (d.includes(v)) return true
   }
   return false
 }

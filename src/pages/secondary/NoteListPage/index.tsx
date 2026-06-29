@@ -25,7 +25,7 @@ import {
 import {
   compareEventsForDTagQuery,
   compareEventsForDTagQueryWithPriorityKind,
-  eventMatchesDTagLooseQuery
+  eventMatchesDTagQuery
 } from '@/lib/dtag-search'
 import { eventMatchesTopicOrContentHashtag, normalizeTopic, relayTopicTagFilterValues } from '@/lib/discussion-topics'
 import { fetchPubkeysFromDomain } from '@/lib/nip05'
@@ -358,14 +358,14 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           subRequests={subRequests}
           oneShotFetch
           progressiveWarmupQuery={data.dtag}
-          progressiveWarmupMatch={(ev) => eventMatchesDTagLooseQuery(data.dtag!, ev)}
+          progressiveWarmupMatch={(ev) => eventMatchesDTagQuery(data.dtag!, ev)}
           progressiveDocumentKinds={NIP_SEARCH_DOCUMENT_KINDS}
           oneShotAfterMergeComparator={(a, b) =>
             data.priorityKind !== undefined
               ? compareEventsForDTagQueryWithPriorityKind(data.dtag!, data.priorityKind, a, b)
               : compareEventsForDTagQuery(data.dtag!, a, b)
           }
-          extraShouldHideEvent={(ev) => !eventMatchesDTagLooseQuery(data.dtag!, ev)}
+          extraShouldHideEvent={(ev) => !eventMatchesDTagQuery(data.dtag!, ev)}
           oneShotMergedCap={400}
           alexandriaEmptyUrl={alexandriaEmptyUrl}
         />
