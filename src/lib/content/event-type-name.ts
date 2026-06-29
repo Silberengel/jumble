@@ -33,6 +33,12 @@ export function getEventTypeName(kind: number): string {
       return 'Publication Content'
     case ExtendedKind.WIKI_ARTICLE:
       return 'Wiki Article'
+    case ExtendedKind.WIKI_MERGE_REQUEST:
+      return 'Wiki Merge Request'
+    case ExtendedKind.WIKI_MERGE_ACCEPTANCE:
+      return 'Wiki Merge Acceptance'
+    case ExtendedKind.WIKI_REDIRECT:
+      return 'Wiki Redirect'
     case ExtendedKind.NOSTR_SPECIFICATION:
       return 'Nostr Specification'
     case ExtendedKind.DISCUSSION:

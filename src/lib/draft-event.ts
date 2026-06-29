@@ -36,6 +36,7 @@ import {
   NIP22_URL_SCOPE_KIND
 } from '@/lib/rss-article'
 import { EMOJI_SHORT_CODE_REGEX } from '@/lib/content-patterns'
+import { getWikiForkSource, normalizeWikiDTag } from '@/lib/nip54'
 import { blossomSha256FromBlobUrl, cleanUrl, isBlossomBudBlobUrl } from '@/lib/url'
 import { collectReadInboxUrlsFromRelayList } from '@/lib/viewer-read-inboxes'
 import { urlToWebBookmarkDTag } from '@/lib/web-bookmark-nip'
@@ -2365,13 +2366,15 @@ export async function createWikiArticleDraftEvent(
     contentWarningLabel?: string
     addExpirationTag?: boolean
     expirationMonths?: number
+    /** NIP-54 fork source: when set, `a`/`e` `fork` markers are added pointing at the source. */
+    forkSource?: { coordinate: string; eventId: string; relayHint?: string }
   }
 ): Promise<TDraftEvent> {
   const { content: transformedEmojisContent, emojiTags } = transformCustomEmojisInContent(content)
   const hashtags = extractHashtags(transformedEmojisContent)
   
   const tags: string[][] = []
-  tags.push(buildDTag(normalizeDTag(options.dTag)))
+  tags.push(buildDTag(normalizeWikiDTag(options.dTag)))
   if (options.title) {
     tags.push(buildTitleTag(options.title))
   }
@@ -2380,6 +2383,11 @@ export async function createWikiArticleDraftEvent(
   }
   if (options.image) {
     tags.push(['image', options.image])
+  }
+  // NIP-54 fork: reference the source article with `fork` markers on both `a` and `e`.
+  if (options.forkSource) {
+    tags.push(['a', options.forkSource.coordinate, options.forkSource.relayHint ?? '', 'fork'])
+    tags.push(['e', options.forkSource.eventId, options.forkSource.relayHint ?? '', 'fork'])
   }
   tags.push(...emojiTags)
   tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
@@ -2402,7 +2410,154 @@ export async function createWikiArticleDraftEvent(
   return setDraftEventCache({
     kind: ExtendedKind.WIKI_ARTICLE,
     content: transformedEmojisContent,
+    tags: tags.map((tag) => trimTagEnd(tag))
+  })
+}
+
+/**
+ * NIP-54 fork: a new kind:30818 article derived from `sourceEvent`, carrying `fork` markers on
+ * `a`/`e` so it links back to the version it was forked from. The fork keeps the source's `d` tag
+ * by default so it competes as another version of the same topic.
+ */
+export async function createWikiForkDraftEvent(
+  sourceEvent: Event,
+  content: string,
+  mentions: string[],
+  options: {
+    dTag?: string
+    title?: string
+    summary?: string
+    image?: string
+    topics?: string[]
+  } = {}
+): Promise<TDraftEvent> {
+  const sourceDTag = sourceEvent.tags.find(tagNameEquals('d'))?.[1] ?? ''
+  return createWikiArticleDraftEvent(content, mentions, {
+    ...options,
+    dTag: options.dTag ?? sourceDTag,
+    forkSource: {
+      coordinate: getReplaceableCoordinateFromEvent(sourceEvent),
+      eventId: sourceEvent.id,
+      relayHint: wssRelayHintOrEmpty(client.getEventHint(sourceEvent.id))
+    }
+  })
+}
+
+/**
+ * NIP-54 deference: a kind:30818 that declares someone else's version (`targetEvent`) the
+ * "better" one. It reuses the same `d` tag and tags the target with `defer` markers on `a`/`e`.
+ */
+export function createWikiDeferenceDraftEvent(targetEvent: Event): TDraftEvent {
+  const dTag = targetEvent.tags.find(tagNameEquals('d'))?.[1] ?? ''
+  const hint = wssRelayHintOrEmpty(client.getEventHint(targetEvent.id))
+  const nevent = nip19.neventEncode({
+    id: targetEvent.id,
+    author: targetEvent.pubkey,
+    kind: targetEvent.kind,
+    relays: hint ? [hint] : []
+  })
+  return setDraftEventCache({
+    kind: ExtendedKind.WIKI_ARTICLE,
+    content: `Read nostr:${nevent} instead.`,
+    tags: [
+      buildDTag(dTag),
+      trimTagEnd(['a', getReplaceableCoordinateFromEvent(targetEvent), hint, 'defer']),
+      trimTagEnd(['e', targetEvent.id, hint, 'defer'])
+    ]
+  })
+}
+
+/**
+ * NIP-54 merge request (kind:818): asks the destination author to merge a forked version
+ * (`forkEvent`) into their original article (`originalEvent`). The version to merge is referenced
+ * with an `e` tag using the `fork` marker.
+ */
+export function createWikiMergeRequestDraftEvent(
+  originalEvent: Event,
+  forkEvent: Event,
+  message: string = '',
+  basedOnEventId?: string
+): TDraftEvent {
+  const originalHint = wssRelayHintOrEmpty(client.getEventHint(originalEvent.id))
+  const forkHint = wssRelayHintOrEmpty(client.getEventHint(forkEvent.id))
+  const tags: string[][] = [
+    trimTagEnd(['a', getReplaceableCoordinateFromEvent(originalEvent), originalHint]),
+    buildPTag(originalEvent.pubkey)
+  ]
+  if (basedOnEventId) {
+    tags.push(trimTagEnd(['e', basedOnEventId, originalHint]))
+  }
+  tags.push(trimTagEnd(['e', forkEvent.id, forkHint, 'fork']))
+  return setDraftEventCache({
+    kind: ExtendedKind.WIKI_MERGE_REQUEST,
+    content: message,
     tags
+  })
+}
+
+/**
+ * NIP-54 merge request built directly from a fork (a kind:30818 carrying `fork` markers). Reads the
+ * source coordinate / base version off the fork's own `fork` tags, so the original article does not
+ * need to be re-fetched.
+ */
+export function createWikiMergeRequestFromForkDraftEvent(
+  forkEvent: Event,
+  message: string = ''
+): TDraftEvent | null {
+  const forkSource = getWikiForkSource(forkEvent)
+  if (!forkSource?.coordinate) return null
+  const parts = forkSource.coordinate.split(':')
+  const destinationPubkey = parts[1]
+  if (!destinationPubkey) return null
+  const forkHint = wssRelayHintOrEmpty(client.getEventHint(forkEvent.id))
+  const tags: string[][] = [
+    trimTagEnd(['a', forkSource.coordinate, forkSource.relayHint ?? '']),
+    buildPTag(destinationPubkey)
+  ]
+  if (forkSource.eventId) {
+    tags.push(trimTagEnd(['e', forkSource.eventId, forkSource.relayHint ?? '']))
+  }
+  tags.push(trimTagEnd(['e', forkEvent.id, forkHint, 'fork']))
+  return setDraftEventCache({
+    kind: ExtendedKind.WIKI_MERGE_REQUEST,
+    content: message,
+    tags
+  })
+}
+
+/**
+ * NIP-54 merge acceptance (kind:819): records that a kind:818 merge request was accepted, pointing
+ * at the resulting merged 30818 version.
+ */
+export function createWikiMergeAcceptanceDraftEvent(
+  mergeRequestEvent: Event,
+  mergedVersionEvent: Event
+): TDraftEvent {
+  const requestHint = wssRelayHintOrEmpty(client.getEventHint(mergeRequestEvent.id))
+  const resultHint = wssRelayHintOrEmpty(client.getEventHint(mergedVersionEvent.id))
+  return setDraftEventCache({
+    kind: ExtendedKind.WIKI_MERGE_ACCEPTANCE,
+    content: '',
+    tags: [
+      trimTagEnd(['e', mergedVersionEvent.id, resultHint, 'result']),
+      trimTagEnd(['e', mergeRequestEvent.id, requestHint, 'request']),
+      buildPTag(mergeRequestEvent.pubkey)
+    ]
+  })
+}
+
+/**
+ * NIP-54 wiki redirect (kind:30819): registers `slug` to redirect to `targetEvent`'s article.
+ */
+export function createWikiRedirectDraftEvent(slug: string, targetEvent: Event): TDraftEvent {
+  const hint = wssRelayHintOrEmpty(client.getEventHint(targetEvent.id))
+  return setDraftEventCache({
+    kind: ExtendedKind.WIKI_REDIRECT,
+    content: '',
+    tags: [
+      buildDTag(normalizeWikiDTag(slug)),
+      trimTagEnd(['a', getReplaceableCoordinateFromEvent(targetEvent), hint])
+    ]
   })
 }
 

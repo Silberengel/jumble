@@ -15,6 +15,12 @@ import { MobileMenu } from './MobileMenu'
 import NoteOptionsMetaHeader from './NoteOptionsMetaHeader'
 import RawEventDialog from './RawEventDialog'
 import ReportDialog from './ReportDialog'
+import {
+  WikiForkDialog,
+  WikiMergeRequestDialog,
+  WikiMergeReviewDialog,
+  WikiRedirectDialog
+} from './WikiCollabDialogs'
 import { SubMenuAction, useMenuActions, type ShowSubMenuOptions } from './useMenuActions'
 export default function NoteOptions({
   event,
@@ -45,6 +51,10 @@ export default function NoteOptions({
   const [editCloneMode, setEditCloneMode] = useState<TEditOrCloneMode>('clone')
   const [suggestEditOpen, setSuggestEditOpen] = useState(false)
   const [reviewProposalsOpen, setReviewProposalsOpen] = useState(false)
+  const [wikiForkOpen, setWikiForkOpen] = useState(false)
+  const [wikiMergeRequestOpen, setWikiMergeRequestOpen] = useState(false)
+  const [wikiMergeReviewOpen, setWikiMergeReviewOpen] = useState(false)
+  const [wikiRedirectOpen, setWikiRedirectOpen] = useState(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState(false)
   const [showSubMenu, setShowSubMenu] = useState(false)
   const [activeSubMenu, setActiveSubMenu] = useState<SubMenuAction[]>([])
@@ -105,6 +115,10 @@ export default function NoteOptions({
     },
     onOpenSuggestEdit: () => setSuggestEditOpen(true),
     onOpenReviewEditProposals: () => setReviewProposalsOpen(true),
+    onOpenWikiFork: () => setWikiForkOpen(true),
+    onOpenWikiMergeRequest: () => setWikiMergeRequestOpen(true),
+    onOpenWikiMergeReview: () => setWikiMergeReviewOpen(true),
+    onOpenWikiRedirect: () => setWikiRedirectOpen(true),
     pinned,
     onViewAttestation: canViewAttestation
       ? () => {
@@ -196,6 +210,22 @@ export default function NoteOptions({
       <ReviewEditProposalsDialog
         open={reviewProposalsOpen}
         onOpenChange={setReviewProposalsOpen}
+        sourceEvent={event}
+      />
+      <WikiForkDialog open={wikiForkOpen} onOpenChange={setWikiForkOpen} sourceEvent={event} />
+      <WikiMergeRequestDialog
+        open={wikiMergeRequestOpen}
+        onOpenChange={setWikiMergeRequestOpen}
+        sourceEvent={event}
+      />
+      <WikiMergeReviewDialog
+        open={wikiMergeReviewOpen}
+        onOpenChange={setWikiMergeReviewOpen}
+        mergeRequest={event}
+      />
+      <WikiRedirectDialog
+        open={wikiRedirectOpen}
+        onOpenChange={setWikiRedirectOpen}
         sourceEvent={event}
       />
     </div>

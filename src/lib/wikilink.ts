@@ -2,16 +2,17 @@
  * Wiki-style links (`[[Term]]` or `[[target|display]]`) shared between the long-form article
  * renderers and the generic note/comment content pipeline.
  */
+import { normalizeWikiDTag } from '@/lib/nip54'
 
 /** Inline `[[...]]` matcher (global). Brackets are excluded from the inner group to avoid nesting. */
 export const WIKILINK_INLINE_REGEX = /\[\[([^[\]]+)\]\]/g
 
-/** Slugify a wikilink target into the `d` tag used for d-tag browse (e.g. "April" → "april"). */
+/**
+ * Slugify a wikilink target into the `d` tag used for d-tag browse (e.g. "April" → "april").
+ * Uses the NIP-54 normalization rules (preserves non-ASCII letters/numbers).
+ */
 export function wikilinkTargetToDTag(target: string): string {
-  return target
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+  return normalizeWikiDTag(target)
 }
 
 /**

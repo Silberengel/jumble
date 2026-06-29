@@ -26,7 +26,10 @@ const RENDERABLE_NOTE_KINDS = new Set<number>([
   ExtendedKind.CITATION_HARDCOPY,
   ExtendedKind.CITATION_PROMPT,
   ExtendedKind.WEB_BOOKMARK,
-  ExtendedKind.LEARNING_RESOURCE
+  ExtendedKind.LEARNING_RESOURCE,
+  ExtendedKind.WIKI_MERGE_REQUEST,
+  ExtendedKind.WIKI_MERGE_ACCEPTANCE,
+  ExtendedKind.WIKI_REDIRECT
 ])
 
 /**

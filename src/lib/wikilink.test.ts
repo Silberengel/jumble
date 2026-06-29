@@ -9,6 +9,16 @@ describe('wikilink helpers', () => {
     expect(wikilinkTargetToDTag('  Hello, World!  ')).toBe('hello-world')
   })
 
+  it('preserves non-ASCII letters/numbers per NIP-54', () => {
+    // Japanese is preserved verbatim
+    expect(wikilinkTargetToDTag('ウィキペディア')).toBe('ウィキペディア')
+    // mixed scripts: whitespace → '-', punctuation removed, letters kept
+    expect(wikilinkTargetToDTag('日本語 Article!')).toBe('日本語-article')
+    // accented letters are lowercased but not stripped
+    expect(wikilinkTargetToDTag('Ñoño')).toBe('ñoño')
+    expect(wikilinkTargetToDTag('Article 1')).toBe('article-1')
+  })
+
   it('parses plain and aliased inner content', () => {
     expect(parseWikilinkInner('April')).toEqual({ dTag: 'april', displayText: 'April' })
     expect(parseWikilinkInner('April|Spring')).toEqual({ dTag: 'april', displayText: 'Spring' })

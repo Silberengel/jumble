@@ -74,6 +74,12 @@ import PublicationContentCard from './PublicationContentCard'
 import PublicationIndexMetadata from './PublicationIndexMetadata'
 import NostrSpecCard from './NostrSpecCard'
 import WikiCard from './WikiCard'
+import {
+  WikiArticleCollabSection,
+  WikiMergeAcceptanceCard,
+  WikiMergeRequestCard,
+  WikiRedirectCard
+} from './WikiCollabCards'
 import LongFormCard from './LongFormCard'
 import MutedNote from './MutedNote'
 import NsfwNote from './NsfwNote'
@@ -545,10 +551,19 @@ export default function Note({
     )
   } else if (event.kind === ExtendedKind.WIKI_ARTICLE) {
     content = showFull ? (
-      renderEventContent()
+      <>
+        <WikiArticleCollabSection event={displayEvent} />
+        {renderEventContent()}
+      </>
     ) : (
       <WikiCard className="mt-2" event={displayEvent} />
     )
+  } else if (event.kind === ExtendedKind.WIKI_MERGE_REQUEST) {
+    content = <WikiMergeRequestCard className="mt-2" event={displayEvent} showFull={showFull} />
+  } else if (event.kind === ExtendedKind.WIKI_MERGE_ACCEPTANCE) {
+    content = <WikiMergeAcceptanceCard className="mt-2" event={displayEvent} />
+  } else if (event.kind === ExtendedKind.WIKI_REDIRECT) {
+    content = <WikiRedirectCard className="mt-2" event={displayEvent} />
   } else if (event.kind === ExtendedKind.NOSTR_SPECIFICATION) {
     content = showFull ? (
       renderEventContent()

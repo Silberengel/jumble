@@ -44,6 +44,12 @@ export function getKindDescription(
       return { number: 30023, description: 'Long-form Article' }
     case ExtendedKind.WIKI_ARTICLE:
       return { number: 30818, description: 'Wiki Article (AsciiDoc)' }
+    case ExtendedKind.WIKI_MERGE_REQUEST:
+      return { number: 818, description: 'Wiki Merge Request' }
+    case ExtendedKind.WIKI_MERGE_ACCEPTANCE:
+      return { number: 819, description: 'Wiki Merge Acceptance' }
+    case ExtendedKind.WIKI_REDIRECT:
+      return { number: 30819, description: 'Wiki Redirect' }
     case ExtendedKind.NOSTR_SPECIFICATION:
       return { number: 30817, description: 'Nostr Specification' }
     case ExtendedKind.PUBLICATION_CONTENT:

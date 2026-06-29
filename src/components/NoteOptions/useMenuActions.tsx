@@ -65,12 +65,16 @@ import {
   Bookmark,
   Download,
   Eye,
+  GitFork,
+  GitMerge,
+  GitPullRequest,
   MessageCircle,
   PenLine,
   Pencil,
   Pin,
   Settings,
   Share2,
+  Signpost,
   Trash2,
   Video,
   Volume2,
@@ -102,6 +106,8 @@ import RelayIcon from '../RelayIcon'
 import { useSecondaryPage } from '@/PageManager'
 import { PrimaryPageContext } from '@/contexts/primary-page-context'
 import { showPublishingError, showPublishingFeedback, toastPublishPromise } from '@/lib/publishing-feedback'
+import { createWikiDeferenceDraftEvent } from '@/lib/draft-event'
+import { getWikiForkSource, parseWikiMergeRequest } from '@/lib/nip54'
 import type { TEditOrCloneMode } from './EditOrCloneEventDialog'
 
 export interface SubMenuAction {
@@ -149,6 +155,14 @@ interface UseMenuActionsProps {
   pinned?: boolean
   /** Opens JSON viewer for the kind 9741 attestation of this payment or zap receipt. */
   onViewAttestation?: () => void
+  /** NIP-54: opens the "fork this wiki article" composer. */
+  onOpenWikiFork?: () => void
+  /** NIP-54: opens the "create merge request" dialog (from the user's own fork). */
+  onOpenWikiMergeRequest?: () => void
+  /** NIP-54: opens the accept/reject dialog for a kind:818 merge request. */
+  onOpenWikiMergeReview?: () => void
+  /** NIP-54: opens the "create redirect to this article" dialog. */
+  onOpenWikiRedirect?: () => void
 }
 
 export function useMenuActions({
@@ -164,7 +178,11 @@ export function useMenuActions({
   onOpenSuggestEdit,
   onOpenReviewEditProposals,
   pinned: _pinnedInFeed = false,
-  onViewAttestation
+  onViewAttestation,
+  onOpenWikiFork,
+  onOpenWikiMergeRequest,
+  onOpenWikiMergeReview,
+  onOpenWikiRedirect
 }: UseMenuActionsProps) {
   const { t } = useTranslation()
   const { push } = useSecondaryPage()
@@ -1322,6 +1340,84 @@ export function useMenuActions({
       })
     }
 
+    // NIP-54 wiki collaboration actions
+    if (canSignEvents && pubkey && event.kind === ExtendedKind.WIKI_ARTICLE) {
+      const isOwnArticle = hexPubkeysEqual(event.pubkey, pubkey)
+      const isUserFork = isOwnArticle && !!getWikiForkSource(event)
+
+      if (onOpenWikiFork) {
+        actions.push({
+          icon: GitFork,
+          label: t('Fork this article'),
+          separator: actions.length > 0,
+          onClick: () => {
+            closeDrawer()
+            onOpenWikiFork()
+          }
+        })
+      }
+
+      if (isUserFork && onOpenWikiMergeRequest) {
+        actions.push({
+          icon: GitPullRequest,
+          label: t('Create merge request'),
+          onClick: () => {
+            closeDrawer()
+            onOpenWikiMergeRequest()
+          }
+        })
+      }
+
+      if (!isOwnArticle) {
+        actions.push({
+          icon: Signpost,
+          label: t('Defer to this version'),
+          onClick: () => {
+            closeDrawer()
+            checkLogin(() => {
+              toastPublishPromise(publish(createWikiDeferenceDraftEvent(event)), {
+                loading: t('Publishing…'),
+                success: t('Deferred to this version'),
+                error: (err) => err.message
+              })
+            })
+          }
+        })
+      }
+
+      if (onOpenWikiRedirect) {
+        actions.push({
+          icon: Signpost,
+          label: t('Create redirect to this article'),
+          onClick: () => {
+            closeDrawer()
+            onOpenWikiRedirect()
+          }
+        })
+      }
+    }
+
+    if (
+      canSignEvents &&
+      pubkey &&
+      event.kind === ExtendedKind.WIKI_MERGE_REQUEST &&
+      onOpenWikiMergeReview &&
+      (() => {
+        const dest = parseWikiMergeRequest(event)?.destinationPubkey
+        return dest ? hexPubkeysEqual(dest, pubkey) : false
+      })()
+    ) {
+      actions.push({
+        icon: GitMerge,
+        label: t('Review merge request'),
+        separator: actions.length > 0,
+        onClick: () => {
+          closeDrawer()
+          onOpenWikiMergeReview()
+        }
+      })
+    }
+
     pushSubMenuParent(actions, Share2, t('Connections'), connectionsSubMenu, {
       separator: actions.length > 0
     })
@@ -1567,6 +1663,11 @@ export function useMenuActions({
     noteTranslationFromMenu,
     translateMenuOptions,
     onViewAttestation,
+    onOpenWikiFork,
+    onOpenWikiMergeRequest,
+    onOpenWikiMergeReview,
+    onOpenWikiRedirect,
+    publish,
     push,
     currentPrimaryPage,
     isReplyToDiscussion,

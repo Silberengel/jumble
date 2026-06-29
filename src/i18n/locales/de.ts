@@ -2,6 +2,58 @@ export default {
   translation: {
     // NOTE: Untranslated strings fall back to English.
 
+    "Wiki Redirect": "Wiki-Weiterleitung",
+    "Redirect: “{{slug}}”": "Weiterleitung: „{{slug}}“",
+    "This name redirects to:": "Dieser Name leitet weiter zu:",
+    "Unknown target": "Unbekanntes Ziel",
+    "Accepted a merge request": "Hat eine Merge-Anfrage angenommen",
+    "Merged version:": "Zusammengeführte Version:",
+    Merged: "Zusammengeführt",
+    "Merge request": "Merge-Anfrage",
+    "Into article:": "In Artikel:",
+    "Proposed version:": "Vorgeschlagene Version:",
+    "The author defers to another version:":
+      "Der Autor verweist auf eine andere Version:",
+    "Forked from:": "Abgespalten von:",
+    "Merge requests ({{count}})": "Merge-Anfragen ({{count}})",
+    "Fork this article": "Diesen Artikel abspalten",
+    "Create merge request": "Merge-Anfrage erstellen",
+    "Defer to this version": "Auf diese Version verweisen",
+    "Deferred to this version": "Auf diese Version verwiesen",
+    "Create redirect to this article": "Weiterleitung zu diesem Artikel erstellen",
+    "Review merge request": "Merge-Anfrage prüfen",
+    "Create your own version of this article. It keeps the same name so it competes as an alternative version.":
+      "Erstelle deine eigene Version dieses Artikels. Sie behält denselben Namen und tritt so als alternative Version an.",
+    Content: "Inhalt",
+    "Publish fork": "Abspaltung veröffentlichen",
+    "Content cannot be empty": "Inhalt darf nicht leer sein",
+    "Fork published": "Abspaltung veröffentlicht",
+    "Ask the original author to merge your changes into their article.":
+      "Bitte den ursprünglichen Autor, deine Änderungen in seinen Artikel zu übernehmen.",
+    "Message (optional)": "Nachricht (optional)",
+    "Describe what you changed…": "Beschreibe, was du geändert hast…",
+    "Send merge request": "Merge-Anfrage senden",
+    "This article is not a fork, so it cannot be merged anywhere.":
+      "Dieser Artikel ist keine Abspaltung und kann daher nirgendwo zusammengeführt werden.",
+    "Merge request sent": "Merge-Anfrage gesendet",
+    "Point an alternative name at this article so searches for it land here.":
+      "Verweise einen alternativen Namen auf diesen Artikel, damit Suchen danach hier landen.",
+    "Name to redirect": "Weiterzuleitender Name",
+    "e.g. BTC": "z. B. BTC",
+    "Normalized: {{slug}}": "Normalisiert: {{slug}}",
+    "Publish redirect": "Weiterleitung veröffentlichen",
+    "Redirect published": "Weiterleitung veröffentlicht",
+    "Enter a name to redirect": "Gib einen weiterzuleitenden Namen ein",
+    "Accepting publishes the proposed content as a new version of your article and records a kind:819 acceptance.":
+      "Beim Annehmen wird der vorgeschlagene Inhalt als neue Version deines Artikels veröffentlicht und eine kind:819-Annahme aufgezeichnet.",
+    Reject: "Ablehnen",
+    "Accept & merge": "Annehmen & zusammenführen",
+    "Working…": "Wird verarbeitet…",
+    "Merge request rejected": "Merge-Anfrage abgelehnt",
+    "This merge request is incomplete.": "Diese Merge-Anfrage ist unvollständig.",
+    "Could not load the proposed version.":
+      "Die vorgeschlagene Version konnte nicht geladen werden.",
+    "Merge request accepted": "Merge-Anfrage angenommen",
     About: "Über",
     "New Note": "Neue Notiz",
     Post: "Beitrag",

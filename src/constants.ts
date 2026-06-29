@@ -618,6 +618,12 @@ export const ExtendedKind = {
   MONERO_TIP_RECEIPT: 1814,
   PUBLICATION: 30040,
   WIKI_ARTICLE: 30818,
+  /** NIP-54 merge request: proposes merging a forked wiki article into the original. */
+  WIKI_MERGE_REQUEST: 818,
+  /** NIP-54 merge acceptance: records that a kind:818 merge request was accepted (distinct from 30819). */
+  WIKI_MERGE_ACCEPTANCE: 819,
+  /** NIP-54 wiki redirect / disambiguation (addressable); points a slug at another article. */
+  WIKI_REDIRECT: 30819,
   /** NIP/spec document (Markdown) for relay publication instead of GitHub; kind 30817. */
   NOSTR_SPECIFICATION: 30817,
   PUBLICATION_CONTENT: 30041,
