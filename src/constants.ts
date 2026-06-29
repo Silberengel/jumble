@@ -184,6 +184,15 @@ export const RELAY_READ_ONLY_POOL_CONNECT_TIMEOUT_MS = 45_000
  */
 export const RELAY_NIP42_PUBLISH_ACK_TIMEOUT_MS = 90_000
 
+/**
+ * Cap a single NIP-42 AUTH `signEvent` call. The auth-sign queue ({@link queueRelayAuthSign}) serializes every
+ * relay's auth signing through one promise chain, so a signer that never responds (offline NIP-46 bunker, an
+ * ignored extension popup) would otherwise wedge AUTH for *every* relay for the whole session — and the
+ * relay stuck mid re-auth never reaches a terminal state, so the subscribe wave (and a feed's "Looking for
+ * more events…" banner) hangs until a full page refresh. Generous enough for slow extensions/remote signers.
+ */
+export const RELAY_NIP42_AUTH_SIGN_TIMEOUT_MS = 60_000
+
 /** Multi-relay queries and timeline initial REQ: after the first event, wait this long then close (query) or finalize EOSE (live feed) while keeping the subscription open for new events. */
 export const FIRST_RELAY_RESULT_GRACE_MS = 2000
 

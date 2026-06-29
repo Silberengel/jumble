@@ -3958,6 +3958,14 @@ const NoteList = forwardRef(
       const timer = window.setTimeout(() => {
         if (cancelled) return
         setLoading((prev) => (prev ? false : prev))
+        // For progressive-warmup (e.g. hashtag) feeds `progressiveLayersSearching` is cleared almost
+        // exclusively by onRelaySubscribeWaveComplete, which needs every relay in the wave to reach a
+        // terminal state. A relay wedged in NIP-42 re-auth never records one (no EOSE timeout covers the
+        // auth gap), so the "Looking for more events…" banner would hang forever even after events
+        // display. Clear it here on the same safety deadline that unblocks the loading skeleton.
+        if (progressiveWarmupQueryRef.current?.trim()) {
+          setProgressiveLayersSearching((prev) => (prev ? false : prev))
+        }
         // hasMore defaults true; if timeline never sends eosed (slow/hung relays), we would keep a
         // bottom skeleton forever while loading is false — unblock empty state / reload.
         if (eventsRef.current.length === 0) {

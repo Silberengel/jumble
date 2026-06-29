@@ -1,3 +1,5 @@
+import { RELAY_NIP42_AUTH_SIGN_TIMEOUT_MS } from '@/constants'
+import { racePromiseWithTimeout } from '@/lib/async-timeout'
 import { queueRelayAuthSign } from '@/lib/relay-auth-sign-queue'
 import {
   authenticateNip42Relay,
@@ -121,7 +123,17 @@ export function openGroupedRelaySubscriptionsWithNip42(
               nip42ResubscribePending.add(i)
               applyRelayNip42AckTimeout(relay)
               authenticateNip42Relay(relay, async (authEvt: EventTemplate) => {
-                const evt = await queueRelayAuthSign(() => params.signAuthEvent(authEvt))
+                // queueRelayAuthSign serializes every relay's auth signing; an unbounded signer call would
+                // wedge the shared chain for all relays AND leave this relay stuck mid re-auth (never a
+                // terminal state), hanging the whole subscribe wave. Bound it so failure surfaces as a
+                // close instead of an infinite gap.
+                const evt = await queueRelayAuthSign(() =>
+                  racePromiseWithTimeout(
+                    params.signAuthEvent(authEvt),
+                    RELAY_NIP42_AUTH_SIGN_TIMEOUT_MS,
+                    'nip42 auth signEvent timeout'
+                  )
+                )
                 if (!evt) throw new Error('sign event failed')
                 return evt
               })
