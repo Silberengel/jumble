@@ -1,10 +1,22 @@
 import NoteCard from '@/components/NoteCard'
 import { Skeleton } from '@/components/ui/skeleton'
-import { LIBRARY_RELAY_URLS } from '@/constants'
+import {
+  DOCUMENT_RELAY_URLS,
+  ExtendedKind,
+  FAST_READ_RELAY_URLS,
+  LIBRARY_RELAY_URLS
+} from '@/constants'
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
+import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
+import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
 import { queryIndexRelayWikiSearch } from '@/lib/index-relay-http'
-import client from '@/services/client.service'
-import type { Event } from 'nostr-tools'
+import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
+import { normalizeWikiDTag } from '@/lib/nip54'
+import { normalizeAnyRelayUrl } from '@/lib/url'
+import { useNostr } from '@/providers/NostrProvider'
+import client, { queryService } from '@/services/client.service'
+import { nip66Service } from '@/services/nip66.service'
+import type { Event, Filter } from 'nostr-tools'
 import { BookText, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -12,18 +24,27 @@ import { useTranslation } from 'react-i18next'
 /** HTTP (Mercury-style) index relays from the library set that expose POST /api/wiki/search. */
 const WIKI_SEARCH_HTTP_BASES = LIBRARY_RELAY_URLS.filter((u) => /^https?:\/\//i.test(u))
 const WIKI_SEARCH_LIMIT = 50
+/** Coalesce streamed merges from the three sources into at most one render per window. */
+const WIKI_SEARCH_FLUSH_MS = 180
 
 type Phase = 'idle' | 'loading' | 'done' | 'error'
 
 /**
  * Dedicated NIP-54 wiki (kind 30818) results section for the generic Search page's FULL TEXT mode.
  *
- * Hits the Mercury relay's `POST /api/wiki/search` endpoint, which searches both the article body
- * and metadata tags (`d`, `title`, `summary`, `source`). Rendered alongside the broader NIP-50
- * full-text results in {@link SearchResult}. Hidden when there are no wiki hits to avoid clutter.
+ * Mirrors the Library page's robust search shape (see {@code useLibrarySearch}): three sources stream
+ * into one deduped, relevance-sorted merge map so results appear progressively instead of waiting for
+ * the slowest path:
+ *   1. Local — session cache + IndexedDB stores ({@link collectLocalEventsForTextSearch}), rendered first.
+ *   2. Mercury HTTP — `POST /api/wiki/search` (body + metadata tags `d`/`title`/`summary`/`source`).
+ *   3. Relays — NIP-50 `search` plus an exact `#d` slug REQ on NIP-50-capable + document/inbox relays.
+ *
+ * Rendered alongside the broader NIP-50 full-text results in {@link SearchResult}. Hidden when there are
+ * no wiki hits to avoid clutter.
  */
 export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string }) {
   const { t } = useTranslation()
+  const { relayList, cacheRelayListEvent } = useNostr()
   const q = searchQuery.trim()
   const runRef = useRef(0)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -40,45 +61,147 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
     setPhase('loading')
     setEvents([])
     const abort = new AbortController()
+    const dTag = normalizeWikiDTag(q)
 
-    void (async () => {
-      try {
-        const byId = new Map<string, Event>()
-        await Promise.all(
-          WIKI_SEARCH_HTTP_BASES.map(async (base) => {
-            try {
-              const { events: evs } = await queryIndexRelayWikiSearch(base, q, {
-                limit: WIKI_SEARCH_LIMIT,
-                signal: abort.signal
-              })
-              for (const ev of evs) {
-                if (!byId.has(ev.id)) byId.set(ev.id, ev)
-              }
-            } catch {
-              // per-base best effort; other bases / sections still render
-            }
-          })
-        )
-        if (myRun !== runRef.current) return
+    // WebSocket relays worth a NIP-50 / `#d` REQ for wiki articles: NIP-50-capable relays plus the
+    // document/library relays, the viewer's own inboxes/outboxes, and fast read defaults.
+    const wsRelays = Array.from(
+      new Set(
+        [
+          ...nip66Service.getSearchableRelayUrls(),
+          ...DOCUMENT_RELAY_URLS,
+          ...FAST_READ_RELAY_URLS,
+          ...userReadInboxUrls(relayList, cacheRelayListEvent),
+          ...userWriteOutboxUrls(relayList, cacheRelayListEvent)
+        ]
+          .map((u) => normalizeAnyRelayUrl(u) || '')
+          .filter(Boolean)
+      )
+    )
 
-        const merged = [...byId.values()].sort((a, b) => compareEventsForDTagQuery(q, a, b))
-        for (const ev of merged) {
-          client.addEventToCache(ev, { explicitNoteLookupHexId: ev.id })
-        }
-        setEvents(merged)
-        setPhase('done')
-      } catch {
-        if (myRun !== runRef.current) return
-        setPhase('error')
+    // Shared streaming merge map: every source folds its hits in here, deduped by id and re-sorted by
+    // relevance to the query, then flushed (throttled) so the list grows as sources resolve.
+    const resultMap = new Map<string, Event>()
+    let flushTimer: number | null = null
+
+    const flush = () => {
+      if (myRun !== runRef.current) return
+      setEvents([...resultMap.values()].sort((a, b) => compareEventsForDTagQuery(q, a, b)))
+    }
+
+    const scheduleFlush = () => {
+      if (myRun !== runRef.current || flushTimer !== null) return
+      flush()
+      flushTimer = window.setTimeout(() => {
+        flushTimer = null
+        flush()
+      }, WIKI_SEARCH_FLUSH_MS)
+    }
+
+    const merge = (incoming: Event[]) => {
+      if (myRun !== runRef.current) return
+      let added = false
+      for (const ev of incoming) {
+        if (ev.kind !== ExtendedKind.WIKI_ARTICLE || resultMap.has(ev.id)) continue
+        resultMap.set(ev.id, ev)
+        client.addEventToCache(ev, { explicitNoteLookupHexId: ev.id })
+        added = true
       }
-    })()
+      if (added) scheduleFlush()
+    }
 
-    return () => abort.abort()
-  }, [q])
+    /** Local session cache + IndexedDB stores; renders before any network round-trip. */
+    const fetchLocal = async () => {
+      try {
+        const local = await collectLocalEventsForTextSearch({
+          query: q,
+          allowedKinds: [ExtendedKind.WIKI_ARTICLE],
+          sessionCap: 220,
+          idbMergedLimit: 120,
+          totalMaxMs: 8_000,
+          archiveScanMaxMs: 6_000,
+          publicationScanBudget: 6_000,
+          publicationScanMaxMs: 6_000,
+          fullTextScanMaxMs: 6_000,
+          includeOtherStoresFullText: true,
+          fullTextStoreHitCap: 200
+        })
+        merge(local)
+      } catch {
+        // best effort; remote sources still render
+      }
+    }
+
+    /** Mercury HTTP `/api/wiki/search` (body + metadata, server-ranked). */
+    const fetchHttp = async () => {
+      await Promise.all(
+        WIKI_SEARCH_HTTP_BASES.map(async (base) => {
+          try {
+            const { events: evs } = await queryIndexRelayWikiSearch(base, q, {
+              limit: WIKI_SEARCH_LIMIT,
+              signal: abort.signal
+            })
+            merge(evs)
+          } catch {
+            // per-base best effort; other bases / sources still render
+          }
+        })
+      )
+    }
+
+    /** WS NIP-50 `search` (relays that index full text) + exact `#d` slug lookup (title match). */
+    const fetchWs = async () => {
+      if (wsRelays.length === 0) return
+      const filters: Filter[] = [
+        { kinds: [ExtendedKind.WIKI_ARTICLE], search: q, limit: WIKI_SEARCH_LIMIT }
+      ]
+      if (dTag) {
+        filters.push({ kinds: [ExtendedKind.WIKI_ARTICLE], '#d': [dTag], limit: WIKI_SEARCH_LIMIT })
+      }
+      try {
+        const evs = await queryService.fetchEvents(wsRelays, filters, {
+          firstRelayResultGraceMs: false,
+          eoseTimeout: 4500,
+          globalTimeout: 12_000
+        })
+        // Relays that ignore NIP-50 `search` return recent articles instead — keep only true matches
+        // (an exact `#d` slug hit always counts even if the body text differs).
+        merge(
+          (evs ?? []).filter(
+            (ev) =>
+              ev.kind === ExtendedKind.WIKI_ARTICLE &&
+              (eventMatchesGeneralSearchQuery(ev, q) ||
+                (!!dTag && ev.tags.some((tg) => tg[0] === 'd' && tg[1] === dTag)))
+          )
+        )
+      } catch {
+        // best effort; local / http sources still render
+      }
+    }
+
+    void Promise.allSettled([fetchLocal(), fetchHttp(), fetchWs()]).then(() => {
+      if (myRun !== runRef.current) return
+      if (flushTimer !== null) {
+        window.clearTimeout(flushTimer)
+        flushTimer = null
+      }
+      flush()
+      setPhase('done')
+    })
+
+    return () => {
+      abort.abort()
+      if (flushTimer !== null) {
+        window.clearTimeout(flushTimer)
+        flushTimer = null
+      }
+    }
+  }, [q, relayList, cacheRelayListEvent])
 
   if (!q || phase === 'idle' || phase === 'error') return null
-  // Don't show an empty Wikipedia block — the general full-text results cover the no-hit case.
-  if (phase === 'done' && events.length === 0) return null
+  // Don't show an empty Wiki block while still loading with nothing yet, or after a no-hit search —
+  // the general full-text results cover the no-hit case.
+  if (events.length === 0 && phase === 'done') return null
 
   return (
     <section className="min-w-0 space-y-2" aria-label={t('Wiki search results')} aria-busy={phase === 'loading'}>

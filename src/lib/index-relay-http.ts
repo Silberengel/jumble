@@ -177,11 +177,13 @@ function shouldSkipDevIndexRelayFetch(endpoint: string): boolean {
   if (!import.meta.env.DEV || !devIndexRelayUnavailableThisSession || !isDevViteIndexRelayProxyPath(endpoint)) {
     return false
   }
-  // NIP-50-style publication search endpoints are separate from POST /api/events/filter;
-  // keep them available when the filter API tripped the dev session skip.
+  // NIP-50-style search endpoints are separate from POST /api/events/filter; keep them available
+  // when the filter API tripped the dev session skip (otherwise a missing local :4000 index relay,
+  // or one transient 5xx, silently disables remote wiki/publication full-text search for the session).
   if (
     endpoint.includes('/api/publications/content/search') ||
-    endpoint.includes('/api/publications/search')
+    endpoint.includes('/api/publications/search') ||
+    endpoint.includes('/api/wiki/search')
   ) {
     return false
   }

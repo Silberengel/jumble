@@ -1,4 +1,4 @@
-import { NIP_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
+import { ExtendedKind, NIP_SEARCH_PAGE_KINDS, SEARCHABLE_RELAY_URLS } from '@/constants'
 import { buildGeneralSearchRelayUrls } from '@/lib/general-search-relay-urls'
 import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { normalizeUrl } from '@/lib/url'
@@ -17,6 +17,15 @@ import Relay from '../Relay'
 function relayDedupeKey(url: string): string {
   return (normalizeUrl(url) || url.trim()).toLowerCase()
 }
+
+/**
+ * Full-text "notes" search excludes kind 30041 publication-content sections: out of their parent
+ * publication index they're fragmentary noise in a general results list. Resolving a 30041 directly by
+ * note id (SearchBar emits `type: 'note'`) or browsing a d-tag (`type: 'dtag'`) still surfaces it.
+ */
+const NOTES_SEARCH_KINDS: readonly number[] = NIP_SEARCH_PAGE_KINDS.filter(
+  (k) => k !== ExtendedKind.PUBLICATION_CONTENT
+)
 
 export default function SearchResult({ searchParams }: { searchParams: TSearchParams | null }) {
   const { relayList, cacheRelayListEvent } = useNostr()
@@ -107,7 +116,7 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
         <FullTextSearchByRelay
           searchQuery={searchParams.search}
           relayUrls={generalSearchRelayUrls}
-          kinds={NIP_SEARCH_PAGE_KINDS}
+          kinds={NOTES_SEARCH_KINDS}
           alexandriaEmptyHref={alexandriaEmptyHref}
         />
       </div>
