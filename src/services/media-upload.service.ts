@@ -9,7 +9,7 @@ import {
   mergeNip94Pairs,
   nip94PairsToImetaTag
 } from '@/lib/upload-nip94-imeta'
-import { cleanUrl, simplifyUrl } from '@/lib/url'
+import { cleanUrl, migrateLegacyHappyTavernMediaUrl, migrateLegacyHappyTavernNip94Tags, simplifyUrl } from '@/lib/url'
 import { TDraftEvent, TMediaUploadServiceConfig } from '@/types'
 import { BlossomClient } from 'blossom-client-sdk'
 import { z } from 'zod'
@@ -163,10 +163,13 @@ class MediaUploadService {
     }
     startPseudoProgress()
 
-    const servers =
+    const rawServers =
       this.serviceConfig.type === 'blossom-preset'
         ? [this.serviceConfig.url]
         : await client.fetchBlossomServerList(pubkey)
+    const servers = rawServers
+      .map((server) => migrateLegacyHappyTavernMediaUrl(server))
+      .filter((server) => server.trim().length > 0)
     if (servers.length === 0) {
       throw new Error('No Blossom services available')
     }
@@ -191,11 +194,11 @@ class MediaUploadService {
     let tags: string[][] = []
     const parseResult = z.array(z.array(z.string())).safeParse((blob as any).nip94 ?? [])
     if (parseResult.success) {
-      tags = parseResult.data
+      tags = migrateLegacyHappyTavernNip94Tags(parseResult.data)
     }
 
     options?.onProgress?.(100)
-    return { url: blob.url, tags }
+    return { url: migrateLegacyHappyTavernMediaUrl(blob.url), tags }
   }
 
   private async uploadByNip96(service: string, file: File, options?: UploadOptions) {
@@ -289,11 +292,13 @@ class MediaUploadService {
         if (xhr.status >= 200 && xhr.status < 300) {
           const data = xhr.response
           try {
-            const tags = z.array(z.array(z.string())).parse(data?.nip94_event?.tags ?? [])
+            const tags = migrateLegacyHappyTavernNip94Tags(
+              z.array(z.array(z.string())).parse(data?.nip94_event?.tags ?? [])
+            )
             const url = tags.find(([tagName]: string[]) => tagName === 'url')?.[1]
             if (url) {
               options?.onProgress?.(100)
-              resolve({ url, tags })
+              resolve({ url: migrateLegacyHappyTavernMediaUrl(url), tags })
             } else {
               reject(new Error('No url found'))
             }

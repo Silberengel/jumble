@@ -686,6 +686,40 @@ export function isRenderableMediaUrl(url: string): boolean {
   return false
 }
 
+/** Happy Tavern Blossom hosts moved from `*.happytavern.co` to `*.oslim.dev` (2026). */
+const LEGACY_HAPPY_TAVERN_MEDIA_HOSTS: Readonly<Record<string, string>> = {
+  '0x0.happytavern.co': '0x0.oslim.dev',
+  'blossom.happytavern.co': 'blossom.oslim.dev'
+}
+
+/**
+ * Rewrite legacy Happy Tavern media / Blossom base URLs in notes and stored settings.
+ * Preserves path, query, and fragment; upgrades `http:` to `https:`.
+ */
+export function migrateLegacyHappyTavernMediaUrl(url: string): string {
+  const t = url.trim()
+  if (!t) return t
+  try {
+    const u = new URL(/^https?:\/\//i.test(t) ? t : `https://${t}`)
+    const migrated = LEGACY_HAPPY_TAVERN_MEDIA_HOSTS[u.hostname.toLowerCase()]
+    if (!migrated) return t
+    u.hostname = migrated
+    if (u.protocol === 'http:') u.protocol = 'https:'
+    return u.toString()
+  } catch {
+    return t
+  }
+}
+
+/** Rewrite legacy Happy Tavern hosts in NIP-94 / imeta `url` tag values after Blossom upload. */
+export function migrateLegacyHappyTavernNip94Tags(tags: string[][]): string[][] {
+  return tags.map((tag) =>
+    tag[0] === 'url' && tag[1]
+      ? [tag[0], migrateLegacyHappyTavernMediaUrl(tag[1]), ...tag.slice(2)]
+      : tag
+  )
+}
+
 /**
  * Primal R2A CDN URL for media keyed by SHA-256 (same object as `https://blossom.primal.net/{hash}.ext`).
  * Used when the blossom host fails in-browser; aligns with NIP-B7-style alternate retrieval.
@@ -723,7 +757,7 @@ export function primalR2aMirrorForBlossomPrimalUrl(url: string | URL): string | 
  * ORB / hotlink rules and fails to decode in-app even though the file exists.
  */
 export function resolvePrimalBlossomPlayableUrl(url: string): string {
-  const t = url.trim()
+  const t = migrateLegacyHappyTavernMediaUrl(url.trim())
   if (!t) return t
   return primalR2aMirrorForBlossomPrimalUrl(t) ?? t
 }
@@ -740,6 +774,7 @@ export function preferBlossomPrimalDisplayUrl(url: string): string {
  * Removes common tracking parameters like utm_*, fbclid, gclid, etc.
  */
 export function cleanUrl(url: string): string {
+  url = migrateLegacyHappyTavernMediaUrl(url)
   try {
     const parsedUrl = new URL(url)
     stripTrailingCommasFromHostname(parsedUrl)

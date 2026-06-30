@@ -6,7 +6,7 @@ import { getCacheRelayUrlsFromEvent } from '@/lib/private-relays'
 import { sanitizeRelayUrlsForFetch } from '@/lib/read-only-relay-personal'
 import { cn } from '@/lib/utils'
 import client from '@/services/client.service'
-import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
+import { useFavoriteRelaysOptional } from '@/providers/favorite-relays-context'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -35,7 +35,9 @@ export default function ParentNotePreview({
 }) {
   const { t } = useTranslation()
   const nostr = useNostrOptional()
-  const { favoriteRelays, blockedRelays } = useFavoriteRelays()
+  const favoriteRelaysCtx = useFavoriteRelaysOptional()
+  const favoriteRelays = favoriteRelaysCtx?.favoriteRelays ?? []
+  const blockedRelays = favoriteRelaysCtx?.blockedRelays ?? []
   const nostrLandAggrEligibilityUrls = useMemo(
     () =>
       buildViewerNostrLandAggrEligibilityUrls({

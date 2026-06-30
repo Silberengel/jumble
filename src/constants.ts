@@ -325,10 +325,11 @@ export const PROFILE_FETCH_PROMISE_TIMEOUT_MS = 22_000
 /**
  * Public Blossom (BUD) upload bases: presets in post settings and merged after the user’s
  * kind-10063 URLs when resolving the default Blossom server list.
- * @see https://blossom.happytavern.co/ — Lotus-style ephemeral Blossom (0x0 backend).
+ * @see https://0x0.oslim.dev — Lotus-style ephemeral Blossom (0x0 backend, Happy Tavern).
+ * @see https://blossom.oslim.dev — member Blossom storage (Happy Tavern).
  */
 export const STANDARD_BLOSSOM_UPLOAD_HOSTS = [
-  { url: 'https://0x0.happytavern.co', labelKey: 'BlossomUploadOptionHappyTavern' },
+  { url: 'https://0x0.oslim.dev', labelKey: 'BlossomUploadOptionHappyTavern' },
   { url: 'https://blossom.band', labelKey: 'BlossomUploadOptionBand' },
   { url: 'https://blossom.primal.net', labelKey: 'BlossomUploadOptionPrimal' },
   { url: 'https://nostr.media', labelKey: 'BlossomUploadOptionNostrMedia' },

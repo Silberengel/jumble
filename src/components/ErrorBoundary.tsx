@@ -2,17 +2,21 @@ import { Button } from '@/components/ui/button'
 import { MessageCircle, RotateCw } from 'lucide-react'
 import React, { Component, ReactNode } from 'react'
 import { toast } from 'sonner'
+import { clearAppServiceWorkerAndCaches } from '@/lib/app-cache-maintenance'
 import logger from '@/lib/logger'
 import { isChunkLoadFailureMessage, tryStaleChunkReloadOnce } from '@/lib/stale-chunk-recovery'
 
 const ISSUES_URL =
   'https://gitrepublic.imwald.eu/repos/npub1l5sga6xg72phsz5422ykujprejwud075ggrr3z2hwyrfgr7eylqstegx9z/imwald?tab=issues'
 
-/** HMR can remount children before parents; context hooks throw. One recovery reload fixes it. */
+/**
+ * React context hooks throw when provider/consumer modules disagree (HMR, or PWA serving mixed
+ * deploy chunks). One cache-busting reload usually fixes it.
+ */
 const CONTEXT_RECOVERY_RELOAD_KEY = 'jumble-context-recovery-reload-at'
 const CONTEXT_RECOVERY_COOLDOWN_MS = 20_000
 
-function isLikelyBrokenReactContextFromHmr(message: string): boolean {
+function isLikelyBrokenReactContext(message: string): boolean {
   return (
     /must be used within (a )?[\w]+/i.test(message) ||
     message.includes('useNostr must be used within') ||
@@ -35,7 +39,18 @@ function tryContextRecoveryReload(): boolean {
     if (now - last <= CONTEXT_RECOVERY_COOLDOWN_MS) return false
     sessionStorage.setItem(CONTEXT_RECOVERY_RELOAD_KEY, String(now))
     contextRecoveryReloadScheduled = true
-    window.location.reload()
+    void (async () => {
+      if (!import.meta.env.DEV) {
+        try {
+          await clearAppServiceWorkerAndCaches()
+        } catch (error) {
+          logger.warn('[ErrorBoundary] Service worker cache clear before context recovery failed', {
+            error
+          })
+        }
+      }
+      window.location.reload()
+    })()
     return true
   } catch {
     return false
@@ -76,10 +91,12 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
           </div>
         )
       }
-      if (isLikelyBrokenReactContextFromHmr(msg) && tryContextRecoveryReload()) {
+      if (isLikelyBrokenReactContext(msg) && tryContextRecoveryReload()) {
         return (
           <div className="flex h-screen w-screen items-center justify-center p-4 text-muted-foreground">
-            Reloading after a dev hot-reload glitch…
+            {import.meta.env.DEV
+              ? 'Reloading after a dev hot-reload glitch…'
+              : 'Reloading to pick up a consistent app version…'}
           </div>
         )
       }

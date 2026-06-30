@@ -20,7 +20,7 @@ import { kinds, nip19 } from 'nostr-tools'
 import type { Event as NEvent, Filter } from 'nostr-tools'
 import DataLoader from 'dataloader'
 import { scrollActivity } from '@/lib/scroll-activity.service'
-import { isWebsocketUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
+import { isWebsocketUrl, migrateLegacyHappyTavernMediaUrl, normalizeAnyRelayUrl, normalizeHttpUrl, normalizeUrl } from '@/lib/url'
 import {
   getProfileFromEvent,
   getRelayListFromEvent,
@@ -1697,7 +1697,7 @@ export class ReplaceableEventService {
     const seen = new Set<string>()
     const out: string[] = []
     const add = (raw: string) => {
-      const n = normalizeHttpUrl(raw)
+      const n = normalizeHttpUrl(migrateLegacyHappyTavernMediaUrl(raw))
       if (!n || seen.has(n)) return
       seen.add(n)
       out.push(n)

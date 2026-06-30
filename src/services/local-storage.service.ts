@@ -9,6 +9,7 @@ import { kinds } from 'nostr-tools'
 import { isSameAccount } from '@/lib/account'
 import { mergeAccountSecrets } from '@/lib/account-secrets'
 import { purgeObsoleteIndexedDbSettings, purgeObsoleteLocalStorageKeys } from '@/lib/obsolete-storage-cleanup'
+import { migrateLegacyHappyTavernMediaUrl, normalizeHttpUrl } from '@/lib/url'
 import { mergeSettingsRecordWithLocalStorage } from '@/lib/settings-storage-merge'
 import { DEFAULT_ZAP_SATS } from '@/lib/lightning'
 import { isPaytoCategory } from '@/lib/payto-category-display'
@@ -848,6 +849,18 @@ class LocalStorageService {
         JSON.stringify(this.mediaUploadServiceConfigMap)
       )
       return migrated
+    }
+    if (cfg.type === 'blossom-preset' && cfg.url) {
+      const migratedUrl = normalizeHttpUrl(migrateLegacyHappyTavernMediaUrl(cfg.url))
+      if (migratedUrl && migratedUrl !== cfg.url) {
+        const migrated: TMediaUploadServiceConfig = { type: 'blossom-preset', url: migratedUrl }
+        this.mediaUploadServiceConfigMap[pubkey] = migrated
+        this.persistSetting(
+          StorageKey.MEDIA_UPLOAD_SERVICE_CONFIG_MAP,
+          JSON.stringify(this.mediaUploadServiceConfigMap)
+        )
+        return migrated
+      }
     }
     return cfg
   }
