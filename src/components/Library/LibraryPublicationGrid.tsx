@@ -1,12 +1,45 @@
 import PublicationCard from '@/components/Note/PublicationCard'
 import { Skeleton } from '@/components/ui/skeleton'
-import type { LibraryPublicationEntry } from '@/lib/library-publication-index'
+import { SimpleUserAvatar } from '@/components/UserAvatar'
+import { LIBRARY_GC_PUBLISHING_PUBKEY, type LibraryPublicationEntry } from '@/lib/library-publication-index'
 import { eventTagAddress } from '@/lib/publication-index'
 import { isBooklistNip32Label } from '@/lib/nip32-label'
 import { cn } from '@/lib/utils'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { BookOpen, Bookmark, Highlighter, MessageSquare, Pin, Tag } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+
+function LabelCuratorAvatars({ pubkeys }: { pubkeys: string[] }) {
+  const { t } = useTranslation()
+  if (pubkeys.length === 0) return null
+
+  const shown = pubkeys.slice(0, 2)
+  const gcPk = LIBRARY_GC_PUBLISHING_PUBKEY.toLowerCase()
+
+  return (
+    <div
+      className="absolute right-2 top-2 z-10 flex -space-x-2"
+      title={t('Library label curator hint')}
+    >
+      {shown.map((pubkey) => (
+        <div
+          key={pubkey}
+          className={cn(
+            'rounded-full ring-2 ring-card shadow-sm',
+            pubkey.toLowerCase() === gcPk && 'ring-primary/40'
+          )}
+          title={
+            pubkey.toLowerCase() === gcPk
+              ? t('Library label curator gc')
+              : t('Library label curator follow')
+          }
+        >
+          <SimpleUserAvatar userId={pubkey} size="tiny" deferRemoteAvatar={false} />
+        </div>
+      ))}
+    </div>
+  )
+}
 
 function LabelBadgeIcon({ name }: { name: string }) {
   if (isBooklistNip32Label(name)) {
@@ -142,9 +175,12 @@ export default function LibraryPublicationGrid({
           <div
             key={eventTagAddress(entry.event) ?? entry.event.id}
             className={cn(
-              'flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden'
+              'relative flex min-w-0 flex-col rounded-lg border border-border bg-card shadow-sm overflow-hidden'
             )}
           >
+            {entry.labelCuratorPubkeys?.length ? (
+              <LabelCuratorAvatars pubkeys={entry.labelCuratorPubkeys} />
+            ) : null}
             <PublicationCard
               event={entry.event}
               presentation="library"

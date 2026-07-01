@@ -7,6 +7,7 @@ import {
   structuredQueryFilledFields,
   structuredQueryToString,
   type LibraryPublicationEntry,
+  type LibraryPublicationFilterMode,
   type LibraryPublicationRelaySearchAxis,
   type LibraryStructuredSearchQuery
 } from '@/lib/library-publication-index'
@@ -44,6 +45,9 @@ function mergeEntryIntoMap(
     incomingScore > existingScore ||
     (incomingScore === existingScore && incoming.event.created_at > existing.event.created_at)
   const bestMatch = incomingScore >= existingScore ? incoming.contentSearchMatch : existing.contentSearchMatch
+  const curatorPubkeys = [
+    ...new Set([...(existing.labelCuratorPubkeys ?? []), ...(incoming.labelCuratorPubkeys ?? [])])
+  ]
   map.set(key, {
     ...(useIncomingEvent ? incoming : existing),
     event: useIncomingEvent ? incoming.event : existing.event,
@@ -58,6 +62,7 @@ function mergeEntryIntoMap(
     hasBookmark: existing.hasBookmark || incoming.hasBookmark,
     hasPin: existing.hasPin || incoming.hasPin,
     engagementCount: Math.max(existing.engagementCount, incoming.engagementCount),
+    labelCuratorPubkeys: curatorPubkeys.length > 0 ? curatorPubkeys : undefined,
     contentSearchMatch: bestMatch
   })
 }
@@ -104,7 +109,7 @@ export function useLibrarySearch(params: {
   setTopLevelCount: (n: number) => void
   setFeedPageIndex: (n: number | ((p: number) => number)) => void
   setError: (msg: string | null) => void
-  showOnlyMine: boolean
+  filterMode: LibraryPublicationFilterMode
 }) {
   const { t } = useTranslation()
   const {
@@ -117,7 +122,7 @@ export function useLibrarySearch(params: {
     setTopLevelCount,
     setFeedPageIndex,
     setError,
-    showOnlyMine
+    filterMode
   } = params
 
   const [searchQuery, setSearchQuery] = useState('')
@@ -153,7 +158,7 @@ export function useLibrarySearch(params: {
 
   useEffect(() => {
     setFeedPageIndex(0)
-  }, [activeSearch, showOnlyMine, searchAxis, setFeedPageIndex])
+  }, [activeSearch, filterMode, searchAxis, setFeedPageIndex])
 
   const commitSearch = useCallback(
     (query: string, axis: LibraryPublicationRelaySearchAxis | null) => {

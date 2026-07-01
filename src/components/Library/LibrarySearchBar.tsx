@@ -2,11 +2,12 @@ import SearchInput from '@/components/SearchInput'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { normalizeToDTag } from '@/lib/search-parser'
 import {
   shouldSearchPublicationContentOnRelays,
+  type LibraryPublicationFilterMode,
   type LibraryStructuredSearchQuery
 } from '@/lib/library-publication-index'
 import { cn } from '@/lib/utils'
@@ -22,9 +23,9 @@ export default function LibrarySearchBar({
   onResetSearch,
   searchActive,
   searchLoading,
-  showOnlyMine,
-  onShowOnlyMineChange,
-  mineFilterLoading,
+  filterMode,
+  onFilterModeChange,
+  filterLoading,
   disabled
 }: {
   searchQuery: string
@@ -34,9 +35,9 @@ export default function LibrarySearchBar({
   onResetSearch: () => void
   searchActive?: boolean
   searchLoading?: boolean
-  showOnlyMine: boolean
-  onShowOnlyMineChange: (value: boolean) => void
-  mineFilterLoading?: boolean
+  filterMode: LibraryPublicationFilterMode
+  onFilterModeChange: (value: LibraryPublicationFilterMode) => void
+  filterLoading?: boolean
   disabled?: boolean
 }) {
   const { t } = useTranslation()
@@ -260,19 +261,23 @@ export default function LibrarySearchBar({
           <span>{t('Library search advanced')}</span>
         </button>
         <div className="flex items-center gap-2">
-          <Switch
-            id="library-show-mine"
-            checked={showOnlyMine}
-            onCheckedChange={onShowOnlyMineChange}
-            disabled={disabled}
-          />
-          <Label
-            htmlFor="library-show-mine"
-            className="text-sm text-muted-foreground cursor-pointer"
+          <Tabs
+            value={filterMode}
+            onValueChange={(value) => onFilterModeChange(value as LibraryPublicationFilterMode)}
           >
-            {t('Library show only my publications')}
-          </Label>
-          {mineFilterLoading ? (
+            <TabsList className="h-8" aria-label={t('Library publication filter')}>
+              <TabsTrigger value="mine" className="px-2.5 text-xs" disabled={disabled}>
+                {t('Library filter mine')}
+              </TabsTrigger>
+              <TabsTrigger value="none" className="px-2.5 text-xs" disabled={disabled}>
+                {t('Library filter none')}
+              </TabsTrigger>
+              <TabsTrigger value="recommended" className="px-2.5 text-xs" disabled={disabled}>
+                {t('Library filter recommended')}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+          {filterLoading ? (
             <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" aria-hidden />
           ) : null}
         </div>

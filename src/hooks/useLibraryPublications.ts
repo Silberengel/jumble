@@ -1,17 +1,25 @@
 import { BOOKLIST_LABEL_UPDATED_EVENT } from '@/lib/booklist-label'
 import { EMPTY_ENGAGEMENT } from '@/hooks/library-publications/constants'
 import { useLibraryIndexLoader } from '@/hooks/library-publications/useLibraryIndexLoader'
+import { useLibraryLabelFilter } from '@/hooks/library-publications/useLibraryLabelFilter'
 import { useLibraryMineFilter } from '@/hooks/library-publications/useLibraryMineFilter'
 import { useLibrarySearch } from '@/hooks/library-publications/useLibrarySearch'
 import { useLibraryViewerData } from '@/hooks/library-publications/useLibraryViewerData'
+import { getPubkeysFromPTags } from '@/lib/tag'
+import type { LibraryPublicationFilterMode } from '@/lib/library-publication-index'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useNostr } from '@/providers/NostrProvider'
 import { useEffect, useMemo, useState } from 'react'
 
 export function useLibraryPublications(isActive: boolean) {
-  const { pubkey, bookmarkListEvent } = useNostr()
+  const { pubkey, bookmarkListEvent, followListEvent } = useNostr()
   const { blockedRelays } = useFavoriteRelays()
-  const [showOnlyMine, setShowOnlyMine] = useState(false)
+  const [filterMode, setFilterMode] = useState<LibraryPublicationFilterMode>('none')
+
+  const followPubkeys = useMemo(
+    () => (followListEvent ? getPubkeysFromPTags(followListEvent.tags) : []),
+    [followListEvent]
+  )
 
   const {
     pinListEvent,
@@ -61,12 +69,12 @@ export function useLibraryPublications(isActive: boolean) {
     setTopLevelCount,
     setFeedPageIndex,
     setError,
-    showOnlyMine
+    filterMode
   })
 
   const { mineIndexEntries, mineFilterComputing, filterEntriesForMine } =
     useLibraryMineFilter({
-      showOnlyMine,
+      filterMode,
       pubkey,
       indexEvents,
       debouncedSearch,
@@ -74,6 +82,21 @@ export function useLibraryPublications(isActive: boolean) {
       pinListEvent,
       myBooklistTargets
     })
+
+  const {
+    recommendedIndexEntries,
+    rankedSearchResults,
+    labelFilterComputing,
+    searchLabelFetching
+  } = useLibraryLabelFilter({
+    filterMode,
+    pubkey,
+    followPubkeys,
+    indexEvents,
+    debouncedSearch,
+    searchResults,
+    blockedRelays: blockedRelays ?? []
+  })
 
   useEffect(() => {
     if (!isActive || !pubkey || indexEvents.length === 0) return
@@ -104,30 +127,41 @@ export function useLibraryPublications(isActive: boolean) {
   ])
 
   useEffect(() => {
-    if (debouncedSearch.trim() || showOnlyMine || indexEvents.length === 0) return
+    if (debouncedSearch.trim() || filterMode !== 'none' || indexEvents.length === 0) return
     applyDefaultFeedSlice(indexEvents, EMPTY_ENGAGEMENT, feedPageIndex)
-  }, [debouncedSearch, showOnlyMine, indexEvents, feedPageIndex, applyDefaultFeedSlice])
+  }, [debouncedSearch, filterMode, indexEvents, feedPageIndex, applyDefaultFeedSlice])
 
   const defaultFeedHasMore = useMemo(() => {
-    if (debouncedSearch.trim() || showOnlyMine) return false
+    if (debouncedSearch.trim() || filterMode !== 'none') return false
     return entries.length < feedTotalCount
-  }, [debouncedSearch, showOnlyMine, entries.length, feedTotalCount])
+  }, [debouncedSearch, filterMode, entries.length, feedTotalCount])
 
   const filteredEntries = useMemo(() => {
     const q = debouncedSearch.trim()
-    let list =
-      showOnlyMine && !q ? (mineFilterComputing ? [] : mineIndexEntries) : q ? (searchResults ?? []) : entries
-    if (showOnlyMine && q) {
-      list = filterEntriesForMine(list)
+    if (filterMode === 'mine' && !q) {
+      return mineFilterComputing ? [] : mineIndexEntries
     }
-    return list
+    if (filterMode === 'recommended' && !q) {
+      return labelFilterComputing ? [] : recommendedIndexEntries
+    }
+    if (q) {
+      const searchList =
+        filterMode === 'mine'
+          ? filterEntriesForMine(rankedSearchResults ?? searchResults ?? [])
+          : (rankedSearchResults ?? searchResults ?? [])
+      return searchList
+    }
+    return entries
   }, [
     entries,
-    showOnlyMine,
+    filterMode,
     debouncedSearch,
     searchResults,
+    rankedSearchResults,
     mineIndexEntries,
+    recommendedIndexEntries,
     mineFilterComputing,
+    labelFilterComputing,
     filterEntriesForMine
   ])
 
@@ -141,9 +175,11 @@ export function useLibraryPublications(isActive: boolean) {
     commitStructuredSearch,
     resetSearch,
     searchActive: committedSearch.trim().length > 0,
-    showOnlyMine,
-    setShowOnlyMine,
-    mineFilterLoading: mineFilterComputing || (showOnlyMine && booklistTargetsLoading),
+    filterMode,
+    setFilterMode,
+    mineFilterLoading: mineFilterComputing || (filterMode === 'mine' && booklistTargetsLoading),
+    recommendedFilterLoading: labelFilterComputing,
+    searchLabelFetching,
     loading,
     searchLoading,
     error,

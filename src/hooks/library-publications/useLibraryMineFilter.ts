@@ -2,14 +2,15 @@ import {
   filterLibraryPublicationsByUser,
   libraryPublicationEntriesForUserFromIndexAsync,
   type LibraryMineFilterOpts,
-  type LibraryPublicationEntry
+  type LibraryPublicationEntry,
+  type LibraryPublicationFilterMode
 } from '@/lib/library-publication-index'
 import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { EMPTY_ENGAGEMENT } from './constants'
 
 export function useLibraryMineFilter(params: {
-  showOnlyMine: boolean
+  filterMode: LibraryPublicationFilterMode
   pubkey: string | null | undefined
   indexEvents: Event[]
   debouncedSearch: string
@@ -18,7 +19,7 @@ export function useLibraryMineFilter(params: {
   myBooklistTargets: { addresses: Set<string>; eventIds: Set<string> }
 }) {
   const {
-    showOnlyMine,
+    filterMode,
     pubkey,
     indexEvents,
     debouncedSearch,
@@ -47,7 +48,7 @@ export function useLibraryMineFilter(params: {
   )
 
   useEffect(() => {
-    if (!showOnlyMine || !pubkey || indexEvents.length === 0 || debouncedSearch.trim()) {
+    if (filterMode !== 'mine' || !pubkey || indexEvents.length === 0 || debouncedSearch.trim()) {
       setMineFilterComputing(false)
       return
     }
@@ -88,14 +89,14 @@ export function useLibraryMineFilter(params: {
     return () => {
       signal.cancelled = true
     }
-  }, [showOnlyMine, pubkey, indexEvents, mineFilterOpts, debouncedSearch])
+  }, [filterMode, pubkey, indexEvents, mineFilterOpts, debouncedSearch])
 
   const filterEntriesForMine = useCallback(
     (list: LibraryPublicationEntry[]) => {
-      if (!showOnlyMine || !pubkey) return list
+      if (filterMode !== 'mine' || !pubkey) return list
       return filterLibraryPublicationsByUser(list, pubkey, mineFilterOpts)
     },
-    [showOnlyMine, pubkey, mineFilterOpts]
+    [filterMode, pubkey, mineFilterOpts]
   )
 
   return {

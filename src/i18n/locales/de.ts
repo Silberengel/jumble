@@ -1200,8 +1200,8 @@ export default {
       "Bücher sind Nostr-Publikationen – entweder massenweise aus Quellen wie Project Gutenberg importiert oder direkt auf Nostr veröffentlicht – von den Dokument-/Bibliotheks-Relays der App sowie deinen eigenen Relays. Zuerst wird eine zwischengespeicherte Kopie geladen, dann kommen weitere von den Relays hinzu.",
     "Library help search":
       "Die Suche umfasst die bereits geladenen Bücher und fragt die Dokument-Relays ab. Suche nach Titel, Autor, Quelle, Tag oder Abschnitt; mit der erweiterten Suche gezielt nach Titel, Autor, d-Tag oder einer Textpassage.",
-    "Library help mine":
-      '„Meine Publikationen“ zeigt nur Bücher, die du geschrieben oder gespeichert hast – verfasst, als Lesezeichen, angepinnt oder auf einer deiner Bücherlisten.',
+    "Library help filter":
+      '„Meine Publikationen“ zeigt Bücher, die du geschrieben oder gespeichert hast. „Empfohlen“ zeigt Bücher, die von Personen, denen du folgst, und von GC Publishing etikettiert wurden. Standardmäßig werden alle Publikationen angezeigt.',
     "Library help open":
       "Klicke auf ein Buch, um es zu öffnen und zu lesen. Über das Optionsmenü (⋯) lädst du es als AsciiDoc, EPUB oder PDF herunter; mit dem grünen Button fügst du es zu einer Bücherliste hinzu.",
     "Library help refresh": "Aktualisieren lädt die neuesten Publikationen erneut von den Relays.",
@@ -1227,6 +1227,15 @@ export default {
     "Library search commit hint": "Auf „Suchen“ klicken oder Enter drücken, oder unten einen Suchtyp auswählen",
     "Library relay search timed out": "Relay-Suche abgelaufen. Treffer aus dem lokalen Bibliotheks-Cache werden angezeigt, sofern vorhanden.",
     "Library show only my publications": "Meine Publikationen",
+    "Library publication filter": "Publikationsfilter",
+    "Library filter mine": "Meine Publikationen",
+    "Library filter none": "Alle",
+    "Library filter recommended": "Empfohlen",
+    "Library recommended filter loading": "Empfohlene Publikationen werden geladen…",
+    "Library search label ranking": "Suchergebnisse werden nach Etiketten sortiert…",
+    "Library label curator hint": "Etikettiert von jemandem, dem du folgst, oder GC Publishing",
+    "Library label curator follow": "Etikettiert von jemandem, dem du folgst",
+    "Library label curator gc": "Etikettiert von GC Publishing",
     "Library empty": "Noch keine Publikationen auf deinen Relays gefunden.",
     "Library empty filtered": "Keine Publikationen entsprechen den Filtern.",
     "Library loading": "Publikationen werden von Dokument-Relays geladen…",

@@ -35,9 +35,11 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     commitStructuredSearch,
     resetSearch,
     searchActive,
-    showOnlyMine,
-    setShowOnlyMine,
+    filterMode,
+    setFilterMode,
     mineFilterLoading,
+    recommendedFilterLoading,
+    searchLabelFetching,
     loading,
     searchLoading,
     error,
@@ -59,13 +61,18 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
     [refresh]
   )
 
-  const isSearchPending = searchLoading
+  const isSearchPending = searchLoading || searchLabelFetching
+  const filterLoading = filterMode === 'mine' ? mineFilterLoading : filterMode === 'recommended' ? recommendedFilterLoading : false
   const searchStatusMessage = !loading
     ? searchLoading
       ? t('Library search loading')
-      : mineFilterLoading
-        ? t('Library mine filter loading')
-        : null
+      : searchLabelFetching
+        ? t('Library search label ranking')
+        : filterLoading
+          ? filterMode === 'recommended'
+            ? t('Library recommended filter loading')
+            : t('Library mine filter loading')
+          : null
     : null
 
   const statusLine =
@@ -94,9 +101,9 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
             onResetSearch={resetSearch}
             searchActive={searchActive}
             searchLoading={searchLoading}
-            showOnlyMine={showOnlyMine}
-            onShowOnlyMineChange={setShowOnlyMine}
-            mineFilterLoading={mineFilterLoading}
+            filterMode={filterMode}
+            onFilterModeChange={setFilterMode}
+            filterLoading={filterLoading}
             disabled={loading && !hasIndexData}
           />
         </div>
@@ -118,12 +125,12 @@ const LibraryPage = forwardRef<TPageRef>((_props, ref) => {
           entries={entries}
           loading={
             (loading && entries.length === 0 && !hasIndexData) ||
-            (showOnlyMine && mineFilterLoading) ||
+            (filterMode !== 'none' && filterLoading && entries.length === 0) ||
             (isSearchPending && entries.length === 0)
           }
           searchPending={isSearchPending && entries.length > 0}
           emptyMessage={
-            committedSearch.trim() || showOnlyMine ? t('Library empty filtered') : t('Library empty')
+            committedSearch.trim() || filterMode !== 'none' ? t('Library empty filtered') : t('Library empty')
           }
         />
         {defaultFeedHasMore ? (
@@ -177,7 +184,7 @@ function LibraryHelpButton() {
     <ul className="list-disc space-y-1.5 pl-4 text-sm text-muted-foreground">
       <li>{t('Library help browse')}</li>
       <li>{t('Library help search')}</li>
-      <li>{t('Library help mine')}</li>
+      <li>{t('Library help filter')}</li>
       <li>{t('Library help open')}</li>
       <li>{t('Library help refresh')}</li>
     </ul>

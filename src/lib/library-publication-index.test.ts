@@ -27,6 +27,10 @@ import {
   libraryPublicationRootsForContentEvents,
   rankPublicationContentEventsForQuery,
   sortLibrarySearchPublications,
+  sortLibrarySearchPublicationsByLabelRank,
+  filterAndSortLibraryRecommendedPublications,
+  getPublicationLabelRankTier,
+  LIBRARY_GC_PUBLISHING_PUBKEY,
   shouldSearchPublicationContentOnRelays,
   searchLibraryPublicationIndex,
   searchLibraryPublications
@@ -856,6 +860,101 @@ describe('library-publication-index', () => {
       }
     ])
     expect(entries[0].event.id).toBe(exactRoot.id)
+  })
+
+  it('sortLibrarySearchPublicationsByLabelRank prioritizes viewer, follow, then GC Publishing labels', () => {
+    const viewerPk = 'a'.repeat(64)
+    const followPk = 'b'.repeat(64)
+    const gcPk = LIBRARY_GC_PUBLISHING_PUBKEY
+    const otherPk = 'c'.repeat(64)
+
+    const makeRoot = (id: string) => {
+      const root = indexEvent(id, [`30041:${PK}:ch-${id}`])
+      root.created_at = 100
+      return root
+    }
+
+    const gcRoot = makeRoot('gc-book')
+    const followRoot = makeRoot('follow-book')
+    const viewerRoot = makeRoot('viewer-book')
+    const otherRoot = makeRoot('other-book')
+    const indexEvents = [gcRoot, followRoot, viewerRoot, otherRoot]
+    const indexByAddress = buildIndexByAddress(indexEvents)
+
+    const labelFor = (pubkey: string, root: Event): Event => ({
+      id: `${pubkey.slice(0, 8)}${root.id.slice(8)}`,
+      kind: ExtendedKind.LABEL,
+      pubkey,
+      created_at: 50,
+      content: '',
+      tags: [['L', 'license'], ['l', 'MIT', 'license'], ['e', root.id]],
+      sig: 'e'.repeat(128)
+    })
+
+    const engagement = buildEngagementMapsFromEvents(
+      [
+        labelFor(otherPk, otherRoot),
+        labelFor(gcPk, gcRoot),
+        labelFor(followPk, followRoot),
+        labelFor(viewerPk, viewerRoot)
+      ],
+      [],
+      []
+    )
+
+    const ctx = { viewerPubkey: viewerPk, followPubkeys: new Set([followPk]) }
+    const entries = [
+      buildLibraryPublicationEntry(otherRoot, indexByAddress, engagement),
+      buildLibraryPublicationEntry(gcRoot, indexByAddress, engagement),
+      buildLibraryPublicationEntry(followRoot, indexByAddress, engagement),
+      buildLibraryPublicationEntry(viewerRoot, indexByAddress, engagement)
+    ]
+
+    expect(getPublicationLabelRankTier(entries[0], indexByAddress, engagement, ctx)).toBe(3)
+    expect(getPublicationLabelRankTier(entries[1], indexByAddress, engagement, ctx)).toBe(2)
+    expect(getPublicationLabelRankTier(entries[2], indexByAddress, engagement, ctx)).toBe(1)
+    expect(getPublicationLabelRankTier(entries[3], indexByAddress, engagement, ctx)).toBe(0)
+
+    const ranked = sortLibrarySearchPublicationsByLabelRank(entries, indexEvents, engagement, ctx)
+    expect(ranked.map((e) => e.event.id)).toEqual([
+      viewerRoot.id,
+      followRoot.id,
+      gcRoot.id,
+      otherRoot.id
+    ])
+  })
+
+  it('filterAndSortLibraryRecommendedPublications keeps follow and GC labels only', () => {
+    const followPk = 'b'.repeat(64)
+    const gcPk = LIBRARY_GC_PUBLISHING_PUBKEY
+    const followRoot = indexEvent('follow-book', [`30041:${PK}:follow`])
+    const gcRoot = indexEvent('gc-book', [`30041:${PK}:gc`])
+    const plainRoot = indexEvent('plain-book', [`30041:${PK}:plain`])
+    const indexEvents = [followRoot, gcRoot, plainRoot]
+    const indexByAddress = buildIndexByAddress(indexEvents)
+
+    const labelFor = (pubkey: string, root: Event): Event => ({
+      id: `${pubkey.slice(0, 8)}${root.id.slice(8)}`,
+      kind: ExtendedKind.LABEL,
+      pubkey,
+      created_at: 50,
+      content: '',
+      tags: [['L', 'license'], ['l', 'MIT', 'license'], ['e', root.id]],
+      sig: 'e'.repeat(128)
+    })
+
+    const engagement = buildEngagementMapsFromEvents(
+      [labelFor(followPk, followRoot), labelFor(gcPk, gcRoot)],
+      [],
+      []
+    )
+    const entries = indexEvents.map((root) => buildLibraryPublicationEntry(root, indexByAddress, engagement))
+    const filtered = filterAndSortLibraryRecommendedPublications(entries, indexEvents, engagement, {
+      followPubkeys: new Set([followPk])
+    })
+    expect(filtered.map((e) => e.event.id)).toEqual([followRoot.id, gcRoot.id])
+    expect(filtered[0].labelCuratorPubkeys).toEqual([followPk])
+    expect(filtered[1].labelCuratorPubkeys).toEqual([gcPk])
   })
 
   it('shouldSearchPublicationContentOnRelays is true for quote-like all-fields queries only', () => {

@@ -68,6 +68,10 @@ const MAX_TARGET_ADDRESSES = 120
 const MAX_TARGET_EVENT_IDS = 160
 const MAX_ENGAGEMENT_HTTP_CHUNKS = 6
 const ENGAGEMENT_FETCH_TIMEOUT_MS = 25_000
+/** GC Publishing — curated library labels used for recommended ranking. */
+export const LIBRARY_GC_PUBLISHING_PUBKEY =
+  '3e1ad0f3a5d3c12245db7788546c43ade3d97c6e046c594f6017cd6cd4164690'
+const LABEL_AUTHOR_CHUNK = 48
 export const LIBRARY_PAGE_SIZE = 120
 const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 /** Cap on kind-30040 indexes pulled from the reading cache to resolve content hits to their root. */
@@ -126,11 +130,26 @@ const ENGAGEMENT_QUERY_OPTS = {
   firstRelayResultGraceMs: false as const
 }
 
+export type LibraryPublicationFilterMode = 'none' | 'mine' | 'recommended'
+
+export type LibraryLabelRankContext = {
+  viewerPubkey?: string | null
+  followPubkeys: Set<string>
+  gcPublishingPubkey?: string
+}
+
+/** 0 = viewer label, 1 = follow label, 2 = GC Publishing label, 3 = no priority label. */
+export type LibraryLabelRankTier = 0 | 1 | 2 | 3
+
 export type PublicationEngagementMaps = {
   labelAddresses: Set<string>
   labelEventIds: Set<string>
   labelValuesByAddress: Map<string, Set<string>>
   labelValuesByEventId: Map<string, Set<string>>
+  /** Hex pubkeys of kind-1985 label authors, keyed by `#a` target address. */
+  labelPubkeysByAddress: Map<string, Set<string>>
+  /** Hex pubkeys of kind-1985 label authors, keyed by `#e` target event id (lowercase). */
+  labelPubkeysByEventId: Map<string, Set<string>>
   booklistAddresses: Set<string>
   booklistEventIds: Set<string>
   myBooklistAddresses: Set<string>
@@ -171,6 +190,8 @@ export type LibraryPublicationEntry = {
   hasBookmark: boolean
   hasPin: boolean
   engagementCount: number
+  /** Hex pubkeys of follows or GC Publishing that labeled this publication (follows first). */
+  labelCuratorPubkeys?: string[]
   /** Set when this row matched via kind-30041 section body text. */
   contentSearchMatch?: LibraryPublicationContentSearchMatch
 }
@@ -278,6 +299,8 @@ function librarySearchFingerprint(context: LibrarySearchContext): string {
   const engagementSize = engagement
     ? engagement.labelAddresses.size +
       engagement.labelEventIds.size +
+      engagement.labelPubkeysByAddress.size +
+      engagement.labelPubkeysByEventId.size +
       engagement.commentAddresses.size +
       engagement.commentEventIds.size +
       engagement.highlightAddresses.size +
@@ -819,6 +842,8 @@ export function buildEngagementMapsFromEvents(
   const labelEventIds = new Set<string>()
   const labelValuesByAddress = new Map<string, Set<string>>()
   const labelValuesByEventId = new Map<string, Set<string>>()
+  const labelPubkeysByAddress = new Map<string, Set<string>>()
+  const labelPubkeysByEventId = new Map<string, Set<string>>()
   const booklistAddresses = new Set<string>()
   const booklistEventIds = new Set<string>()
   const myBooklistAddresses = new Set<string>()
@@ -850,14 +875,25 @@ export function buildEngagementMapsFromEvents(
     for (const value of values) set.add(value)
   }
 
+  const addLabelPubkey = (map: Map<string, Set<string>>, key: string, pubkey: string) => {
+    let set = map.get(key)
+    if (!set) {
+      set = new Set<string>()
+      map.set(key, set)
+    }
+    set.add(pubkey)
+  }
+
   for (const ev of labels) {
     const labelValues = extractNip32LabelValues(ev.tags)
     const isBooklist = labelValues.some(isBooklistNip32Label)
     const isViewerLabel = !!viewerPk && ev.pubkey.toLowerCase() === viewerPk
+    const labelPubkey = ev.pubkey.toLowerCase()
     for (const tag of ev.tags) {
       if (tag[0] === 'a' && tag[1] && addressMatches(tag[1])) {
         labelAddresses.add(tag[1])
         addLabelValues(labelValuesByAddress, tag[1], labelValues)
+        addLabelPubkey(labelPubkeysByAddress, tag[1], labelPubkey)
         if (isBooklist) {
           booklistAddresses.add(tag[1])
           if (isViewerLabel) myBooklistAddresses.add(tag[1])
@@ -867,6 +903,7 @@ export function buildEngagementMapsFromEvents(
         const eventId = tag[1].toLowerCase()
         labelEventIds.add(eventId)
         addLabelValues(labelValuesByEventId, eventId, labelValues)
+        addLabelPubkey(labelPubkeysByEventId, eventId, labelPubkey)
         if (isBooklist) {
           booklistEventIds.add(eventId)
           if (isViewerLabel) myBooklistEventIds.add(eventId)
@@ -930,6 +967,8 @@ export function buildEngagementMapsFromEvents(
     labelEventIds,
     labelValuesByAddress,
     labelValuesByEventId,
+    labelPubkeysByAddress,
+    labelPubkeysByEventId,
     booklistAddresses,
     booklistEventIds,
     myBooklistAddresses,
@@ -1010,7 +1049,7 @@ export async function fetchPublicationEngagementMaps(
   targetEventIds: Set<string>,
   options?: { viewerPubkey?: string | null }
 ): Promise<PublicationEngagementMaps> {
-  if (relayUrls.length === 0 || targetAddresses.size === 0) {
+  if (relayUrls.length === 0 || (targetAddresses.size === 0 && targetEventIds.size === 0)) {
     return emptyPublicationEngagementMaps()
   }
 
@@ -1450,6 +1489,288 @@ export function sortLibrarySearchPublications(entries: LibraryPublicationEntry[]
   })
 }
 
+function defaultLibraryLabelRankContext(
+  ctx?: Partial<LibraryLabelRankContext>
+): LibraryLabelRankContext {
+  return {
+    viewerPubkey: ctx?.viewerPubkey ?? null,
+    followPubkeys: ctx?.followPubkeys ?? new Set(),
+    gcPublishingPubkey: ctx?.gcPublishingPubkey ?? LIBRARY_GC_PUBLISHING_PUBKEY
+  }
+}
+
+function collectLabelPubkeysForTarget(
+  address: string,
+  eventId: string | undefined,
+  engagement: PublicationEngagementMaps,
+  out: Set<string>
+): void {
+  const byAddress = engagement.labelPubkeysByAddress.get(address)
+  if (byAddress) {
+    for (const pk of byAddress) out.add(pk)
+  }
+  if (eventId) {
+    const byEventId = engagement.labelPubkeysByEventId.get(eventId.toLowerCase())
+    if (byEventId) {
+      for (const pk of byEventId) out.add(pk)
+    }
+  }
+}
+
+/** Label pubkeys attached to a publication root (reachable addresses + root id). */
+export function collectPublicationLabelPubkeys(
+  entry: LibraryPublicationEntry,
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps
+): Set<string> {
+  const pubkeys = new Set<string>()
+  const root = entry.event
+  const rootAddr = eventTagAddress(root)
+  const reachable = collectReachableAddressesCached(root, indexByAddress)
+  if (rootAddr) reachable.add(rootAddr)
+  for (const addr of reachable) {
+    const indexed = indexByAddress.get(addr)
+    collectLabelPubkeysForTarget(addr, indexed?.id, engagement, pubkeys)
+  }
+  collectLabelPubkeysForTarget(rootAddr ?? '', root.id, engagement, pubkeys)
+  return pubkeys
+}
+
+export function getPublicationLabelRankTier(
+  entry: LibraryPublicationEntry,
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps,
+  ctx?: Partial<LibraryLabelRankContext>
+): LibraryLabelRankTier {
+  const { viewerPubkey, followPubkeys, gcPublishingPubkey } = defaultLibraryLabelRankContext(ctx)
+  const pubkeys = collectPublicationLabelPubkeys(entry, indexByAddress, engagement)
+  const viewer = viewerPubkey?.trim().toLowerCase()
+  const gc = (gcPublishingPubkey ?? LIBRARY_GC_PUBLISHING_PUBKEY).trim().toLowerCase()
+  if (viewer && pubkeys.has(viewer)) return 0
+  for (const pk of pubkeys) {
+    if (followPubkeys.has(pk)) return 1
+  }
+  if (pubkeys.has(gc)) return 2
+  return 3
+}
+
+/** Follow or GC Publishing label authors for a publication (follows first, then GC). */
+export function collectPublicationLabelCuratorPubkeys(
+  entry: LibraryPublicationEntry,
+  indexByAddress: Map<string, Event>,
+  engagement: PublicationEngagementMaps,
+  ctx?: Partial<LibraryLabelRankContext>
+): string[] {
+  const { followPubkeys, gcPublishingPubkey } = defaultLibraryLabelRankContext(ctx)
+  const gc = (gcPublishingPubkey ?? LIBRARY_GC_PUBLISHING_PUBKEY).toLowerCase()
+  const all = collectPublicationLabelPubkeys(entry, indexByAddress, engagement)
+  const follows: string[] = []
+  let gcLabeler: string | null = null
+  for (const pk of all) {
+    if (followPubkeys.has(pk)) {
+      if (!follows.includes(pk)) follows.push(pk)
+    } else if (pk === gc) {
+      gcLabeler = pk
+    }
+  }
+  return gcLabeler ? [...follows, gcLabeler] : follows
+}
+
+export function enrichLibraryPublicationEntriesWithLabelCurators(
+  entries: LibraryPublicationEntry[],
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  ctx?: Partial<LibraryLabelRankContext>
+): LibraryPublicationEntry[] {
+  if (entries.length === 0) return entries
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  return entries.map((entry) => {
+    const curators = collectPublicationLabelCuratorPubkeys(entry, indexByAddress, engagement, ctx)
+    if (curators.length === 0) return entry
+    return { ...entry, labelCuratorPubkeys: curators }
+  })
+}
+
+/** Search ranking: viewer labels, then follows, then GC Publishing, then relevance. */
+export function sortLibrarySearchPublicationsByLabelRank(
+  entries: LibraryPublicationEntry[],
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  ctx?: Partial<LibraryLabelRankContext>
+): LibraryPublicationEntry[] {
+  if (entries.length <= 1) {
+    return enrichLibraryPublicationEntriesWithLabelCurators(entries, indexEvents, engagement, ctx)
+  }
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const rankCtx = defaultLibraryLabelRankContext(ctx)
+  const base = sortLibrarySearchPublications(entries)
+  const sorted = base.sort((a, b) => {
+    const tierDiff =
+      getPublicationLabelRankTier(a, indexByAddress, engagement, rankCtx) -
+      getPublicationLabelRankTier(b, indexByAddress, engagement, rankCtx)
+    return tierDiff
+  })
+  return enrichLibraryPublicationEntriesWithLabelCurators(sorted, indexEvents, engagement, rankCtx)
+}
+
+/** Recommended filter: publications labeled by a follow or GC Publishing (follow labels first). */
+export function filterAndSortLibraryRecommendedPublications(
+  entries: LibraryPublicationEntry[],
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  ctx?: Partial<LibraryLabelRankContext>
+): LibraryPublicationEntry[] {
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const rankCtx = defaultLibraryLabelRankContext(ctx)
+  const recommended = entries.filter((entry) => {
+    const tier = getPublicationLabelRankTier(entry, indexByAddress, engagement, rankCtx)
+    return tier === 1 || tier === 2
+  })
+  return sortLibrarySearchPublicationsByLabelRank(recommended, indexEvents, engagement, rankCtx)
+}
+
+export function collectEngagementTargetsFromEntries(
+  entries: LibraryPublicationEntry[],
+  indexEvents: Event[]
+): { addresses: Set<string>; eventIds: Set<string> } {
+  const addresses = new Set<string>()
+  const eventIds = new Set<string>()
+  if (entries.length === 0) return { addresses, eventIds }
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  for (const entry of entries) {
+    const root = entry.event
+    eventIds.add(root.id.toLowerCase())
+    const rootAddr = eventTagAddress(root)
+    if (rootAddr) addresses.add(rootAddr)
+    for (const addr of collectReachableAddressesCached(root, indexByAddress)) {
+      addresses.add(addr)
+      const indexed = indexByAddress.get(addr)
+      if (indexed) eventIds.add(indexed.id.toLowerCase())
+    }
+  }
+  return { addresses, eventIds }
+}
+
+async function fetchLabelEventsByAuthors(relayUrls: string[], authors: string[]): Promise<Event[]> {
+  const uniqueAuthors = [...new Set(authors.map((pk) => pk.trim().toLowerCase()).filter(Boolean))]
+  if (uniqueAuthors.length === 0 || relayUrls.length === 0) return []
+
+  const { wsRelays, httpRelays } = splitWsAndHttpRelays(relayUrls)
+  const authorChunks = chunkArray(uniqueAuthors, LABEL_AUTHOR_CHUNK)
+  const wsFilters = authorChunks.map(
+    (chunk): Filter => ({ kinds: [ExtendedKind.LABEL], authors: chunk, limit: chunk.length * 24 })
+  )
+
+  const wsPromise =
+    wsRelays.length > 0 && wsFilters.length > 0
+      ? queryService.fetchEvents(wsRelays, wsFilters, ENGAGEMENT_QUERY_OPTS)
+      : Promise.resolve([] as Event[])
+
+  const httpPromises = httpRelays.flatMap((relay) =>
+    authorChunks.map(async (chunk) => {
+      if (chunk.length === 0) return [] as Event[]
+      return queryIndexRelay(relay, {
+        kinds: [ExtendedKind.LABEL],
+        authors: chunk,
+        limit: Math.min(chunk.length * 24, INDEX_HTTP_PAGE_LIMIT)
+      })
+    })
+  )
+
+  const [wsLabels, ...httpBatches] = await Promise.all([wsPromise, ...httpPromises])
+  return dedupeEventsById([...wsLabels, ...httpBatches.flat()])
+}
+
+/** Label engagement for search-result targets (all label authors). */
+export async function fetchPublicationLabelEngagementForEntries(
+  relayUrls: string[],
+  entries: LibraryPublicationEntry[],
+  indexEvents: Event[],
+  options?: { viewerPubkey?: string | null }
+): Promise<PublicationEngagementMaps> {
+  const { addresses, eventIds } = collectEngagementTargetsFromEntries(entries, indexEvents)
+  if (relayUrls.length === 0 || (addresses.size === 0 && eventIds.size === 0)) {
+    return emptyPublicationEngagementMaps()
+  }
+  return fetchPublicationEngagementMaps(relayUrls, addresses, eventIds, options)
+}
+
+/** Labels from follows + GC Publishing, mapped to publication roots in the local index. */
+export async function fetchRecommendedPublicationLabelEngagement(
+  relayUrls: string[],
+  options: {
+    followPubkeys: readonly string[]
+    viewerPubkey?: string | null
+    gcPublishingPubkey?: string
+  }
+): Promise<PublicationEngagementMaps> {
+  const gc = (options.gcPublishingPubkey ?? LIBRARY_GC_PUBLISHING_PUBKEY).toLowerCase()
+  const authors = [...new Set([...options.followPubkeys.map((pk) => pk.toLowerCase()), gc])]
+  if (authors.length === 0 || relayUrls.length === 0) return emptyPublicationEngagementMaps()
+
+  const labels = await withEngagementTimeout(
+    fetchLabelEventsByAuthors(relayUrls, authors),
+    [] as Event[],
+    'recommended-labels'
+  )
+  return buildEngagementMapsFromEvents(labels, [], [], undefined, undefined, options.viewerPubkey ?? null)
+}
+
+const RECOMMENDED_FILTER_BATCH_SIZE = 40
+
+/** Build recommended library rows from label engagement (follow labels before GC Publishing). */
+export function libraryPublicationRecommendedEntriesFromIndex(
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  ctx?: Partial<LibraryLabelRankContext>
+): LibraryPublicationEntry[] {
+  if (indexEvents.length === 0) return []
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const rankCtx = defaultLibraryLabelRankContext(ctx)
+  const out: LibraryPublicationEntry[] = []
+  for (const root of getTopLevelIndexEvents(indexEvents)) {
+    const entry = buildLibraryPublicationEntry(root, indexByAddress, engagement)
+    const tier = getPublicationLabelRankTier(entry, indexByAddress, engagement, rankCtx)
+    if (tier === 1 || tier === 2) out.push(entry)
+  }
+  return sortLibrarySearchPublicationsByLabelRank(out, indexEvents, engagement, rankCtx)
+}
+
+/** Yields between root batches so the UI stays responsive on large indexes. */
+export function libraryPublicationRecommendedEntriesFromIndexAsync(
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  ctx?: Partial<LibraryLabelRankContext>,
+  signal?: { cancelled: boolean }
+): Promise<LibraryPublicationEntry[]> {
+  if (indexEvents.length === 0) return Promise.resolve([])
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const rankCtx = defaultLibraryLabelRankContext(ctx)
+  const roots = getTopLevelIndexEvents(indexEvents)
+  const out: LibraryPublicationEntry[] = []
+  let i = 0
+
+  return new Promise((resolve) => {
+    const step = () => {
+      if (signal?.cancelled) return
+      const end = Math.min(i + RECOMMENDED_FILTER_BATCH_SIZE, roots.length)
+      for (; i < end; i++) {
+        const root = roots[i]
+        const entry = buildLibraryPublicationEntry(root, indexByAddress, engagement)
+        const tier = getPublicationLabelRankTier(entry, indexByAddress, engagement, rankCtx)
+        if (tier === 1 || tier === 2) out.push(entry)
+      }
+      if (signal?.cancelled) return
+      if (i < roots.length) {
+        requestAnimationFrame(step)
+      } else {
+        resolve(sortLibrarySearchPublicationsByLabelRank(out, indexEvents, engagement, rankCtx))
+      }
+    }
+    requestAnimationFrame(step)
+  })
+}
+
 const EMPTY_ENGAGEMENT = emptyPublicationEngagementMaps()
 
 function emptyPublicationEngagementMaps(): PublicationEngagementMaps {
@@ -1458,6 +1779,8 @@ function emptyPublicationEngagementMaps(): PublicationEngagementMaps {
     labelEventIds: new Set(),
     labelValuesByAddress: new Map(),
     labelValuesByEventId: new Map(),
+    labelPubkeysByAddress: new Map(),
+    labelPubkeysByEventId: new Map(),
     booklistAddresses: new Set(),
     booklistEventIds: new Set(),
     myBooklistAddresses: new Set(),

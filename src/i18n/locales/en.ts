@@ -1197,8 +1197,8 @@ export default {
       "Books are Nostr publications — either mass-imported from sources like Project Gutenberg or published directly on Nostr — gathered from the app's document/library relays and your own relays. A cached copy loads first, then more stream in from the relays.",
     "Library help search":
       "Search covers the books already loaded and queries the document relays. Match by title, author, source, tag, or section; use Advanced search to target a specific title, author, d-tag, or a full-text passage.",
-    "Library help mine":
-      '"My publications" shows only books you wrote or saved — authored, bookmarked, pinned, or on one of your booklists.',
+    "Library help filter":
+      '"My publications" shows books you wrote or saved. "Recommended" shows books labeled by people you follow, then by GC Publishing. The default shows all publications.',
     "Library help open":
       "Click a book to open and read it. Its options menu (⋯) downloads it as AsciiDoc, EPUB, or PDF; the green button adds it to a booklist.",
     "Library help refresh": "Refresh re-fetches the latest publications from the relays.",
@@ -1224,6 +1224,15 @@ export default {
     "Library search commit hint": "Press the Search button or Enter to search, or choose a search type below",
     "Library relay search timed out": "Relay search timed out. Showing matches from your local library cache when available.",
     "Library show only my publications": "My publications",
+    "Library publication filter": "Publication filter",
+    "Library filter mine": "My publications",
+    "Library filter none": "All",
+    "Library filter recommended": "Recommended",
+    "Library recommended filter loading": "Loading recommended publications…",
+    "Library search label ranking": "Ranking search results by labels…",
+    "Library label curator hint": "Labeled by someone you follow or GC Publishing",
+    "Library label curator follow": "Labeled by someone you follow",
+    "Library label curator gc": "Labeled by GC Publishing",
     "Library empty": "No publications found on your relays yet.",
     "Library empty filtered": "No publications match your filters.",
     "Library loading": "Loading publications from document relays…",

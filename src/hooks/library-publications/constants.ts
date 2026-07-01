@@ -6,6 +6,8 @@ export const EMPTY_ENGAGEMENT: PublicationEngagementMaps = {
   labelEventIds: new Set(),
   labelValuesByAddress: new Map(),
   labelValuesByEventId: new Map(),
+  labelPubkeysByAddress: new Map(),
+  labelPubkeysByEventId: new Map(),
   booklistAddresses: new Set(),
   booklistEventIds: new Set(),
   myBooklistAddresses: new Set(),
