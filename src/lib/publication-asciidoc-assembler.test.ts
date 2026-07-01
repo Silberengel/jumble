@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
-import { assemblePublicationAsciidoc } from '@/lib/publication-asciidoc-assembler'
+import { assemblePublicationAsciidoc, orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
+import { collectPublicationIndexRelayHints } from '@/lib/publication-section-fetch'
 import type { Event } from 'nostr-tools'
 
 const PK = 'a'.repeat(64)
@@ -73,5 +74,50 @@ describe('assemblePublicationAsciidoc', () => {
     expect(assembled.content).toContain('A short summary.')
     expect(assembled.content).toContain('== Introduction')
     expect(assembled.content).toContain('Hello world.')
+  })
+})
+
+describe('orderedPublicationRefsFromIndex', () => {
+  it('includes lowercase e-tag refs and ignores uppercase E source-event tag', () => {
+    const event: Event = {
+      id: '1'.repeat(64),
+      kind: ExtendedKind.PUBLICATION,
+      pubkey: PK,
+      created_at: 100,
+      content: '',
+      tags: [
+        ['d', 'book'],
+        ['title', 'Book'],
+        ['e', 'aa'.repeat(32)],
+        ['e', 'bb'.repeat(32)],
+        ['E', 'cc'.repeat(32), 'wss://relay.example', PK]
+      ],
+      sig: 'c'.repeat(128)
+    }
+    const refs = orderedPublicationRefsFromIndex(event)
+    expect(refs).toHaveLength(2)
+    expect(refs.every((ref) => ref.type === 'e')).toBe(true)
+    expect(refs.map((ref) => ref.eventId)).toEqual(['aa'.repeat(32), 'bb'.repeat(32)])
+  })
+
+  it('collectPublicationIndexRelayHints uses the source-event E tag relay', () => {
+    const event: Event = {
+      id: '1'.repeat(64),
+      kind: ExtendedKind.PUBLICATION,
+      pubkey: PK,
+      created_at: 100,
+      content: '',
+      tags: [
+        ['d', 'book'],
+        ['title', 'Book'],
+        ['e', 'aa'.repeat(32)],
+        ['E', 'cc'.repeat(32), 'wss://thecitadel.nostr1.com', PK]
+      ],
+      sig: 'c'.repeat(128)
+    }
+    const refs = orderedPublicationRefsFromIndex(event)
+    const hints = collectPublicationIndexRelayHints(event, refs)
+    expect(hints).toHaveLength(1)
+    expect(hints[0]).toContain('thecitadel.nostr1.com')
   })
 })

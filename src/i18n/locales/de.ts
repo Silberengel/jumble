@@ -1259,6 +1259,7 @@ export default {
     "Removed from my booklist": "Von Ihrer Booklist entfernt",
     "Publication version": "v {{version}}",
     "Publication released": "Veröffentlicht {{date}}",
+    "Publication originally published on": "Ursprünglich veröffentlicht auf",
     "Publication table of contents": "Inhalt",
     "Publication section missing": "[Dieser Abschnitt fehlt.]",
     "Asciidoc parse warning title": "AsciiDoc konnte nicht vollständig analysiert werden",

@@ -177,7 +177,8 @@ export function orderedPublicationRefsFromIndex(event: Event): PublicationSectio
   const refs: PublicationSectionRef[] = []
   let tagOrder = 0
   for (const tag of event.tags) {
-    const name = (tag[0] || '').trim().toLowerCase()
+    const rawName = (tag[0] || '').trim()
+    const name = rawName.toLowerCase()
     if (name === 'a' && tag[1]) {
       const parsed = parsePublicationATagCoordinate(tag[1])
       if (!parsed) continue
@@ -190,7 +191,8 @@ export function orderedPublicationRefsFromIndex(event: Event): PublicationSectio
         relay: tag[2],
         tagOrder: tagOrder++
       })
-    } else if (name === 'e' && tag[1]) {
+    } else if (rawName === 'e' && tag[1]) {
+      // Lowercase `e` = section ref. Uppercase `E` = source event (not a section).
       refs.push({ type: 'e', eventId: tag[1], relay: tag[2], tagOrder: tagOrder++ })
     }
   }

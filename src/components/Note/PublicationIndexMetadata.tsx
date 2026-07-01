@@ -15,6 +15,7 @@ import PublicationCoverFallback from './PublicationCoverFallback'
 import PublicationCoverImage from './PublicationCoverImage'
 import PublicationBooklistButton from './PublicationBooklistButton'
 import PublicationIndexBody from './PublicationIndexBody'
+import PublicationSourceEventLink from './PublicationSourceEventLink'
 
 function formatAuthorLine(authors: PublicationAuthor[]): string {
   if (authors.length === 0) return ''
@@ -166,6 +167,11 @@ export default function PublicationIndexMetadata({
           {t('Publication released', { date: metadata.releaseDate })}
         </div>
       ) : null}
+
+      <PublicationSourceEventLink
+        event={event}
+        className={isFull ? 'text-sm' : 'text-xs'}
+      />
 
       {metadata.summary ? (
         <div

@@ -66,6 +66,27 @@ function collectRelayHints(refs: PublicationSectionRef[]): string[] {
   return [...new Set(out)]
 }
 
+function normalizePublicationRelayHint(relay: string | undefined): string | undefined {
+  const trimmed = relay?.trim()
+  if (!trimmed) return undefined
+  if (!trimmed.startsWith('wss://') && !trimmed.startsWith('ws://')) return undefined
+  return normalizeUrl(trimmed) || trimmed
+}
+
+/** Relay hints from section refs and the index source-event `E` tag (legacy publications). */
+export function collectPublicationIndexRelayHints(
+  indexEvent: Event,
+  refs: PublicationSectionRef[]
+): string[] {
+  const out = collectRelayHints(refs)
+  for (const tag of indexEvent.tags) {
+    if ((tag[0] || '').trim() !== 'E' || !tag[1]) continue
+    const relay = normalizePublicationRelayHint(tag[2])
+    if (relay) out.push(relay)
+  }
+  return [...new Set(out)]
+}
+
 const PUBLICATION_SECTION_QUERY_OPTS = {
   globalTimeout: 22_000,
   eoseTimeout: 5_000,
@@ -113,7 +134,7 @@ export async function buildPublicationSectionRelayUrls(
   maxRelays = 22,
   includeSearchableRelays = false
 ): Promise<string[]> {
-  const hints = collectRelayHints(refs)
+  const hints = collectPublicationIndexRelayHints(indexEvent, refs)
   const documentRelays = DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter((u) => !!u)
   const fastReadRelays = FAST_READ_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter((u) => !!u)
   const seenOnRelays = queryService
@@ -187,7 +208,7 @@ export async function batchFetchPublicationSectionEvents(
   )
 
   for (const ref of unresolvedForNetwork) {
-    // Only explicit `e` refs are resolved by id. For `a` refs, tag[3] is historization metadata only.
+    // Only explicit lowercase `e` refs are resolved by id. For `a` refs, tag[3] is optional label metadata.
     if (ref.type !== 'e' || !ref.eventId) continue
     const key = publicationRefKey(ref)
     const hex = resolvePublicationEventIdToHex(ref.eventId)

@@ -10,6 +10,7 @@ import {
   resolveGutenbergCoverImageUrl
 } from './gutenberg-cover'
 import { getLatestEvent, getReplaceableEventIdentifier } from './event'
+import { orderedPublicationRefsFromIndex } from './publication-asciidoc-assembler'
 import { getAmountFromInvoice, getLightningAddressFromProfile } from './lightning'
 import { formatPubkey, pubkeyToNpub } from './pubkey'
 import { generateBech32IdFromATag, generateBech32IdFromETag, getImetaInfoFromImetaTag, tagNameEquals } from './tag'
@@ -711,12 +712,12 @@ export type PublicationIndexMetadata = {
 export function getPublicationIndexMetadataFromEvent(event: Event): PublicationIndexMetadata {
   const base = getLongFormArticleMetadataFromEvent(event)
   const authors: PublicationAuthor[] = []
-  const sections: PublicationSectionRef[] = []
   let source: string | undefined
   let type: string | undefined
   let version: string | undefined
   let releaseDate: string | undefined
   let language: string | undefined
+  const aTagLabels = new Map<string, string>()
 
   for (const tag of event.tags) {
     const name = (tag[0] || '').trim().toLowerCase()
@@ -738,18 +739,26 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
       language = value
     } else if (name === 'a') {
       const label = tag[3]?.trim()
-      sections.push({
-        coordinate: value,
-        label:
-          label &&
-          !label.startsWith('wss://') &&
-          !label.startsWith('ws://') &&
-          !/^[0-9a-f]{64}$/i.test(label)
-            ? label
-            : undefined
-      })
+      if (
+        label &&
+        !label.startsWith('wss://') &&
+        !label.startsWith('ws://') &&
+        !/^[0-9a-f]{64}$/i.test(label)
+      ) {
+        aTagLabels.set(value, label)
+      }
     }
   }
+
+  const sections: PublicationSectionRef[] = orderedPublicationRefsFromIndex(event).map((ref) => {
+    if (ref.type === 'a' && ref.coordinate) {
+      return { coordinate: ref.coordinate, label: aTagLabels.get(ref.coordinate) }
+    }
+    if (ref.type === 'e' && ref.eventId) {
+      return { coordinate: ref.eventId }
+    }
+    return { coordinate: ref.coordinate ?? ref.eventId ?? '' }
+  }).filter((section) => section.coordinate)
 
   const dTag = event.tags.find((tag) => tag[0] === 'd')?.[1]?.trim()
   const gutenbergIdFromDTag = dTag ? parseGutenbergEbookIdFromDTag(dTag) : null

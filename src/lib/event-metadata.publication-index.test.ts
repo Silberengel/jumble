@@ -107,4 +107,25 @@ describe('getPublicationIndexMetadataFromEvent', () => {
     const meta = getPublicationIndexMetadataFromEvent(event)
     expect(meta.image).toBe('https://www.gutenberg.org/cache/epub/16702/pg16702.cover.medium.jpg')
   })
+
+  it('counts legacy lowercase e-tag section refs', () => {
+    const event = indexEvent([
+      ['d', 'rauhnaechte'],
+      ['title', 'Rauhnächte'],
+      ['e', 'be8344592b0ea09fd21dafd2ee9e596adcb70f76a61360da4f6b56c808d6a775'],
+      ['e', 'de693a7a093f87dc8dcacd78d50bb8bdc9c96430822ea53a4705237668f3ede4'],
+      [
+        'E',
+        '85848121d11cb4134aa9fc41e2a0a5bb27d0f2852ef6d4121c3765cd55e6dfb9',
+        'wss://thecitadel.nostr1.com',
+        PK
+      ] // source event — not a section
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.sectionCount).toBe(2)
+    expect(meta.sections.map((s) => s.coordinate)).toEqual([
+      'be8344592b0ea09fd21dafd2ee9e596adcb70f76a61360da4f6b56c808d6a775',
+      'de693a7a093f87dc8dcacd78d50bb8bdc9c96430822ea53a4705237668f3ede4'
+    ])
+  })
 })
