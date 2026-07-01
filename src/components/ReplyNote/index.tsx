@@ -32,19 +32,16 @@ import { useTranslation } from 'react-i18next'
 import PostEditor from '../PostEditor/LazyPostEditor'
 import { openComposerAfterOverlay } from '../PostEditor/open-composer-after-overlay'
 import Collapsible from '../Collapsible'
-import MarkdownArticle from '../Note/LazyMarkdownArticle'
+import { KindEventBody } from '@/lib/kind-registry/render'
+import { deriveSurface, type RenderCtx } from '@/lib/kind-registry/types'
 import ReactionEmojiDisplay from '../Note/ReactionEmojiDisplay'
 import ShortNoteEditIndicator from '../Note/ShortNoteEditIndicator'
-import ShortNoteEditedContent from '../Note/ShortNoteEditedContent'
 import NoteAuthorMetaLine from '../NoteAuthorMetaLine'
 import NoteOptions from '../NoteOptions'
 import NoteStats from '../NoteStats'
 import ParentNotePreview from '../ParentNotePreview'
 import WebPreview from '../WebPreview'
 import UserAvatar from '../UserAvatar'
-import Superchat from '../Note/Superchat'
-import Zap from '../Note/Zap'
-import MoneroTip from '../Note/MoneroTip'
 
 export default function ReplyNote({
   event,
@@ -126,6 +123,28 @@ export default function ReplyNote({
     event.kind === kinds.ShortTextNote &&
     !!shortNoteEditState?.latestAuthorEdit &&
     shortNoteEditState.latestAuthorEdit.content !== event.content
+
+  const bodyCtx: RenderCtx = useMemo(
+    () => ({
+      event,
+      displayEvent,
+      surface: deriveSurface({}),
+      showFull: false,
+      autoLoadMedia: true,
+      hideMetadata: true,
+      duplicateWebPreviewCleanedUrlHints,
+      isShortNoteEdited,
+      shortNoteEditOriginalContent: event.content,
+      shortNoteEditRevisedContent: shortNoteEditState?.latestAuthorEdit?.content
+    }),
+    [
+      event,
+      displayEvent,
+      duplicateWebPreviewCleanedUrlHints,
+      isShortNoteEdited,
+      shortNoteEditState?.latestAuthorEdit?.content
+    ]
+  )
 
   const [postEditorOpen, setPostEditorOpen] = useState(false)
   const [postEditorMounted, setPostEditorMounted] = useState(false)
@@ -255,31 +274,8 @@ export default function ReplyNote({
                   <span className="text-sm text-foreground/85">{t(notificationReactionSummaryKey(reactionDisplay))}</span>
                 )}
               </div>
-            ) : event.kind === kinds.Zap || event.kind === ExtendedKind.ZAP_RECEIPT ? (
-              <Zap className="mt-1.5" event={event} variant="thread" />
-            ) : event.kind === ExtendedKind.MONERO_TIP_DISCLOSURE ||
-              event.kind === ExtendedKind.MONERO_TIP_RECEIPT ? (
-              <MoneroTip className="mt-1.5" event={event} variant="thread" />
-            ) : event.kind === ExtendedKind.PAYMENT_NOTIFICATION ? (
-              <Superchat className="mt-1.5" event={event} variant="thread" />
-            ) : isNip18RepostKind(event.kind) ? null : isShortNoteEdited &&
-              shortNoteEditState?.latestAuthorEdit ? (
-              <ShortNoteEditedContent
-                original={event.content}
-                revised={shortNoteEditState.latestAuthorEdit.content}
-                displayEvent={displayEvent}
-                className="mt-2"
-                hideMetadata={true}
-                lazyMedia={false}
-              />
-            ) : (
-              <MarkdownArticle
-                className="mt-2"
-                event={displayEvent}
-                hideMetadata={true}
-                lazyMedia={false}
-                duplicateWebPreviewCleanedUrlHints={duplicateWebPreviewCleanedUrlHints}
-              />
+            ) : isNip18RepostKind(event.kind) ? null : (
+              <KindEventBody {...bodyCtx} className="mt-1.5" />
             )
           ) : (
             <Button

@@ -1,43 +1,12 @@
-import { ExtendedKind, SUPPORTED_KINDS } from '@/constants'
-import { kinds } from 'nostr-tools'
-
-/** Kinds the main `Note` component renders with a dedicated UI (not `UnknownNote`). */
-const RENDERABLE_NOTE_KINDS = new Set<number>([
-  ...SUPPORTED_KINDS,
-  kinds.Reaction,
-  ExtendedKind.EXTERNAL_REACTION,
-  ExtendedKind.POLL_RESPONSE,
-  kinds.CommunityDefinition,
-  kinds.LiveEvent,
-  /** NIP-53 meeting space (30312) and meeting (30313); rendered like kind 30311 in Note. */
-  30312,
-  30313,
-  ExtendedKind.GROUP_METADATA,
-  ExtendedKind.PUBLIC_MESSAGE,
-  ExtendedKind.ZAP_REQUEST,
-  ExtendedKind.ZAP_RECEIPT,
-  ExtendedKind.MONERO_TIP_DISCLOSURE,
-  ExtendedKind.MONERO_TIP_RECEIPT,
-  ExtendedKind.PAYMENT_NOTIFICATION,
-  ExtendedKind.PUBLICATION_CONTENT,
-  ExtendedKind.FOLLOW_PACK,
-  ExtendedKind.CITATION_INTERNAL,
-  ExtendedKind.CITATION_EXTERNAL,
-  ExtendedKind.CITATION_HARDCOPY,
-  ExtendedKind.CITATION_PROMPT,
-  ExtendedKind.WEB_BOOKMARK,
-  ExtendedKind.LEARNING_RESOURCE,
-  ExtendedKind.WIKI_MERGE_REQUEST,
-  ExtendedKind.WIKI_MERGE_ACCEPTANCE,
-  ExtendedKind.WIKI_REDIRECT
-])
+import '@/lib/kind-registry/bootstrap'
+import { renderableKinds } from '@/lib/kind-registry/registry'
 
 /**
  * Every kind the main `Note` component renders with a dedicated UI (not the unknown-event fallback).
- * Used by the notifications spell client filter so mention events use the same cards as elsewhere.
+ * Derived from the kind registry; used by notifications spell client filter.
  */
-export const RENDERABLE_NOTE_KINDS_SORTED = [...RENDERABLE_NOTE_KINDS].sort((a, b) => a - b)
+export const RENDERABLE_NOTE_KINDS_SORTED = renderableKinds()
 
 export function isRenderableNoteKind(kind: number): boolean {
-  return RENDERABLE_NOTE_KINDS.has(kind)
+  return RENDERABLE_NOTE_KINDS_SORTED.includes(kind)
 }
