@@ -48,6 +48,33 @@ export function collectPendingPublicationSectionLoads(
   return out
 }
 
+/** Count loaded/failed vs still-pending section refs (for loading progress UI). */
+export function countPublicationSectionLoadProgress(
+  rootIndex: Event,
+  fetched: ReadonlyMap<string, Event>,
+  failed: ReadonlySet<string>
+): { resolved: number; pending: number } {
+  let resolved = 0
+  let pending = 0
+
+  function walk(indexEvent: Event): void {
+    for (const ref of orderedPublicationRefsFromIndex(indexEvent)) {
+      const key = publicationRefKey(ref)
+      if (!key) continue
+      if (failed.has(key) || fetched.has(key)) resolved++
+      else pending++
+
+      const ev = fetched.get(key)
+      if (ev && isPublicationBranchRef(ref) && ev.kind === ExtendedKind.PUBLICATION) {
+        walk(ev)
+      }
+    }
+  }
+
+  walk(rootIndex)
+  return { resolved, pending }
+}
+
 function addressFromFetchedRef(
   ref: PublicationSectionRef,
   fetched: ReadonlyMap<string, Event>

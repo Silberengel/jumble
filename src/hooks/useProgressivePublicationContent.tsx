@@ -3,6 +3,7 @@ import { indexPublicationEvents } from '@/lib/publication-asciidoc-assembler'
 import {
   collectPendingPublicationSectionLoads,
   collectPublicationSectionLoadsForAddress,
+  countPublicationSectionLoadProgress,
   fetchPublicationSection,
   fetchedPublicationEventForAddress,
   type PublicationSectionLoadTask
@@ -12,10 +13,9 @@ import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const READ_AHEAD_COUNT = 2
-
-function initialPrefetchCount(): number {
-  return isMobileBrowserProfile() ? 8 : 5
-}
+/** Sections to prefetch before revealing the reader (avoids layout shift while reading). */
+const BLOCKING_PREFETCH_LIMIT = isMobileBrowserProfile() ? 24 : 32
+const BLOCKING_BATCH_SIZE = 6
 
 export function useProgressivePublicationContent(
   rootIndex: Event,
@@ -43,6 +43,8 @@ export function useProgressivePublicationContent(
   })
   const [failedKeys, setFailedKeys] = useState<Set<string>>(() => new Set())
   const [loadingKeys, setLoadingKeys] = useState<Set<string>>(() => new Set())
+  const [contentReady, setContentReady] = useState(false)
+  const [loadProgress, setLoadProgress] = useState({ resolved: 0, pending: 0 })
 
   const inFlightRef = useRef<Set<string>>(new Set())
   const fetchedRef = useRef(fetched)
@@ -52,6 +54,16 @@ export function useProgressivePublicationContent(
 
   const relayKey = relayUrls.join('|')
 
+  const syncLoadProgress = useCallback(() => {
+    const { resolved, pending } = countPublicationSectionLoadProgress(
+      rootIndex,
+      fetchedRef.current,
+      failedRef.current
+    )
+    setLoadProgress({ resolved, pending })
+    return { resolved, pending }
+  }, [rootIndex])
+
   useEffect(() => {
     const seed = new Map<string, Event>()
     indexPublicationEvents(seed, [rootIndex])
@@ -59,8 +71,10 @@ export function useProgressivePublicationContent(
     setFetched(seed)
     setFailedKeys(new Set())
     setLoadingKeys(new Set())
+    setContentReady(false)
     inFlightRef.current = new Set()
-  }, [rootIndex.id, relayKey, rootIndex, seedContentEvent?.id])
+    syncLoadProgress()
+  }, [rootIndex.id, relayKey, rootIndex, seedContentEvent?.id, syncLoadProgress])
 
   const loadSection = useCallback(
     async (ref: PublicationSectionRef, indexEvent: Event) => {
@@ -84,13 +98,22 @@ export function useProgressivePublicationContent(
           setFetched((prev) => {
             const next = new Map(prev)
             indexPublicationEvents(next, [ev])
+            fetchedRef.current = next
             return next
           })
         } else {
-          setFailedKeys((prev) => new Set(prev).add(key))
+          setFailedKeys((prev) => {
+            const next = new Set(prev).add(key)
+            failedRef.current = next
+            return next
+          })
         }
       } catch {
-        setFailedKeys((prev) => new Set(prev).add(key))
+        setFailedKeys((prev) => {
+          const next = new Set(prev).add(key)
+          failedRef.current = next
+          return next
+        })
       } finally {
         inFlightRef.current.delete(key)
         setLoadingKeys((prev) => {
@@ -98,9 +121,10 @@ export function useProgressivePublicationContent(
           next.delete(key)
           return next
         })
+        syncLoadProgress()
       }
     },
-    [relayUrls]
+    [relayUrls, syncLoadProgress]
   )
 
   const requestLoad = useCallback(
@@ -121,8 +145,14 @@ export function useProgressivePublicationContent(
   )
 
   useEffect(() => {
-    if (!enabled) return
+    if (!enabled) {
+      setContentReady(false)
+      return
+    }
+
     let cancelled = false
+    setContentReady(false)
+    syncLoadProgress()
 
     const loadPriorityPath = async () => {
       if (!priorityAddress) return
@@ -139,34 +169,57 @@ export function useProgressivePublicationContent(
         )
         if (tasks.length === 0) return
 
-        for (const task of tasks.slice(0, 4)) {
-          if (cancelled) return
-          await loadSection(task.ref, task.indexEvent)
-        }
+        await Promise.all(tasks.slice(0, 4).map((task) => loadSection(task.ref, task.indexEvent)))
       }
     }
 
-    ;(async () => {
-      await loadPriorityPath()
-      if (cancelled || !backgroundLoads || priorityAddress) return
-      const pending = collectPendingPublicationSectionLoads(
-        rootIndex,
-        fetchedRef.current,
-        failedRef.current,
-        inFlightRef.current
-      )
-      for (const task of pending.slice(0, initialPrefetchCount())) {
-        if (cancelled) return
-        await loadSection(task.ref, task.indexEvent)
+    const runBlockingPrefetch = async () => {
+      // Deep-link / search: only load the target path; defer bulk prefetch to viewport.
+      if (priorityAddress) return
+
+      let loadedThisPass = 0
+      while (!cancelled && enabledRef.current && loadedThisPass < BLOCKING_PREFETCH_LIMIT) {
+        const pending = collectPendingPublicationSectionLoads(
+          rootIndex,
+          fetchedRef.current,
+          failedRef.current,
+          inFlightRef.current
+        )
+        if (pending.length === 0) break
+
+        const batch = pending.slice(0, Math.min(BLOCKING_BATCH_SIZE, BLOCKING_PREFETCH_LIMIT - loadedThisPass))
+        if (batch.length === 0) break
+
+        await Promise.all(batch.map((task) => loadSection(task.ref, task.indexEvent)))
+        loadedThisPass += batch.length
+        syncLoadProgress()
       }
+    }
+
+    void (async () => {
+      await loadPriorityPath()
+      if (cancelled) return
+      await runBlockingPrefetch()
+      if (cancelled) return
+      syncLoadProgress()
+      setContentReady(true)
     })()
+
     return () => {
       cancelled = true
     }
-  }, [enabled, rootIndex.id, relayKey, loadSection, rootIndex, priorityAddress, backgroundLoads])
+  }, [
+    enabled,
+    rootIndex.id,
+    relayKey,
+    loadSection,
+    rootIndex,
+    priorityAddress,
+    syncLoadProgress
+  ])
 
   const readAhead = useCallback(() => {
-    if (!enabledRef.current) return
+    if (!enabledRef.current || !contentReady) return
     const pending = collectPendingPublicationSectionLoads(
       rootIndex,
       fetchedRef.current,
@@ -174,17 +227,19 @@ export function useProgressivePublicationContent(
       inFlightRef.current
     )
     prefetchTasks(pending.slice(0, READ_AHEAD_COUNT))
-  }, [prefetchTasks, rootIndex])
+  }, [prefetchTasks, rootIndex, contentReady])
 
   useEffect(() => {
-    if (!enabled || !backgroundLoads || priorityAddress) return
+    if (!enabled || !backgroundLoads || priorityAddress || !contentReady) return
     readAhead()
-  }, [enabled, backgroundLoads, fetched, failedKeys, readAhead, priorityAddress])
+  }, [enabled, backgroundLoads, fetched, failedKeys, readAhead, priorityAddress, contentReady])
 
   return {
     fetched,
     failedKeys,
     loadingKeys,
+    contentReady,
+    loadProgress,
     requestLoad,
     readAhead
   }

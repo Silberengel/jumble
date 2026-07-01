@@ -92,10 +92,46 @@ function SectionContent({ event }: { event: Event }) {
   return null
 }
 
-function SectionLoadingPlaceholder() {
+function SectionContentSkeleton() {
   return (
-    <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-      <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden />
+    <div
+      className="mt-3 min-h-[10rem] animate-pulse space-y-3 rounded-md border border-border/40 bg-muted/20 p-4"
+      aria-hidden
+    >
+      <div className="h-3 w-11/12 rounded bg-muted" />
+      <div className="h-3 w-full rounded bg-muted" />
+      <div className="h-3 w-5/6 rounded bg-muted" />
+      <div className="h-3 w-full rounded bg-muted" />
+      <div className="h-3 w-4/5 rounded bg-muted" />
+    </div>
+  )
+}
+
+function PublicationContentLoadingPanel({
+  loadProgress
+}: {
+  loadProgress: { resolved: number; pending: number }
+}) {
+  const { t } = useTranslation()
+  const total = loadProgress.resolved + loadProgress.pending
+  const showProgress = total > 0
+
+  return (
+    <div
+      className="flex min-h-[12rem] flex-col items-center justify-center gap-3 rounded-lg border border-border bg-muted/20 px-4 py-10 text-center"
+      role="status"
+      aria-live="polite"
+    >
+      <Loader2 className="size-6 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+      <p className="text-sm font-medium text-foreground">{t('Publication loading')}</p>
+      {showProgress ? (
+        <p className="text-xs text-muted-foreground">
+          {t('Publication loading progress', {
+            done: loadProgress.resolved,
+            total
+          })}
+        </p>
+      ) : null}
     </div>
   )
 }
@@ -195,14 +231,14 @@ function PublicationSectionNodeView({
             ))}
           </div>
         ) : needsLoad || isLoading ? (
-          <SectionLoadingPlaceholder />
+          <SectionContentSkeleton />
         ) : isMissing ? (
           <SectionMissingPlaceholder />
         ) : null
       ) : isMissing ? (
         <SectionMissingPlaceholder />
       ) : isLoading || needsLoad ? (
-        <SectionLoadingPlaceholder />
+        <SectionContentSkeleton />
       ) : node.event ? (
         <SectionContent event={node.event} />
       ) : (
@@ -215,11 +251,13 @@ function PublicationSectionNodeView({
 function PublicationTableOfContents({
   entries,
   readingStarted,
+  contentReady,
   onStartReading,
   className
 }: {
   entries: ReturnType<typeof flattenPublicationSectionTreeForToc>
   readingStarted: boolean
+  contentReady: boolean
   onStartReading: () => void
   className?: string
 }) {
@@ -227,10 +265,10 @@ function PublicationTableOfContents({
 
   const scrollToSection = useCallback(
     (id: string) => {
-      if (!readingStarted) return
+      if (!readingStarted || !contentReady) return
       document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     },
-    [readingStarted]
+    [readingStarted, contentReady]
   )
 
   if (entries.length === 0) return null
@@ -251,10 +289,10 @@ function PublicationTableOfContents({
               type="button"
               className={cn(
                 'w-full min-w-0 rounded py-1 pr-2 text-left text-muted-foreground',
-                readingStarted && 'hover:bg-accent hover:text-accent-foreground'
+                readingStarted && contentReady && 'hover:bg-accent hover:text-accent-foreground'
               )}
               style={{ paddingLeft: `${8 + entry.depth * 14}px` }}
-              disabled={!readingStarted}
+              disabled={!readingStarted || !contentReady}
               onClick={() => scrollToSection(entry.id)}
             >
               <span className="break-words">{entry.title}</span>
@@ -351,7 +389,7 @@ export default function PublicationIndexBody({
     return () => window.clearTimeout(fallback)
   }, [targetSectionAddress, enableBackgroundLoads])
 
-  const { fetched, failedKeys, loadingKeys, requestLoad, readAhead } =
+  const { fetched, failedKeys, loadingKeys, contentReady, loadProgress, requestLoad, readAhead } =
     useProgressivePublicationContent(event, relayUrls, {
       enabled: readingStarted,
       seedContentEvent: readingIntent?.contentEvent,
@@ -394,22 +432,22 @@ export default function PublicationIndexBody({
   }, [event])
 
   useEffect(() => {
-    if (!readingStarted || targetSectionAddress) return
+    if (!readingStarted || !contentReady || targetSectionAddress) return
     const firstId = tocEntries[0]?.id
     if (!firstId) return
     requestAnimationFrame(() => {
       document.getElementById(firstId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
     })
-  }, [readingStarted, tocEntries, targetSectionAddress])
+  }, [readingStarted, contentReady, tocEntries, targetSectionAddress])
 
   useEffect(() => {
-    if (!readingStarted || !targetSectionId || highlightQuery?.trim()) return
+    if (!readingStarted || !contentReady || !targetSectionId || highlightQuery?.trim()) return
     const sectionEl = document.getElementById(targetSectionId)
     if (!sectionEl) return
     requestAnimationFrame(() => {
       sectionEl.scrollIntoView({ behavior: 'instant', block: 'start' })
     })
-  }, [readingStarted, targetSectionId, highlightQuery])
+  }, [readingStarted, contentReady, targetSectionId, highlightQuery])
 
   const handleHighlightAnchored = useCallback(() => {
     clearLibraryPublicationReadingIntent(event)
@@ -424,9 +462,13 @@ export default function PublicationIndexBody({
       <PublicationTableOfContents
         entries={tocEntries}
         readingStarted={readingStarted}
+        contentReady={contentReady}
         onStartReading={startReading}
       />
-      {readingStarted ? (
+      {readingStarted && !contentReady ? (
+        <PublicationContentLoadingPanel loadProgress={loadProgress} />
+      ) : null}
+      {readingStarted && contentReady ? (
         <div>
           {sectionTree.map((node) => (
             <PublicationSectionNodeView

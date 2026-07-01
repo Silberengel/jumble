@@ -1187,6 +1187,8 @@ export default {
     "Publication released": "Released {{date}}",
     "Publication originally published on": "Originally published on",
     "Publication table of contents": "Contents",
+    "Publication loading": "Loading publication…",
+    "Publication loading progress": "Loading sections ({{done}} of {{total}})…",
     "Publication section missing": "[This section is missing.]",
     "Asciidoc parse warning title": "AsciiDoc could not be fully parsed",
     "Asciidoc parse warning body": "Some AsciiDoc in this section is invalid or uses unsupported syntax. The text below is shown as-is where possible.",

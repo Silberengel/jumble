@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
-import { collectPendingPublicationSectionLoads } from '@/lib/publication-section-loader'
+import { collectPendingPublicationSectionLoads, countPublicationSectionLoadProgress } from '@/lib/publication-section-loader'
 import { publicationRefKey } from '@/lib/publication-section-fetch'
 import type { Event } from 'nostr-tools'
 import { finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools'
@@ -47,5 +47,21 @@ describe('publication-section-loader', () => {
 
     const pending = collectPendingPublicationSectionLoads(root, fetched, failed, inFlight)
     expect(pending.map((task) => publicationRefKey(task.ref))).toEqual([childAddr, s2])
+  })
+
+  it('countPublicationSectionLoadProgress counts resolved and pending refs', () => {
+    const s1 = `30041:${PK}:s1`
+    const s2 = `30041:${PK}:s2`
+    const root = indexEvent('book', [s1, s2])
+    const fetched = new Map<string, Event>([
+      [root.id, root],
+      [publicationRefKey({ type: 'a', coordinate: s1 })!, contentEvent('s1')]
+    ])
+    const failed = new Set<string>()
+
+    expect(countPublicationSectionLoadProgress(root, fetched, failed)).toEqual({
+      resolved: 1,
+      pending: 1
+    })
   })
 })
