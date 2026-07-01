@@ -12,10 +12,21 @@ import { publicationRefKey, type PublicationSectionRef } from '@/lib/publication
 import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const READ_AHEAD_COUNT = 2
-/** Sections to prefetch before revealing the reader (avoids layout shift while reading). */
-const BLOCKING_PREFETCH_LIMIT = isMobileBrowserProfile() ? 24 : 32
+function registerFetchedPublicationSection(
+  target: Map<string, Event>,
+  ref: PublicationSectionRef,
+  ev: Event
+): void {
+  indexPublicationEvents(target, [ev])
+  const key = publicationRefKey(ref)
+  if (key) target.set(key, ev)
+}
+
+const READ_AHEAD_COUNT = 8
+/** Max time to prefetch before revealing the reader (avoids layout shift while reading). */
+const BLOCKING_PREFETCH_BUDGET_MS = isMobileBrowserProfile() ? 12_000 : 18_000
 const BLOCKING_BATCH_SIZE = 6
+const BACKGROUND_DRAIN_BATCH_SIZE = 8
 
 export function useProgressivePublicationContent(
   rootIndex: Event,
@@ -49,20 +60,22 @@ export function useProgressivePublicationContent(
   const inFlightRef = useRef<Set<string>>(new Set())
   const fetchedRef = useRef(fetched)
   const failedRef = useRef(failedKeys)
+  const rootIndexRef = useRef(rootIndex)
   fetchedRef.current = fetched
   failedRef.current = failedKeys
+  rootIndexRef.current = rootIndex
 
   const relayKey = relayUrls.join('|')
 
   const syncLoadProgress = useCallback(() => {
     const { resolved, pending } = countPublicationSectionLoadProgress(
-      rootIndex,
+      rootIndexRef.current,
       fetchedRef.current,
       failedRef.current
     )
     setLoadProgress({ resolved, pending })
     return { resolved, pending }
-  }, [rootIndex])
+  }, [])
 
   useEffect(() => {
     const seed = new Map<string, Event>()
@@ -74,7 +87,7 @@ export function useProgressivePublicationContent(
     setContentReady(false)
     inFlightRef.current = new Set()
     syncLoadProgress()
-  }, [rootIndex.id, relayKey, rootIndex, seedContentEvent?.id, syncLoadProgress])
+  }, [rootIndex.id, relayKey, seedContentEvent?.id, syncLoadProgress])
 
   const loadSection = useCallback(
     async (ref: PublicationSectionRef, indexEvent: Event) => {
@@ -97,7 +110,7 @@ export function useProgressivePublicationContent(
         if (ev) {
           setFetched((prev) => {
             const next = new Map(prev)
-            indexPublicationEvents(next, [ev])
+            registerFetchedPublicationSection(next, ref, ev)
             fetchedRef.current = next
             return next
           })
@@ -161,7 +174,7 @@ export function useProgressivePublicationContent(
         if (fetchedPublicationEventForAddress(fetchedRef.current, priorityAddress)) return
 
         const tasks = collectPublicationSectionLoadsForAddress(
-          rootIndex,
+          rootIndexRef.current,
           fetchedRef.current,
           failedRef.current,
           inFlightRef.current,
@@ -177,21 +190,18 @@ export function useProgressivePublicationContent(
       // Deep-link / search: only load the target path; defer bulk prefetch to viewport.
       if (priorityAddress) return
 
-      let loadedThisPass = 0
-      while (!cancelled && enabledRef.current && loadedThisPass < BLOCKING_PREFETCH_LIMIT) {
+      const deadline = Date.now() + BLOCKING_PREFETCH_BUDGET_MS
+      while (!cancelled && enabledRef.current && Date.now() < deadline) {
         const pending = collectPendingPublicationSectionLoads(
-          rootIndex,
+          rootIndexRef.current,
           fetchedRef.current,
           failedRef.current,
           inFlightRef.current
         )
         if (pending.length === 0) break
 
-        const batch = pending.slice(0, Math.min(BLOCKING_BATCH_SIZE, BLOCKING_PREFETCH_LIMIT - loadedThisPass))
-        if (batch.length === 0) break
-
+        const batch = pending.slice(0, BLOCKING_BATCH_SIZE)
         await Promise.all(batch.map((task) => loadSection(task.ref, task.indexEvent)))
-        loadedThisPass += batch.length
         syncLoadProgress()
       }
     }
@@ -208,31 +218,56 @@ export function useProgressivePublicationContent(
     return () => {
       cancelled = true
     }
-  }, [
-    enabled,
-    rootIndex.id,
-    relayKey,
-    loadSection,
-    rootIndex,
-    priorityAddress,
-    syncLoadProgress
-  ])
+  }, [enabled, rootIndex.id, relayKey, loadSection, priorityAddress, syncLoadProgress])
 
   const readAhead = useCallback(() => {
     if (!enabledRef.current || !contentReady) return
     const pending = collectPendingPublicationSectionLoads(
-      rootIndex,
+      rootIndexRef.current,
       fetchedRef.current,
       failedRef.current,
       inFlightRef.current
     )
     prefetchTasks(pending.slice(0, READ_AHEAD_COUNT))
-  }, [prefetchTasks, rootIndex, contentReady])
+  }, [prefetchTasks, contentReady])
 
   useEffect(() => {
-    if (!enabled || !backgroundLoads || priorityAddress || !contentReady) return
+    if (!enabled || !backgroundLoads || !contentReady) return
     readAhead()
-  }, [enabled, backgroundLoads, fetched, failedKeys, readAhead, priorityAddress, contentReady])
+  }, [enabled, backgroundLoads, fetched, failedKeys, readAhead, contentReady])
+
+  // Background drain for remaining sections after reveal (skipped during search deep-links).
+  useEffect(() => {
+    if (!enabled || !contentReady || !backgroundLoads || priorityAddress) return
+
+    let cancelled = false
+    void (async () => {
+      while (!cancelled && enabledRef.current) {
+        const pending = collectPendingPublicationSectionLoads(
+          rootIndexRef.current,
+          fetchedRef.current,
+          failedRef.current,
+          inFlightRef.current
+        )
+        if (pending.length === 0) break
+        const batch = pending.slice(0, BACKGROUND_DRAIN_BATCH_SIZE)
+        await Promise.all(batch.map((task) => loadSection(task.ref, task.indexEvent)))
+        syncLoadProgress()
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [
+    enabled,
+    contentReady,
+    backgroundLoads,
+    priorityAddress,
+    rootIndex.id,
+    loadSection,
+    syncLoadProgress
+  ])
 
   return {
     fetched,

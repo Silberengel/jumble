@@ -4,7 +4,6 @@ import NoteOptions from '@/components/NoteOptions'
 import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
 import { useProgressivePublicationContent } from '@/hooks/useProgressivePublicationContent'
 import { usePublicationSearchHighlight } from '@/hooks/usePublicationSearchHighlight'
-import { useNearViewport } from '@/hooks/useNearViewport'
 import {
   clearLibraryPublicationReadingIntent,
   LIBRARY_PUBLICATION_READING_INTENT_EVENT,
@@ -173,10 +172,6 @@ function PublicationSectionNodeView({
   const isLoading = Boolean(refKey && loadingKeys.has(refKey))
   const needsLoad = Boolean(refKey && !node.event && !isMissing && !isLoading)
   const deferViewportLoad = shouldDeferSectionLoad?.(node.sectionId) ?? false
-  const isNear = useNearViewport(sectionElRef, {
-    enabled: needsLoad && !deferViewportLoad,
-    marginPx: 480
-  })
   const shouldHighlight = Boolean(
     highlightSectionAddress &&
       highlightQuery &&
@@ -194,10 +189,10 @@ function PublicationSectionNodeView({
   )
 
   useEffect(() => {
-    if (!needsLoad || !isNear || deferViewportLoad) return
+    if (!needsLoad || deferViewportLoad) return
     onRequestLoad(node.ref, node.indexEvent)
     onReadAhead()
-  }, [needsLoad, isNear, deferViewportLoad, node.ref, node.indexEvent, onRequestLoad, onReadAhead])
+  }, [needsLoad, deferViewportLoad, node.ref, node.indexEvent, onRequestLoad, onReadAhead])
 
   return (
     <section
