@@ -1,6 +1,6 @@
 /**
  * HTTP JSON API for index-style relays (e.g. gc_index_relay: POST /api/events/filter, POST /api/events,
- * DELETE /api/events/:id, POST /api/publications/search, POST /api/publications/content/search).
+ * DELETE /api/events/:id, POST /api/publications/search, POST /api/publications/sections/search).
  * @see gc_index_relay lib/gc_index_relay_web/router.ex
  *
  * **Local dev:** loopback bases (`http://localhost:*` / `http://127.0.0.1:*`) are automatically fetched via
@@ -44,8 +44,8 @@ function indexRelayPublicationMetadataSearchUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/search`
 }
 
-function indexRelayPublicationContentSearchUrl(baseUrl: string): string {
-  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/content/search`
+function indexRelayPublicationSectionSearchUrl(baseUrl: string): string {
+  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/sections/search`
 }
 
 function indexRelayWikiSearchUrl(baseUrl: string): string {
@@ -181,7 +181,7 @@ function shouldSkipDevIndexRelayFetch(endpoint: string): boolean {
   // when the filter API tripped the dev session skip (otherwise a missing local :4000 index relay,
   // or one transient 5xx, silently disables remote wiki/publication full-text search for the session).
   if (
-    endpoint.includes('/api/publications/content/search') ||
+    endpoint.includes('/api/publications/sections/search') ||
     endpoint.includes('/api/publications/search') ||
     endpoint.includes('/api/wiki/search')
   ) {
@@ -553,14 +553,11 @@ export async function queryIndexRelayPublicationMetadataSearch(
 }
 
 /**
- * Kind-30041 section body search on Mercury-style index relays.
+ * Kind-30041 section search on Mercury-style index relays (title tags + body).
  *
- * FOLLOW-UP (separate repo, mercury-relay / gc_index_relay): the server-side `/api/publications/content/search`
- * endpoint currently does loose word-token matching with poor ranking and misses exact phrases that are
- * present in its own index. It should implement real NIP-50 full-text search (phrase/substring ranking)
- * so multi-word passages resolve reliably. Until then, the client also issues WS NIP-50 `search` queries
- * to document relays that advertise NIP-50 (see searchWsRelaysForPublicationContentNip50) and falls back
- * to client-side paginated matching.
+ * Uses `POST /api/publications/sections/search` on gc_index_relay. The client also issues WS NIP-50
+ * `search` queries to document relays that advertise NIP-50 (see searchWsRelaysForPublicationContentNip50)
+ * and falls back to client-side paginated matching when HTTP search is unavailable.
  */
 export async function queryIndexRelayPublicationContentSearch(
   baseUrl: string,
@@ -571,7 +568,7 @@ export async function queryIndexRelayPublicationContentSearch(
   if (!q) return { events: [], apiRowCount: 0 }
 
   const base = devHttpIndexRelayBaseForFetch(baseUrl)
-  const endpoint = indexRelayPublicationContentSearchUrl(base)
+  const endpoint = indexRelayPublicationSectionSearchUrl(base)
   if (shouldSkipDevIndexRelayFetch(endpoint)) {
     return { events: [], apiRowCount: 0 }
   }

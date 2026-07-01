@@ -344,7 +344,7 @@ export default defineConfig(({ mode }) => {
           target: devIndexRelayTarget,
           changeOrigin: true,
           // Above the client's 45s content-search timeout so a slow full-text query
-          // (/api/publications/content/search) isn't cut off mid-flight and reported as "unreachable".
+          // (/api/publications/sections/search) isn't cut off mid-flight and reported as "unreachable".
           timeout: 47_000,
           proxyTimeout: 47_000,
           rewrite: (p) => p.replace(/^\/dev-index-relay/, '') || '/',
@@ -364,7 +364,7 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           secure: true,
           // Above the client's 45s content-search timeout so a slow full-text query
-          // (/api/publications/content/search) isn't cut off mid-flight and reported as "unreachable".
+          // (/api/publications/sections/search) isn't cut off mid-flight and reported as "unreachable".
           timeout: 47_000,
           proxyTimeout: 47_000,
           rewrite: (p) => p.replace(/^\/dev-cors-index-relay/, '') || '/',
