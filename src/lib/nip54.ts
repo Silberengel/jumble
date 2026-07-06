@@ -74,6 +74,25 @@ export function isWikiDeference(event: Event): boolean {
   return !!getWikiDeferTarget(event)
 }
 
+/** Whether a kind:818 merge request is closed (merged or rejected by the destination author). */
+export function wikiMergeRequestResolution(
+  mergeRequest: Event,
+  acceptances: Event[],
+  reactions: Event[]
+): 'merged' | 'rejected' | 'open' {
+  if (acceptances.length > 0) return 'merged'
+  const destPubkey = parseWikiMergeRequest(mergeRequest)?.destinationPubkey?.toLowerCase()
+  if (
+    destPubkey &&
+    reactions.some(
+      (r) => r.pubkey.toLowerCase() === destPubkey && r.content.trim() === '-'
+    )
+  ) {
+    return 'rejected'
+  }
+  return 'open'
+}
+
 export type WikiRedirect = {
   /** Normalized slug this redirect is registered under (its own `d` tag). */
   slug: string

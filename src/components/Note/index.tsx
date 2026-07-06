@@ -433,7 +433,7 @@ export default function Note({
           />
         ) : null}
         <IValue event={event} className="mt-2" />
-        {isHighlightableKind ? (
+        {isHighlightableKind && !embedded ? (
           <SelectionHighlightTrigger event={displayEvent} openHighlight={openHighlight}>
             {content}
           </SelectionHighlightTrigger>

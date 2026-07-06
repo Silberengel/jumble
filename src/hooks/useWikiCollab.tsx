@@ -1,16 +1,26 @@
 import { ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
 import {
+  createReactionDraftEvent,
+  createWikiArticleDraftEvent,
+  createWikiMergeAcceptanceDraftEvent
+} from '@/lib/draft-event'
+import {
   getReplaceableCoordinateFromEvent,
   normalizeReplaceableCoordinateString
 } from '@/lib/event'
+import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { parseWikiMergeRequest } from '@/lib/nip54'
+import { showPublishingError } from '@/lib/publishing-feedback'
 import { relayHintsFromEventTags } from '@/lib/relay-list-builder'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useNostr } from '@/providers/NostrProvider'
 import client, { queryService } from '@/services/client.service'
+import storage from '@/services/local-storage.service'
 import { Event, kinds } from 'nostr-tools'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 async function buildBaseRelayUrls(
   event: Event,
@@ -197,4 +207,79 @@ export function useFetchWikiMergeStatus(mergeRequest: Event | undefined): WikiMe
   }, [mergeRequest, mrId, relayList, cacheRelayListEvent])
 
   return { acceptances, reactions, isFetching }
+}
+
+/** Accept or reject a kind:818 merge request (destination article owner). */
+export function useWikiMergeReviewActions(mergeRequest: Event) {
+  const { t } = useTranslation()
+  const { publish, checkLogin } = useNostr()
+  const [busy, setBusy] = useState(false)
+  const [localResolution, setLocalResolution] = useState<'merged' | 'rejected' | null>(null)
+  const mr = useMemo(() => parseWikiMergeRequest(mergeRequest), [mergeRequest])
+
+  const reject = useCallback(() => {
+    checkLogin(async () => {
+      setBusy(true)
+      setLocalResolution('rejected')
+      try {
+        await publish(createReactionDraftEvent(mergeRequest, '-'), {
+          addClientTag: storage.getAddClientTag()
+        })
+        toast.success(t('Merge request rejected'))
+      } catch (err) {
+        setLocalResolution(null)
+        showPublishingError(err as Error)
+      } finally {
+        setBusy(false)
+      }
+    })
+  }, [checkLogin, mergeRequest, publish, t])
+
+  const accept = useCallback(() => {
+    checkLogin(async () => {
+      if (!mr?.forkEventId || !mr.destinationCoordinate) {
+        toast.error(t('This merge request is incomplete.'))
+        return
+      }
+      const dTag = mr.destinationCoordinate.split(':').slice(2).join(':')
+      if (!dTag) {
+        toast.error(t('This merge request is incomplete.'))
+        return
+      }
+      setBusy(true)
+      setLocalResolution('merged')
+      try {
+        const fork = await client.fetchEvent(mr.forkEventId)
+        if (!fork) {
+          toast.error(t('Could not load the proposed version.'))
+          return
+        }
+        const forkMeta = getLongFormArticleMetadataFromEvent(fork)
+        const mergedDraft = await createWikiArticleDraftEvent(fork.content, [], {
+          dTag,
+          title: forkMeta.title || undefined,
+          summary: forkMeta.summary || undefined,
+          image: forkMeta.image || undefined,
+          topics: forkMeta.tags
+        })
+        const mergedVersion = await publish(mergedDraft, {
+          addClientTag: storage.getAddClientTag()
+        })
+        await publish(createWikiMergeAcceptanceDraftEvent(mergeRequest, mergedVersion), {
+          addClientTag: storage.getAddClientTag()
+        })
+        await publish(createReactionDraftEvent(mergeRequest, '+'), {
+          addClientTag: storage.getAddClientTag()
+        })
+        toast.success(t('Merge request accepted'))
+      } catch (err) {
+        setLocalResolution(null)
+        showPublishingError(err as Error)
+      } finally {
+        setBusy(false)
+      }
+    })
+  }, [checkLogin, mergeRequest, mr, publish, t])
+
+  return { mr, busy, reject, accept, localResolution }
 }

@@ -12,18 +12,15 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  createReactionDraftEvent,
-  createWikiArticleDraftEvent,
   createWikiForkDraftEvent,
-  createWikiMergeAcceptanceDraftEvent,
   createWikiMergeRequestFromForkDraftEvent,
   createWikiRedirectDraftEvent
 } from '@/lib/draft-event'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
-import { normalizeWikiDTag, parseWikiMergeRequest } from '@/lib/nip54'
+import { normalizeWikiDTag } from '@/lib/nip54'
 import { showPublishingError } from '@/lib/publishing-feedback'
+import { useWikiMergeReviewActions } from '@/hooks/useWikiCollab'
 import { useNostr } from '@/providers/NostrProvider'
-import client from '@/services/client.service'
 import storage from '@/services/local-storage.service'
 import { Event } from 'nostr-tools'
 import { useEffect, useMemo, useState } from 'react'
@@ -290,72 +287,16 @@ export function WikiMergeReviewDialog({
   mergeRequest: Event
 }) {
   const { t } = useTranslation()
-  const { publish, checkLogin } = useNostr()
-  const [busy, setBusy] = useState(false)
-  const mr = useMemo(() => parseWikiMergeRequest(mergeRequest), [mergeRequest])
+  const { mr, busy, reject, accept } = useWikiMergeReviewActions(mergeRequest)
 
-  const reject = () => {
-    checkLogin(async () => {
-      setBusy(true)
-      try {
-        await publish(createReactionDraftEvent(mergeRequest, '-'), {
-          addClientTag: storage.getAddClientTag()
-        })
-        toast.success(t('Merge request rejected'))
-        onOpenChange(false)
-      } catch (err) {
-        showPublishingError(err as Error)
-      } finally {
-        setBusy(false)
-      }
-    })
+  const handleReject = () => {
+    reject()
+    onOpenChange(false)
   }
 
-  const accept = () => {
-    checkLogin(async () => {
-      if (!mr?.forkEventId || !mr.destinationCoordinate) {
-        toast.error(t('This merge request is incomplete.'))
-        return
-      }
-      const dTag = mr.destinationCoordinate.split(':').slice(2).join(':')
-      if (!dTag) {
-        toast.error(t('This merge request is incomplete.'))
-        return
-      }
-      setBusy(true)
-      try {
-        const fork = await client.fetchEvent(mr.forkEventId)
-        if (!fork) {
-          toast.error(t('Could not load the proposed version.'))
-          return
-        }
-        const forkMeta = getLongFormArticleMetadataFromEvent(fork)
-        // Adopt the fork's content as a new version of your own article (same d tag).
-        const mergedDraft = await createWikiArticleDraftEvent(fork.content, [], {
-          dTag,
-          title: forkMeta.title || undefined,
-          summary: forkMeta.summary || undefined,
-          image: forkMeta.image || undefined,
-          topics: forkMeta.tags
-        })
-        const mergedVersion = await publish(mergedDraft, {
-          addClientTag: storage.getAddClientTag()
-        })
-        await publish(createWikiMergeAcceptanceDraftEvent(mergeRequest, mergedVersion), {
-          addClientTag: storage.getAddClientTag()
-        })
-        // Lightweight positive signal in addition to kind:819.
-        await publish(createReactionDraftEvent(mergeRequest, '+'), {
-          addClientTag: storage.getAddClientTag()
-        })
-        toast.success(t('Merge request accepted'))
-        onOpenChange(false)
-      } catch (err) {
-        showPublishingError(err as Error)
-      } finally {
-        setBusy(false)
-      }
-    })
+  const handleAccept = () => {
+    accept()
+    onOpenChange(false)
   }
 
   return (
@@ -382,14 +323,10 @@ export function WikiMergeReviewDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)} disabled={busy}>
             {t('Cancel')}
           </Button>
-          <Button
-            variant="destructive"
-            onClick={reject}
-            disabled={busy}
-          >
+          <Button variant="destructive" onClick={handleReject} disabled={busy}>
             {t('Reject')}
           </Button>
-          <Button onClick={accept} disabled={busy}>
+          <Button onClick={handleAccept} disabled={busy}>
             {busy ? t('Working…') : t('Accept & merge')}
           </Button>
         </DialogFooter>

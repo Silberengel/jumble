@@ -7,7 +7,8 @@ import {
   normalizeWikiDTag,
   parseWikiMergeAcceptance,
   parseWikiMergeRequest,
-  parseWikiRedirect
+  parseWikiRedirect,
+  wikiMergeRequestResolution
 } from '@/lib/nip54'
 import type { Event } from 'nostr-tools'
 
@@ -130,5 +131,33 @@ describe('coordinateToNaddr', () => {
   it('returns null for malformed input', () => {
     expect(coordinateToNaddr('not-a-coordinate')).toBeNull()
     expect(coordinateToNaddr('30818:nothex:bitcoin')).toBeNull()
+  })
+})
+
+describe('wikiMergeRequestResolution', () => {
+  it('detects merged and rejected merge requests', () => {
+    const coord = `${ExtendedKind.WIKI_ARTICLE}:${PK2}:bitcoin`
+    const mr = ev({
+      kind: ExtendedKind.WIKI_MERGE_REQUEST,
+      tags: [
+        ['a', coord],
+        ['p', PK2],
+        ['e', ID, '', 'fork']
+      ]
+    })
+    const acceptance = ev({
+      kind: ExtendedKind.WIKI_MERGE_ACCEPTANCE,
+      tags: [['e', mr.id, '', 'request']]
+    })
+    expect(wikiMergeRequestResolution(mr, [acceptance], [])).toBe('merged')
+
+    const rejectReaction = ev({
+      kind: 7,
+      pubkey: PK2,
+      content: '-',
+      tags: [['e', mr.id]]
+    })
+    expect(wikiMergeRequestResolution(mr, [], [rejectReaction])).toBe('rejected')
+    expect(wikiMergeRequestResolution(mr, [], [])).toBe('open')
   })
 })

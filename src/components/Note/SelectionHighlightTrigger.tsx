@@ -5,7 +5,7 @@ import {
 } from '@/lib/selection-in-container'
 import type { OpenHighlightFn } from './CreateHighlightContext'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from '@/components/ui/drawer'
-import { useScreenSize } from '@/providers/ScreenSizeProvider'
+import { useScreenSizeOptional, getScreenSizeSnapshot } from '@/providers/ScreenSizeProvider'
 import { Event } from 'nostr-tools'
 import { Highlighter } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react'
@@ -28,7 +28,8 @@ export default function SelectionHighlightTrigger({
   children: React.ReactNode
 }) {
   const { t } = useTranslation()
-  const { isSmallScreen } = useScreenSize()
+  const screenSize = useScreenSizeOptional() ?? getScreenSizeSnapshot()
+  const { isSmallScreen } = screenSize
   const containerRef = useRef<HTMLDivElement | null>(null) as MutableRefObject<HTMLDivElement | null>
   const mouseUpCleanupRef = useRef<(() => void) | null>(null)
   const retryCancelRef = useRef<(() => void) | null>(null)

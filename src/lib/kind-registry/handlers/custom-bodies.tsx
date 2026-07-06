@@ -2,6 +2,7 @@ import { ExtendedKind, isMusicTrackKind, isNip71StyleVideoKind } from '@/constan
 import { getHttpUrlFromITags } from '@/lib/event'
 import { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
 import { getWebBookmarkArticleUrl } from '@/lib/rss-article'
+import { isWikiDeference } from '@/lib/nip54'
 import Highlight from '@/components/Note/Highlight'
 import ShortNoteEditProposalNotificationCard from '@/components/Note/ShortNoteEditProposalNotificationCard'
 import NotificationEventCard from '@/components/Note/NotificationEventCard'
@@ -105,10 +106,11 @@ export function renderWebBookmarkBody(ctx: RenderCtx) {
 export const renderWikiBodies = {
   article(ctx: RenderCtx) {
     if (ctx.showFull) {
+      const hideBody = isWikiDeference(ctx.displayEvent)
       return (
         <>
           <WikiArticleCollabSection event={ctx.displayEvent} />
-          {renderMarkdownContent(ctx, bodyClass(ctx))}
+          {!hideBody ? renderMarkdownContent(ctx, bodyClass(ctx)) : null}
         </>
       )
     }

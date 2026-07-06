@@ -18,6 +18,14 @@ function readScreenSizeFlags(): Pick<TScreenSizeContext, 'isSmallScreen' | 'isLa
   }
 }
 
+/** Fallback when rendering outside {@link ScreenSizeProvider} (embedded notes, portals). */
+export function getScreenSizeSnapshot(): TScreenSizeContext {
+  if (typeof window === 'undefined') {
+    return { isSmallScreen: false, isLargeScreen: false }
+  }
+  return readScreenSizeFlags()
+}
+
 export const useScreenSize = () => {
   const context = useContext(ScreenSizeContext)
   if (!context) {

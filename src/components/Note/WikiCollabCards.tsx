@@ -1,7 +1,17 @@
 import { EmbeddedNote } from '@/components/Embedded/EmbeddedNote'
+import { Button } from '@/components/ui/button'
 import { FormattedTimestamp } from '@/components/FormattedTimestamp'
 import Username from '@/components/Username'
-import { useFetchWikiMergeRequests, useFetchWikiMergeStatus } from '@/hooks/useWikiCollab'
+import {
+  useFetchWikiMergeRequests,
+  useFetchWikiMergeStatus,
+  useWikiMergeReviewActions
+} from '@/hooks/useWikiCollab'
+import {
+  getReplaceableCoordinateFromEvent,
+  normalizeReplaceableCoordinateString
+} from '@/lib/event'
+import { hexPubkeysEqual } from '@/lib/pubkey'
 import {
   coordinateToNaddr,
   getWikiDeferTarget,
@@ -9,9 +19,11 @@ import {
   parseWikiMergeAcceptance,
   parseWikiMergeRequest,
   parseWikiRedirect,
+  wikiMergeRequestResolution,
   type WikiReference
 } from '@/lib/nip54'
 import { cn } from '@/lib/utils'
+import { useNostr } from '@/providers/NostrProvider'
 import {
   Check,
   GitFork,
@@ -24,6 +36,11 @@ import {
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Event } from 'nostr-tools'
+
+function articleCoordinate(event: Event): string | undefined {
+  const coord = getReplaceableCoordinateFromEvent(event)
+  return coord ? normalizeReplaceableCoordinateString(coord) : undefined
+}
 
 /** Best embeddable pointer (naddr from coordinate, else event id) for a wiki reference. */
 function referenceNoteId(ref: WikiReference): string | null {
@@ -166,19 +183,44 @@ function MergeStatusBadge({ mergeRequest }: { mergeRequest: Event }) {
 export function WikiMergeRequestCard({
   event,
   className,
-  showFull = false
+  showFull = false,
+  contextArticle
 }: {
   event: Event
   className?: string
   showFull?: boolean
+  /** When set (article note page), hides redundant “into article” embed for the open article. */
+  contextArticle?: Event
 }) {
   const { t } = useTranslation()
+  const { pubkey } = useNostr()
   const mr = useMemo(() => parseWikiMergeRequest(event), [event])
+  const { acceptances, reactions } = useFetchWikiMergeStatus(event)
+  const { busy, reject, accept, localResolution } = useWikiMergeReviewActions(event)
+  const resolution = useMemo(
+    () =>
+      localResolution ?? wikiMergeRequestResolution(event, acceptances, reactions),
+    [event, acceptances, reactions, localResolution]
+  )
+  const isOwner = Boolean(
+    pubkey && mr?.destinationPubkey && hexPubkeysEqual(mr.destinationPubkey, pubkey)
+  )
   const destinationNaddr = useMemo(
     () =>
       mr?.destinationCoordinate ? coordinateToNaddr(mr.destinationCoordinate, mr.relayHint) : null,
     [mr]
   )
+  const showDestinationEmbed = useMemo(() => {
+    if (!destinationNaddr || !contextArticle) return Boolean(destinationNaddr)
+    const destCoord = mr?.destinationCoordinate
+      ? normalizeReplaceableCoordinateString(mr.destinationCoordinate)
+      : undefined
+    const ctxCoord = articleCoordinate(contextArticle)
+    return !destCoord || !ctxCoord || destCoord !== ctxCoord
+  }, [contextArticle, destinationNaddr, mr?.destinationCoordinate])
+
+  if (resolution !== 'open') return null
+
   return (
     <CardShell
       className={className}
@@ -194,12 +236,12 @@ export function WikiMergeRequestCard({
       {event.content.trim() && (
         <p className="mt-2 whitespace-pre-wrap break-words text-sm">{event.content.trim()}</p>
       )}
-      {destinationNaddr && (
+      {showDestinationEmbed && destinationNaddr ? (
         <>
           <p className="mt-2 text-xs text-muted-foreground">{t('Into article:')}</p>
           <EmbeddedNote className="mt-1" noteId={destinationNaddr} containingEvent={event} />
         </>
-      )}
+      ) : null}
       {mr?.forkEventId && (
         <>
           <p className="mt-2 text-xs text-muted-foreground">{t('Proposed version:')}</p>
@@ -211,6 +253,37 @@ export function WikiMergeRequestCard({
           />
         </>
       )}
+      {isOwner ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation()
+              reject()
+            }}
+          >
+            <ThumbsDown className="size-4 shrink-0" aria-hidden />
+            {t('Reject')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5"
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation()
+              accept()
+            }}
+          >
+            <ThumbsUp className="size-4 shrink-0" aria-hidden />
+            {busy ? t('Working…') : t('Accept & merge')}
+          </Button>
+        </div>
+      ) : null}
     </CardShell>
   )
 }
@@ -260,10 +333,10 @@ export function WikiArticleCollabSection({
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <GitPullRequest className="h-4 w-4 text-primary shrink-0" />
-            {t('Merge requests ({{count}})', { count: mergeRequests.length })}
+            {t('Merge requests')}
           </div>
           {mergeRequests.map((mr) => (
-            <WikiMergeRequestCard key={mr.id} event={mr} />
+            <WikiMergeRequestCard key={mr.id} event={mr} contextArticle={event} />
           ))}
         </div>
       )}
