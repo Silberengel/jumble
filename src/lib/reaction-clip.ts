@@ -131,7 +131,7 @@ export function sha256FromContentAddressedUrl(url: string): string | null {
   }
 }
 
-const HASH_FETCH_TIMEOUT_MS = 10_000
+const HASH_FETCH_TIMEOUT_MS = 30_000
 const HASH_FETCH_MAX_BYTES = 25 * 1024 * 1024
 
 export type HashedRemoteMedia = {
@@ -140,31 +140,78 @@ export type HashedRemoteMedia = {
   mimeType?: string
 }
 
+export type RemoteMediaBytes = {
+  buf: ArrayBuffer
+  mimeType?: string
+}
+
+async function fetchMediaBytesOnce(fetchUrl: string): Promise<RemoteMediaBytes | null> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), HASH_FETCH_TIMEOUT_MS)
+  try {
+    // no-store: the image was usually loaded via <img> first (request without an Origin header).
+    // CDNs like Tenor cache that CORS-header-less response; a plain cors fetch then gets the
+    // poisoned cache entry and fails with a CORS error even though the CDN supports CORS.
+    const res = await fetch(fetchUrl, { signal: controller.signal, mode: 'cors', cache: 'no-store' })
+    if (!res.ok) return null
+    const declaredSize = Number(res.headers.get('content-length') ?? 0)
+    if (declaredSize > HASH_FETCH_MAX_BYTES) return null
+    const buf = await res.arrayBuffer()
+    if (buf.byteLength > HASH_FETCH_MAX_BYTES) return null
+    const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() || undefined
+    return { buf, mimeType }
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Same URL with a throwaway query param, to dodge cache entries `cache: 'no-store'` cannot bypass. */
+function withCacheBuster(url: string): string | null {
+  try {
+    const u = new URL(url)
+    u.searchParams.set('imwald_cb', Date.now().toString(36))
+    return u.toString()
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Fetch remote media bytes (for mirroring a pasted / third-party URL to the user's media server).
+ * Returns null on any failure (CORS, timeout, oversize).
+ */
+export async function fetchRemoteMediaBytes(url: string): Promise<RemoteMediaBytes | null> {
+  if (!/^https?:\/\//i.test(url)) return null
+  try {
+    const media = await fetchMediaBytesOnce(url)
+    if (media) return media
+  } catch {
+    // Retry below with a cache-busting query param — some browsers serve the CORS-less <img>
+    // cache entry to a cors fetch regardless of `Vary: Origin` / `cache: 'no-store'`.
+  }
+  const busted = withCacheBuster(url)
+  if (busted) {
+    try {
+      return await fetchMediaBytesOnce(busted)
+    } catch {
+      // fall through
+    }
+  }
+  return null
+}
+
 /**
  * Fetch remote media bytes and sha256 them (for publishing a clip from a pasted / third-party URL).
  * Returns null on any failure (CORS, timeout, oversize) — callers fall back to a legacy publish.
  */
 export async function fetchAndHashMediaUrl(url: string): Promise<HashedRemoteMedia | null> {
   if (!/^https?:\/\//i.test(url)) return null
-  const fromUrl = sha256FromContentAddressedUrl(url)
-  try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), HASH_FETCH_TIMEOUT_MS)
-    try {
-      const res = await fetch(url, { signal: controller.signal, mode: 'cors' })
-      if (!res.ok) return fromUrl ? { sha256: fromUrl, size: 0 } : null
-      const declaredSize = Number(res.headers.get('content-length') ?? 0)
-      if (declaredSize > HASH_FETCH_MAX_BYTES) return null
-      const buf = await res.arrayBuffer()
-      if (buf.byteLength > HASH_FETCH_MAX_BYTES) return null
-      const digest = await crypto.subtle.digest('SHA-256', buf)
-      const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
-      const mimeType = res.headers.get('content-type')?.split(';')[0]?.trim() || undefined
-      return { sha256, size: buf.byteLength, mimeType }
-    } finally {
-      clearTimeout(timer)
-    }
-  } catch {
+  const media = await fetchRemoteMediaBytes(url)
+  if (!media) {
+    const fromUrl = sha256FromContentAddressedUrl(url)
     return fromUrl ? { sha256: fromUrl, size: 0 } : null
   }
+  const digest = await crypto.subtle.digest('SHA-256', media.buf)
+  const sha256 = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')
+  return { sha256, size: media.buf.byteLength, mimeType: media.mimeType }
 }

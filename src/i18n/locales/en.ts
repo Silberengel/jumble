@@ -1551,7 +1551,7 @@ export default {
     "Human-readable spell name": "Human-readable spell name",
     "Image URL": "Image URL",
     Insert: "Insert",
-    "Insert URL into your post and publish to the Nostr GIF library.": "Insert URL into your post and publish to the Nostr GIF library.",
+    "Copies the GIF to your media server, inserts the hosted URL into your post, and publishes it to the Nostr GIF library.": "Copies the GIF to your media server, inserts the hosted URL into your post, and publishes it to the Nostr GIF library.",
     "Insert URL into your post and publish kind 1063 (NIP-94) with hashtag memeamigo for discoverability.": "Insert URL into your post and publish kind 1063 (NIP-94) with hashtag memeamigo for discoverability.",
     "Insert event or address": "Insert event or address",
     "Insert mention": "Insert mention",

@@ -31,10 +31,12 @@ import {
   REACTION_CLIP_MAX_EMOTIONS,
   buildReactionClipDraft,
   fetchAndHashMediaUrl,
+  fetchRemoteMediaBytes,
   normalizeClipEmotions,
   sha256FromContentAddressedUrl
 } from '@/lib/reaction-clip'
 import { sha256HexOfFile } from '@/lib/upload-nip94-imeta'
+import { mergeImetaTags } from '@/lib/composer-media-url-imeta'
 import mediaUpload from '@/services/media-upload.service'
 import { Download, ExternalLink, X } from 'lucide-react'
 import { kinds } from 'nostr-tools'
@@ -149,17 +151,35 @@ export default function GifPicker({
     }) => {
       const emotions = normalizeClipEmotions(input.emotions)
       let sha256 = input.sha256?.trim().toLowerCase() || sha256FromContentAddressedUrl(input.url)
+      let mimeType = input.mimeType
+      let size = input.size
       if (!sha256 && emotions.length > 0) {
-        sha256 = (await fetchAndHashMediaUrl(input.url))?.sha256 ?? null
+        const hashed = await fetchAndHashMediaUrl(input.url)
+        if (hashed) {
+          sha256 = hashed.sha256
+          if (!mimeType && hashed.mimeType) mimeType = hashed.mimeType
+          if (!size && hashed.size > 0) size = hashed.size
+        }
       }
+      // Feed the composer's imeta cache so the note that embeds this URL gets the
+      // NIP-92 `x` hash and size too (enrichment merges rather than overwrites).
+      const imetaItems = [`url ${input.url}`, `m ${mimeType || 'image/gif'}`]
+      if (sha256) imetaItems.push(`x ${sha256}`)
+      if (size && size > 0) imetaItems.push(`size ${size}`)
+      if (input.dim?.trim()) imetaItems.push(`dim ${input.dim.trim()}`)
+      mediaUpload.registerImetaTag(
+        input.url,
+        mergeImetaTags(['imeta', ...imetaItems], mediaUpload.getImetaTagByUrl(input.url))
+      )
+
       const isClip = Boolean(sha256) && emotions.length > 0
       const draft = isClip
         ? buildReactionClipDraft({
             url: input.url,
             sha256: sha256!,
-            mimeType: input.mimeType,
+            mimeType,
             dim: input.dim,
-            size: input.size,
+            size,
             description: input.description,
             emotions
           })
@@ -168,7 +188,7 @@ export default function GifPicker({
       await cachePublishedGif({
         url: input.url,
         sha256: sha256 ?? undefined,
-        mimeType: input.mimeType || 'image/gif',
+        mimeType: mimeType || 'image/gif',
         description: input.description || undefined,
         emotions: isClip ? emotions : undefined,
         sourceKind: draft.kind,
@@ -451,6 +471,39 @@ export default function GifPicker({
 
   const isLoggedIn = !!pubkey
 
+  /**
+   * Download an external GIF and re-upload it to the user's media server (Blossom/NIP-96),
+   * so the clip is content-addressed on infrastructure the user controls instead of pointing
+   * at Tenor/Giphy. Returns the hosted URL + NIP-94 tags, or null (CORS, non-image, upload error).
+   */
+  const mirrorGifToMediaServer = useCallback(
+    async (url: string): Promise<{ url: string; tags: string[][] } | null> => {
+      const media = await fetchRemoteMediaBytes(url)
+      if (!media) return null
+      const pathname = (() => {
+        try {
+          return new URL(url).pathname
+        } catch {
+          return ''
+        }
+      })()
+      // Only mirror actual GIFs: they pass through upload compression unchanged, while other
+      // animated rasters (webp/apng) would be flattened to a single frame by the canvas re-encode.
+      const isGif = media.mimeType
+        ? media.mimeType === 'image/gif'
+        : /\.gif$/i.test(pathname)
+      if (!isGif) return null
+      const name = pathname.split('/').pop()?.trim() || 'clip.gif'
+      const file = new File([media.buf], name, { type: 'image/gif' })
+      try {
+        return await mediaUpload.upload(file)
+      } catch {
+        return null
+      }
+    },
+    []
+  )
+
   /** Open Tenor in a new tab (not a popup) so the picker doesn't close from focus loss. */
   const openTenorSearch = useCallback(() => {
     window.open(TENOR_SEARCH_URL(pasteUrl || searchInput), '_blank', 'noopener,noreferrer')
@@ -458,33 +511,61 @@ export default function GifPicker({
 
   const descriptionForPublish = publishDescription.trim()
 
-  /** Insert pasted GIF URL and publish it to the Nostr GIF library (kind 1090 clip when possible). */
+  /**
+   * Pasted GIF URL: mirror the bytes to the user's media server (Blossom/NIP-96), insert the
+   * hosted URL, and publish it to the Nostr GIF library (kind 1090 clip when possible).
+   * If mirroring fails (CORS, not logged in, upload error) the original URL is inserted instead.
+   */
   const handlePasteUrlInsert = useCallback(async () => {
     const url = pasteUrl.trim()
     if (!url || !/^https?:\/\//i.test(url)) return
-    onSelect?.(url)
-    setPasteUrl('')
-    handleOpenChange(false)
-    if (pubkey) {
-      setPublishingPaste(true)
-      try {
-        await publishClipOrLegacy({
-          url,
-          description: descriptionForPublish,
-          emotions: selectedEmotions
-        })
-        setPublishDescription('')
-      } catch {
-        // ignore; URL was still inserted
-      } finally {
-        setPublishingPaste(false)
-      }
+    if (!pubkey) {
+      onSelect?.(url)
+      setPasteUrl('')
+      handleOpenChange(false)
+      return
     }
-  }, [pasteUrl, pubkey, onSelect, publishClipOrLegacy, selectedEmotions, descriptionForPublish, handleOpenChange])
+    setPublishingPaste(true)
+    try {
+      const mirrored = await mirrorGifToMediaServer(url)
+      const finalUrl = mirrored?.url ?? url
+      const tagValue = (name: string) =>
+        mirrored?.tags.find((row) => row[0] === name && row[1]?.trim())?.[1]?.trim()
+      onSelect?.(finalUrl)
+      setPasteUrl('')
+      handleOpenChange(false)
+      // Fire-and-forget: relay publish must not block the editor after insert.
+      void publishClipOrLegacy({
+        url: finalUrl,
+        description: descriptionForPublish,
+        emotions: selectedEmotions,
+        sha256: tagValue('x'),
+        mimeType: tagValue('m'),
+        dim: tagValue('dim'),
+        size: Number(tagValue('size')) || undefined
+      })
+        .then(() => setPublishDescription(''))
+        .catch(() => {})
+    } finally {
+      setPublishingPaste(false)
+    }
+  }, [
+    pasteUrl,
+    pubkey,
+    onSelect,
+    mirrorGifToMediaServer,
+    publishClipOrLegacy,
+    selectedEmotions,
+    descriptionForPublish,
+    handleOpenChange
+  ])
 
-  /** External GIF from a note: publish clip/1063, then insert URL and close (same relays as grid pick). */
+  /**
+   * External GIF from a note: mirror to the user's media server, publish clip/1063 for the
+   * hosted URL, then insert it and close (falls back to the original URL if mirroring fails).
+   */
   const handleArchiveAndInsert = useCallback(
-    (e: React.MouseEvent, gif: GifMetadata) => {
+    async (e: React.MouseEvent, gif: GifMetadata) => {
       e.preventDefault()
       e.stopPropagation()
       if (!pubkey) return
@@ -492,24 +573,43 @@ export default function GifPicker({
       if (!url || !/^https?:\/\//i.test(url)) return
       const desc = publishDescription.trim() || gif.description?.trim() || ''
       setArchivingEventId(gif.eventId)
-      onSelect?.(url)
-      handleOpenChange(false)
-      void loadGifs(true)
-      void publishClipOrLegacy({
-        url,
-        description: desc,
-        emotions: gif.emotions?.length ? gif.emotions : selectedEmotions,
-        sha256: gif.sha256,
-        mimeType: gif.mimeType,
-        dim: gif.width && gif.height ? `${gif.width}x${gif.height}` : undefined
-      })
-        .catch(() => {})
-        .finally(() => {
-          setArchivingEventId(null)
-          if (publishDescription.trim()) setPublishDescription('')
+      try {
+        const mirrored = await mirrorGifToMediaServer(url)
+        const finalUrl = mirrored?.url ?? url
+        const tagValue = (name: string) =>
+          mirrored?.tags.find((row) => row[0] === name && row[1]?.trim())?.[1]?.trim()
+        onSelect?.(finalUrl)
+        handleOpenChange(false)
+        void loadGifs(true)
+        void publishClipOrLegacy({
+          url: finalUrl,
+          description: desc,
+          emotions: gif.emotions?.length ? gif.emotions : selectedEmotions,
+          sha256: tagValue('x') ?? gif.sha256,
+          mimeType: tagValue('m') ?? gif.mimeType,
+          dim:
+            tagValue('dim') ??
+            (gif.width && gif.height ? `${gif.width}x${gif.height}` : undefined),
+          size: Number(tagValue('size')) || undefined
         })
+          .catch(() => {})
+          .finally(() => {
+            if (publishDescription.trim()) setPublishDescription('')
+          })
+      } finally {
+        setArchivingEventId(null)
+      }
     },
-    [pubkey, publishClipOrLegacy, selectedEmotions, onSelect, loadGifs, publishDescription, handleOpenChange]
+    [
+      pubkey,
+      mirrorGifToMediaServer,
+      publishClipOrLegacy,
+      selectedEmotions,
+      onSelect,
+      loadGifs,
+      publishDescription,
+      handleOpenChange
+    ]
   )
 
   const gifSourceKindTitle = useCallback(
@@ -692,7 +792,7 @@ export default function GifPicker({
             className="shrink-0 touch-manipulation"
             disabled={!pasteUrl.trim() || publishingPaste}
             onClick={handlePasteUrlInsert}
-            title={t('Insert URL into your post and publish to the Nostr GIF library.')}
+            title={t('Copies the GIF to your media server, inserts the hosted URL into your post, and publishes it to the Nostr GIF library.')}
           >
             {publishingPaste ? t('Adding…') : t('Insert')}
           </Button>

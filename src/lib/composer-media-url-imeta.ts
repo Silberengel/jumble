@@ -90,6 +90,27 @@ export function mimeFromMediaUrl(url: string, kind?: number | null): string | un
   return 'video/mp4'
 }
 
+/**
+ * Merge two `imeta` tags for the same URL: `primary` items win, missing keys are filled
+ * from `secondary`. Keeps hash fields (`x`, `size`) computed elsewhere (e.g. GIF picker)
+ * from being lost when the composer's probe-based enrichment re-registers the tag.
+ */
+export function mergeImetaTags(primary: string[], secondary?: string[]): string[] {
+  if (!secondary?.length) return primary
+  const out = [...primary]
+  const keys = new Set(primary.slice(1).map((item) => item.split(' ')[0]))
+  const values = new Set(primary.slice(1))
+  for (const item of secondary.slice(1)) {
+    const key = item.split(' ')[0]
+    if (key === 'fallback' ? !values.has(item) : !keys.has(key)) {
+      out.push(item)
+      keys.add(key)
+      values.add(item)
+    }
+  }
+  return out
+}
+
 export function buildImetaTagFromMediaUrl(
   url: string,
   opts?: { mime?: string; width?: number; height?: number }

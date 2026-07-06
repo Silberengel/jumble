@@ -145,6 +145,7 @@ import {
   buildImetaTagFromMediaUrl,
   enrichImetaTagFromMediaUrl,
   inferMediaKindFromUrl,
+  mergeImetaTags,
   mimeFromMediaUrl
 } from '@/lib/composer-media-url-imeta'
 import {
@@ -551,7 +552,7 @@ export default function PostContent({
 
   const enrichAndPatchComposerImeta = useCallback((url: string) => {
     const key = normalizeComposerMediaUrlKey(cleanUrl(url) || url)
-    void enrichImetaTagFromMediaUrl(key).then((enriched) => {
+    void enrichImetaTagFromMediaUrl(key).then((probed) => {
       const content = textareaRef.current?.getText() ?? ''
       if (composerContentHasUploadPlaceholder(content)) return
       const stillPresent = extractMediaUrlsFromComposerContent(content).some(
@@ -560,7 +561,10 @@ export default function PostContent({
       if (!stillPresent) return
       const prev = composerImetaTagsRef.current
       const existing = prev.find((t) => imetaUrlFromTagRow(t) === key)
-      if (!existing || JSON.stringify(existing) === JSON.stringify(enriched)) return
+      if (!existing) return
+      // Keep fields the probe cannot produce (e.g. `x`/`size` hashed by the GIF picker).
+      const enriched = mergeImetaTags(probed, mediaUpload.getImetaTagByUrl(key) ?? existing)
+      if (JSON.stringify(existing) === JSON.stringify(enriched)) return
       mediaUpload.registerImetaTag(key, enriched)
       const next = prev.map((t) => (imetaUrlFromTagRow(t) === key ? enriched : t))
       composerImetaTagsRef.current = next

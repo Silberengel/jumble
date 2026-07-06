@@ -1554,7 +1554,7 @@ export default {
     "Human-readable spell name": "Lesbarer Name des Zauberspruchs",
     "Image URL": "Bild-URL",
     Insert: "Insert",
-    "Insert URL into your post and publish to the Nostr GIF library.": "Fügen Sie URL in Ihren Beitrag ein und veröffentlichen Sie sie in der Nostr GIF-Bibliothek.",
+    "Copies the GIF to your media server, inserts the hosted URL into your post, and publishes it to the Nostr GIF library.": "Kopiert das GIF auf Ihren Medienserver, fügt die gehostete URL in Ihren Beitrag ein und veröffentlicht sie in der Nostr GIF-Bibliothek.",
     "Insert URL into your post and publish kind 1063 (NIP-94) with hashtag memeamigo for discoverability.": "Fügen Sie URL in Ihren Beitrag ein und veröffentlichen Sie die Art 1063 (NIP-94) mit dem Hashtag memeamigo zur Auffindbarkeit.",
     "Insert event or address": "Ereignis oder Anschrift einfügen",
     "Insert mention": "Angabe einfügen",
