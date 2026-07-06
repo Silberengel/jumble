@@ -5,6 +5,7 @@ import {
   findTrailingStringifiedNostrEvent,
   type StringifiedNostrEventMatch
 } from '@/lib/nostr-event-json'
+import { isAsciidocPublicationSectionKind } from '@/lib/publication-section-content-kind'
 import { cn } from '@/lib/utils'
 import { kinds } from 'nostr-tools'
 import { useEffect } from 'react'
@@ -19,11 +20,6 @@ import StandardTextNoteEmbedCard from '@/components/Note/StandardTextNoteEmbedCa
 import NotificationEventCard from '@/components/Note/NotificationEventCard'
 import type { RenderCtx } from './types'
 import { Repeat2 } from 'lucide-react'
-
-const ASCIIDOC_CONTENT_KINDS = new Set<number>([
-  ExtendedKind.PUBLICATION_CONTENT,
-  ExtendedKind.WIKI_ARTICLE
-])
 
 function isStringifiedJsonContent(content?: string): boolean {
   if (!content) return false
@@ -191,7 +187,7 @@ export function renderMarkdownContent(ctx: RenderCtx, className = 'mt-2') {
     )
   }
 
-  if (ASCIIDOC_CONTENT_KINDS.has(displayEvent.kind)) {
+  if (isAsciidocPublicationSectionKind(displayEvent.kind)) {
     return (
       <AsciidocArticle
         className={className}

@@ -208,7 +208,9 @@ export default function PublicationIndexMetadata({
         </div>
       ) : null}
 
-      {isFull && metadata.sectionCount > 0 ? <PublicationIndexBody event={event} /> : null}
+      {isFull && metadata.sectionCount > 0 ? (
+        <PublicationIndexBody event={event} autoStartReading={isFull} />
+      ) : null}
     </div>
   )
 }

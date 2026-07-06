@@ -1,5 +1,6 @@
 import logger from '@/lib/logger'
 import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS } from '@/constants'
+import { eventTagAddress } from '@/lib/publication-index'
 import { publicationCoordinateLookupKeys, splitPublicationCoordinate } from '@/lib/publication-coordinate'
 import { buildComprehensiveRelayList } from '@/lib/relay-list-builder'
 import { normalizeUrl } from '@/lib/url'
@@ -22,6 +23,54 @@ export type PublicationSectionRef = {
 
 export function publicationRefKey(ref: PublicationSectionRef): string {
   return (ref.coordinate || ref.eventId || '').trim()
+}
+
+/** Resolve a section ref against the fetched map (coordinate aliases + event ids). */
+export function resolvePublicationRefEvent(
+  ref: PublicationSectionRef,
+  fetched: ReadonlyMap<string, Event>
+): Event | undefined {
+  const key = publicationRefKey(ref)
+  if (key) {
+    const direct = fetched.get(key)
+    if (direct) return direct
+  }
+  if (ref.type === 'a' && ref.coordinate) {
+    for (const lookupKey of publicationCoordinateLookupKeys(ref.coordinate)) {
+      const ev = fetched.get(lookupKey)
+      if (ev) return ev
+    }
+  }
+  if (ref.type === 'e' && ref.eventId) {
+    const hex = resolvePublicationEventIdToHex(ref.eventId)
+    if (hex) {
+      const byHex = fetched.get(hex) ?? fetched.get(hex.toLowerCase())
+      if (byHex) return byHex
+    }
+  }
+  return undefined
+}
+
+/** Register a fetched section under every key the tree and loader may use for lookup. */
+export function registerFetchedPublicationSection(
+  target: Map<string, Event>,
+  ref: PublicationSectionRef,
+  ev: Event
+): void {
+  target.set(ev.id, ev)
+  const tagAddr = eventTagAddress(ev)
+  if (tagAddr) target.set(tagAddr, ev)
+  const key = publicationRefKey(ref)
+  if (key) target.set(key, ev)
+  if (ref.type === 'a' && ref.coordinate) {
+    for (const lookupKey of publicationCoordinateLookupKeys(ref.coordinate)) {
+      target.set(lookupKey, ev)
+    }
+  }
+  if (ref.type === 'e' && ref.eventId) {
+    const hex = resolvePublicationEventIdToHex(ref.eventId)
+    if (hex) target.set(hex.toLowerCase(), ev)
+  }
 }
 
 export function parsePublicationATagCoordinate(raw: string): {

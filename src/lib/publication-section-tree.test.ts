@@ -150,4 +150,25 @@ describe('buildPublicationSectionTree', () => {
     expect(refs.map((r) => r.tagOrder)).toEqual([0, 1, 2])
     expect(refs.map((r) => r.type)).toEqual(['a', 'a', 'e'])
   })
+
+  it('resolves section events stored under NFC coordinate alias', () => {
+    const dNfc = 'caf\u00e9'
+    const dNfd = 'cafe\u0301'
+    const coordNfd = `30041:${PK}:${dNfd}`
+    const coordNfc = `30041:${PK}:${dNfc}`
+    const root = indexEvent(
+      [
+        ['d', 'book'],
+        ['title', 'Book'],
+        ['a', coordNfd, '', 'Cafe section']
+      ],
+      'root-id'
+    )
+    const ch1 = sectionEvent(dNfc, 'Cafe Section', 'ch1-id')
+    const fetched = new Map<string, Event>([[coordNfc, ch1]])
+
+    const tree = buildPublicationSectionTree(root, fetched)
+    expect(tree[0]?.event?.id).toBe('ch1-id')
+    expect(tree[0]?.title).toBe('Cafe Section')
+  })
 })

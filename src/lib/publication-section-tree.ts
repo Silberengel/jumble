@@ -4,6 +4,7 @@ import { uppercaseRomanNumeralsInText } from '@/lib/roman-numeral-display'
 import { orderedPublicationRefsFromIndex } from '@/lib/publication-asciidoc-assembler'
 import {
   publicationRefKey,
+  resolvePublicationRefEvent,
   type PublicationSectionRef
 } from '@/lib/publication-section-fetch'
 import type { Event } from 'nostr-tools'
@@ -111,7 +112,7 @@ function resolveRefEvent(
   ref: PublicationSectionRef,
   fetched: Map<string, Event>
 ): Event | undefined {
-  return fetched.get(publicationRefKey(ref))
+  return resolvePublicationRefEvent(ref, fetched)
 }
 
 function isPublicationBranchRef(ref: PublicationSectionRef): boolean {

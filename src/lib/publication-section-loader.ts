@@ -5,6 +5,7 @@ import {
   batchFetchPublicationSectionEvents,
   buildPublicationSectionRelayUrls,
   publicationRefKey,
+  resolvePublicationRefEvent,
   type PublicationSectionRef
 } from '@/lib/publication-section-fetch'
 import type { Event } from 'nostr-tools'
@@ -33,11 +34,11 @@ export function collectPendingPublicationSectionLoads(
     for (const ref of orderedPublicationRefsFromIndex(indexEvent)) {
       const key = publicationRefKey(ref)
       if (!key || failed.has(key)) continue
-      if (!fetched.has(key) && !inFlight.has(key)) {
+      const ev = resolvePublicationRefEvent(ref, fetched)
+      if (!ev && !inFlight.has(key)) {
         out.push({ ref, indexEvent })
         continue
       }
-      const ev = fetched.get(key)
       if (ev && isPublicationBranchRef(ref) && ev.kind === ExtendedKind.PUBLICATION) {
         walk(ev)
       }
@@ -61,10 +62,10 @@ export function countPublicationSectionLoadProgress(
     for (const ref of orderedPublicationRefsFromIndex(indexEvent)) {
       const key = publicationRefKey(ref)
       if (!key) continue
-      if (failed.has(key) || fetched.has(key)) resolved++
+      const ev = resolvePublicationRefEvent(ref, fetched)
+      if (failed.has(key) || ev) resolved++
       else pending++
 
-      const ev = fetched.get(key)
       if (ev && isPublicationBranchRef(ref) && ev.kind === ExtendedKind.PUBLICATION) {
         walk(ev)
       }
@@ -81,8 +82,7 @@ function addressFromFetchedRef(
 ): string | undefined {
   const coord = ref.coordinate?.trim().toLowerCase()
   if (coord) return coord
-  const key = publicationRefKey(ref)
-  const ev = key ? fetched.get(key) : undefined
+  const ev = resolvePublicationRefEvent(ref, fetched)
   return ev ? eventTagAddress(ev)?.toLowerCase() : undefined
 }
 
@@ -105,13 +105,13 @@ export function collectPublicationSectionLoadsForAddress(
       const refAddress = addressFromFetchedRef(ref, fetched)
       const isTarget = refAddress === target
 
-      if (!fetched.has(key) && !inFlight.has(key)) {
+      if (!resolvePublicationRefEvent(ref, fetched) && !inFlight.has(key)) {
         tasks.push({ ref, indexEvent })
       }
 
       if (isTarget) return true
 
-      const ev = fetched.get(key)
+      const ev = resolvePublicationRefEvent(ref, fetched)
       if (ev && isPublicationBranchRef(ref) && ev.kind === ExtendedKind.PUBLICATION) {
         if (walk(ev)) return true
       }

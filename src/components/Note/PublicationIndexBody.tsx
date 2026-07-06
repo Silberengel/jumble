@@ -1,7 +1,7 @@
 import AsciidocArticle from '@/components/Note/LazyAsciidocArticle'
 import MarkdownArticle from '@/components/Note/LazyMarkdownArticle'
 import NoteOptions from '@/components/NoteOptions'
-import { DOCUMENT_RELAY_URLS, ExtendedKind, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
+import { DOCUMENT_RELAY_URLS, FAST_READ_RELAY_URLS, LIBRARY_RELAY_URLS } from '@/constants'
 import { useProgressivePublicationContent } from '@/hooks/useProgressivePublicationContent'
 import { usePublicationSearchHighlight } from '@/hooks/usePublicationSearchHighlight'
 import {
@@ -24,21 +24,35 @@ import {
   type PublicationSectionTreeNode
 } from '@/lib/publication-section-tree'
 import { publicationContentSectionHaystack } from '@/lib/general-search-text-match'
+import { isAsciidocPublicationSectionKind } from '@/lib/publication-section-content-kind'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { useCurrentRelays } from '@/providers/CurrentRelaysProvider'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { BookOpen, Loader2 } from 'lucide-react'
-import { Event, kinds } from 'nostr-tools'
+import { Event } from 'nostr-tools'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-const ASCIIDOC_CONTENT_KINDS = new Set<number>([
-  ExtendedKind.PUBLICATION_CONTENT,
-  ExtendedKind.WIKI_ARTICLE
-])
-
 type HeadingTag = 'h2' | 'h3' | 'h4' | 'h5' | 'h6'
+
+function SectionContent({ event }: { event: Event }) {
+  if (isAsciidocPublicationSectionKind(event.kind)) {
+    return (
+      <div className="mt-2">
+        <AsciidocArticle className="mt-0" event={event} hideImagesAndInfo hideTitle />
+      </div>
+    )
+  }
+  if ((event.content ?? '').trim()) {
+    return (
+      <div className="mt-2">
+        <MarkdownArticle className="mt-0" event={event} hideMetadata hideTitle />
+      </div>
+    )
+  }
+  return null
+}
 
 function sectionNodeMatchesAddress(node: PublicationSectionTreeNode, targetAddress: string): boolean {
   const target = targetAddress.trim().toLowerCase()
@@ -64,31 +78,6 @@ function SectionHeadingRow({
       {event ? <NoteOptions event={event} className="shrink-0 -mr-1 -mt-0.5" /> : null}
     </div>
   )
-}
-
-function SectionContent({ event }: { event: Event }) {
-  if (ASCIIDOC_CONTENT_KINDS.has(event.kind)) {
-    return (
-      <div className="mt-2">
-        <AsciidocArticle className="mt-0" event={event} hideImagesAndInfo hideTitle />
-      </div>
-    )
-  }
-  if (event.kind === kinds.LongFormArticle) {
-    return (
-      <div className="mt-2">
-        <MarkdownArticle className="mt-0" event={event} hideMetadata hideTitle />
-      </div>
-    )
-  }
-  if ((event.content ?? '').trim()) {
-    return (
-      <div className="mt-2 whitespace-pre-wrap break-words text-base text-foreground">
-        {event.content}
-      </div>
-    )
-  }
-  return null
 }
 
 function SectionContentSkeleton() {
@@ -237,7 +226,7 @@ function PublicationSectionNodeView({
       ) : node.event ? (
         <SectionContent event={node.event} />
       ) : (
-        <SectionMissingPlaceholder />
+        <SectionContentSkeleton />
       )}
     </section>
   )
@@ -310,10 +299,13 @@ function PublicationTableOfContents({
 
 export default function PublicationIndexBody({
   event,
-  className
+  className,
+  autoStartReading = false
 }: {
   event: Event
   className?: string
+  /** Note panel / full view: begin loading sections without the “Read this book” step. */
+  autoStartReading?: boolean
 }) {
   const { relayUrls: currentBrowsingRelayUrls } = useCurrentRelays()
   const { favoriteRelays } = useFavoriteRelays()
@@ -334,13 +326,20 @@ export default function PublicationIndexBody({
   const initialIntent = peekLibraryPublicationReadingIntentForEvent(event)
   const [readingIntent, setReadingIntent] = useState(initialIntent)
   const [readingStarted, setReadingStarted] = useState(
-    () => Boolean(initialIntent) || hasPublicationReadingStarted(event)
+    () =>
+      autoStartReading ||
+      Boolean(initialIntent) ||
+      hasPublicationReadingStarted(event)
   )
   const [backgroundLoadsEnabled, setBackgroundLoadsEnabled] = useState(
     () => !initialIntent
   )
 
   useLayoutEffect(() => {
+    if (autoStartReading && !hasPublicationReadingStarted(event)) {
+      markPublicationReadingStarted(event)
+      setReadingStarted(true)
+    }
     const applyIntent = () => {
       const intent = resolveLibraryPublicationReadingIntent(event)
       if (!intent) return
@@ -352,9 +351,13 @@ export default function PublicationIndexBody({
     applyIntent()
     window.addEventListener(LIBRARY_PUBLICATION_READING_INTENT_EVENT, applyIntent)
     return () => window.removeEventListener(LIBRARY_PUBLICATION_READING_INTENT_EVENT, applyIntent)
-  }, [event.id, event])
+  }, [autoStartReading, event.id, event])
 
   useEffect(() => {
+    if (autoStartReading) {
+      setReadingStarted(true)
+      return
+    }
     if (peekLibraryPublicationReadingIntentForEvent(event)) return
     if (hasPublicationReadingStarted(event)) {
       setReadingStarted(true)
@@ -363,7 +366,7 @@ export default function PublicationIndexBody({
     setReadingIntent(null)
     setReadingStarted(false)
     setBackgroundLoadsEnabled(true)
-  }, [event.id])
+  }, [autoStartReading, event.id])
 
   const targetSectionAddress = readingIntent?.sectionAddress
   const highlightQuery = readingIntent?.highlightQuery

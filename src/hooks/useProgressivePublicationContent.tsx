@@ -8,19 +8,14 @@ import {
   fetchedPublicationEventForAddress,
   type PublicationSectionLoadTask
 } from '@/lib/publication-section-loader'
-import { publicationRefKey, type PublicationSectionRef } from '@/lib/publication-section-fetch'
+import {
+  publicationRefKey,
+  registerFetchedPublicationSection,
+  resolvePublicationRefEvent,
+  type PublicationSectionRef
+} from '@/lib/publication-section-fetch'
 import type { Event } from 'nostr-tools'
 import { useCallback, useEffect, useRef, useState } from 'react'
-
-function registerFetchedPublicationSection(
-  target: Map<string, Event>,
-  ref: PublicationSectionRef,
-  ev: Event
-): void {
-  indexPublicationEvents(target, [ev])
-  const key = publicationRefKey(ref)
-  if (key) target.set(key, ev)
-}
 
 const READ_AHEAD_COUNT = 8
 /** Max time to prefetch before revealing the reader (avoids layout shift while reading). */
@@ -96,7 +91,7 @@ export function useProgressivePublicationContent(
       if (
         !key ||
         inFlightRef.current.has(key) ||
-        fetchedRef.current.has(key) ||
+        resolvePublicationRefEvent(ref, fetchedRef.current) ||
         failedRef.current.has(key)
       ) {
         return
@@ -198,7 +193,13 @@ export function useProgressivePublicationContent(
           failedRef.current,
           inFlightRef.current
         )
-        if (pending.length === 0) break
+        if (pending.length === 0) {
+          if (inFlightRef.current.size > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, 50))
+            continue
+          }
+          break
+        }
 
         const batch = pending.slice(0, BLOCKING_BATCH_SIZE)
         await Promise.all(batch.map((task) => loadSection(task.ref, task.indexEvent)))
@@ -206,10 +207,18 @@ export function useProgressivePublicationContent(
       }
     }
 
+    const drainInFlight = async () => {
+      while (!cancelled && inFlightRef.current.size > 0) {
+        await new Promise((resolve) => window.setTimeout(resolve, 50))
+      }
+    }
+
     void (async () => {
       await loadPriorityPath()
       if (cancelled) return
       await runBlockingPrefetch()
+      if (cancelled) return
+      await drainInFlight()
       if (cancelled) return
       syncLoadProgress()
       setContentReady(true)

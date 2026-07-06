@@ -7,7 +7,7 @@ import { eventTagAddress } from '@/lib/publication-index'
 import { pubkeyToNpub } from '@/lib/pubkey'
 import {
   parsePublicationATagCoordinate,
-  publicationRefKey,
+  resolvePublicationRefEvent,
   type PublicationSectionRef
 } from '@/lib/publication-section-fetch'
 import { uppercaseRomanNumeralsInText } from '@/lib/roman-numeral-display'
@@ -203,7 +203,7 @@ function resolveRefEvent(
   ref: PublicationSectionRef,
   fetched: Map<string, Event>
 ): Event | undefined {
-  return fetched.get(publicationRefKey(ref))
+  return resolvePublicationRefEvent(ref, fetched)
 }
 
 function appendIndexBody(
