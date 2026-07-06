@@ -126,6 +126,8 @@ export function getKindDescription(
       return { number: 99999, description: 'Web article thread' }
     case ExtendedKind.FILE_METADATA:
       return { number: 1063, description: 'File metadata' }
+    case ExtendedKind.REACTION_CLIP:
+      return { number: 1090, description: 'Reaction clip' }
     case kinds.Report:
     case ExtendedKind.REPORT:
       return { number: 1984, description: 'Report' }

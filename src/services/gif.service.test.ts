@@ -73,6 +73,38 @@ describe('gif.service', () => {
     expect(dedupeGifsByUrl([note, comment])).toEqual([comment])
   })
 
+  it('dedupeGifsByUrl collapses different URLs sharing the same media sha256, preferring kind 1090', () => {
+    const hash = 'f'.repeat(64)
+    const legacy1063 = {
+      url: 'https://host-a.example/animation.gif',
+      sha256: hash,
+      sourceKind: ExtendedKind.FILE_METADATA,
+      eventId: '1063-1',
+      pubkey: 'a'.repeat(64),
+      createdAt: 500
+    }
+    const clip1090 = {
+      url: `https://host-b.example/${hash}.webp`,
+      sha256: hash,
+      emotions: ['disbelief'],
+      sourceKind: ExtendedKind.REACTION_CLIP,
+      eventId: '1090-1',
+      pubkey: 'b'.repeat(64),
+      createdAt: 100
+    }
+    const unrelated = {
+      url: 'https://host-c.example/other.gif',
+      sourceKind: ExtendedKind.FILE_METADATA,
+      eventId: '1063-2',
+      pubkey: 'c'.repeat(64),
+      createdAt: 200
+    }
+    const merged = dedupeGifsByUrl([legacy1063, clip1090, unrelated])
+    expect(merged).toHaveLength(2)
+    expect(merged.find((g) => g.sha256 === hash)?.eventId).toBe('1090-1')
+    expect(merged.some((g) => g.eventId === '1063-2')).toBe(true)
+  })
+
   it('dedupeGifsByUrl merge keeps unique URLs from both relay and existing cache', () => {
     const existing = [
       {

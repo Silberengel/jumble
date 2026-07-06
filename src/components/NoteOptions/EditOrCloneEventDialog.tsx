@@ -42,6 +42,8 @@ import {
 } from '@/lib/draft-event'
 import { createFakeEvent, isNsfwEvent } from '@/lib/event'
 import { getContentWarningLabel } from '@/lib/content-warning'
+import { isAsciidocMarkupKind } from '@/lib/advanced-event-lab-kinds'
+import type { AdvancedEventLabSlice } from '@/lib/advanced-event-lab-slice'
 import logger from '@/lib/logger'
 import {
   showPublishingError,
@@ -50,14 +52,28 @@ import {
 } from '@/lib/publishing-feedback'
 import { cn } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
+import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import shortNoteEditsService from '@/services/short-note-edits.service'
 import type { TDraftEvent } from '@/types'
 import dayjs from 'dayjs'
 import { AlertTriangle, Plus, Trash2 } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { canPublishWithContent } from '@/lib/publish-content-required'
+
+const AdvancedEventLabDialog = lazy(
+  () => import('@/components/AdvancedEventLab/AdvancedEventLabDialog')
+)
 
 function normalizeTagRow(row: string[]): string[] | null {
   const trimmed = row.map((c) => c.trim())
@@ -143,13 +159,17 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   const isShortNoteAuthorEdit =
     !isCreate && mode === 'edit' && sourceEvent?.kind === kinds.ShortTextNote
 
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { pubkey, publish, checkLogin } = useNostr()
+  const { isSmallScreen } = useScreenSize()
   const [content, setContent] = useState(() => sourceEvent?.content ?? '')
   const [createKindInput, setCreateKindInput] = useState('1')
   const [tagRows, setTagRows] = useState<string[][]>([['', '']])
   const [activeTab, setActiveTab] = useState('edit')
   const [publishing, setPublishing] = useState(false)
+  const [labOpen, setLabOpen] = useState(false)
+  const [labInitial, setLabInitial] = useState<AdvancedEventLabSlice | null>(null)
+  const labOpenRef = useRef(false)
   const textareaRef = useRef<TPostTextareaHandle>(null)
   const prevOpenRef = useRef(false)
   const prevRichKindRef = useRef<number | null>(null)
@@ -221,6 +241,54 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
   }, [open, useRichComposer, kind, content])
 
   const normalizedTags = useMemo(() => tagsFromRows(tagRows), [tagRows])
+
+  // Desktop-only Advanced editor (CodeMirror lab). Not shown on mobile; this dialog is never a reply editor.
+  const showAdvancedEditorButton = !isSmallScreen
+
+  const handleLabOpenChange = useCallback((next: boolean) => {
+    labOpenRef.current = next
+    setLabOpen(next)
+    if (!next) setLabInitial(null)
+  }, [])
+
+  useEffect(() => {
+    if (!open) handleLabOpenChange(false)
+  }, [open, handleLabOpenChange])
+
+  const handleOpenAdvancedLab = useCallback(() => {
+    if (isCreate && parsedCreateKind === null) return
+    const labKind = isShortNoteAuthorEdit ? ExtendedKind.SHORT_NOTE_EDIT : kind
+    const liveContent = useRichComposer ? (textareaRef.current?.getText() ?? content) : content
+    const labTags = isShortNoteAuthorEdit
+      ? [...normalizedTags.map((r) => [...r]), ['e', sourceEvent!.id, '', sourceEvent!.pubkey]]
+      : normalizedTags.map((r) => [...r])
+    setLabInitial({ kind: labKind, content: liveContent, tags: labTags })
+    labOpenRef.current = true
+    setLabOpen(true)
+  }, [
+    isCreate,
+    parsedCreateKind,
+    isShortNoteAuthorEdit,
+    kind,
+    useRichComposer,
+    content,
+    normalizedTags,
+    sourceEvent
+  ])
+
+  const handleLabApply = useCallback(
+    (payload: AdvancedEventLabSlice) => {
+      setContent(payload.content)
+      if (useRichComposer) {
+        textareaRef.current?.setDocumentFromPlainText(payload.content)
+      }
+      // Short-note author edits publish NIP-41 tags built at publish time; lab tag edits are preview-only there.
+      if (!isShortNoteAuthorEdit) {
+        setTagRows(payload.tags.length ? payload.tags.map((r) => [...r]) : [['', '']])
+      }
+    },
+    [useRichComposer, isShortNoteAuthorEdit]
+  )
 
   const tagsWithContentUploadImeta = useMemo(() => {
     const next = [...normalizedTags]
@@ -489,10 +557,18 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     [appendUploadedUrl]
   )
 
+  const handleDialogOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next && labOpenRef.current) return
+      onOpenChange(next)
+    },
+    [onOpenChange]
+  )
+
   return (
     <NeventPickerProvider>
     <>
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-h-[90vh] w-[95vw] max-w-3xl flex flex-col gap-0 p-0 overflow-hidden">
         <DialogHeader className="shrink-0 px-6 pt-6 pb-2 pr-14">
           <DialogTitle>{title}</DialogTitle>
@@ -507,11 +583,29 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
 
         <div className="flex-1 min-h-0 flex flex-col px-6">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0 gap-2">
-            <TabsList className="w-auto justify-start shrink-0 flex flex-wrap gap-1">
-              <TabsTrigger value="edit">{t('Edit')}</TabsTrigger>
-              <TabsTrigger value="preview">{t('Preview')}</TabsTrigger>
-              <TabsTrigger value="json">{t('Json')}</TabsTrigger>
-            </TabsList>
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+              <TabsList className="w-auto justify-start flex flex-wrap gap-1">
+                <TabsTrigger value="edit">{t('Edit')}</TabsTrigger>
+                <TabsTrigger value="preview">{t('Preview')}</TabsTrigger>
+                <TabsTrigger value="json">{t('Json')}</TabsTrigger>
+              </TabsList>
+              {showAdvancedEditorButton ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 shrink-0 px-2 text-xs font-normal sm:text-sm"
+                  disabled={isCreate && parsedCreateKind === null}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    handleOpenAdvancedLab()
+                  }}
+                  title={t('Advanced event lab')}
+                >
+                  {t('Advanced editor button')}
+                </Button>
+              ) : null}
+            </div>
 
             <TabsContent value="edit" className="flex-1 min-h-0 mt-0 data-[state=inactive]:hidden">
               <ScrollArea className="h-[min(58vh,520px)] min-h-[300px] pr-3">
@@ -754,6 +848,22 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {showAdvancedEditorButton && labOpen && labInitial ? (
+      <Suspense fallback={null}>
+        <AdvancedEventLabDialog
+          open={labOpen}
+          onOpenChange={handleLabOpenChange}
+          initial={labInitial}
+          kindEditable={false}
+          markupMode={isAsciidocMarkupKind(labInitial.kind) ? 'asciidoc' : 'markdown'}
+          i18nLanguage={i18n.language}
+          contextEventId={sourceEvent?.id ?? null}
+          previewAuthorPubkey={pubkey}
+          addClientTag={storage.getAddClientTag()}
+          onApply={handleLabApply}
+        />
+      </Suspense>
+    ) : null}
     </>
     </NeventPickerProvider>
   )

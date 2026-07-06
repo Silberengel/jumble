@@ -650,6 +650,8 @@ export const ExtendedKind = {
   REPORT: 1984,
   /** NIP-94 File Metadata (e.g. GIFs) */
   FILE_METADATA: 1063,
+  /** Reaction Clip (draft NIP): content-addressed short animated media ("GIFs") with emotion labels. */
+  REACTION_CLIP: 1090,
   /** NIP-66 Relay discovery (relay characteristics from NIP-11 or probing) */
   RELAY_DISCOVERY: 30166,
   /** NIP-66 Relay monitor announcement (intent to publish 30166 at a frequency) */

@@ -1,6 +1,8 @@
 /**
- * Fetch GIFs from Nostr: kind 1063 (NIP-94 file metadata) and from kind 1 / 1111 (notes/comments that contain GIF URLs).
- * Same approach as aitherboard for 1063; for 1/1111 we parse content and tags for .gif URLs.
+ * Fetch GIFs from Nostr: kind 1090 reaction clips (draft NIP, the preferred publish format),
+ * kind 1063 (NIP-94 file metadata, legacy), and kind 1 / 1111 (notes/comments that contain GIF URLs).
+ * Clips are content-addressed: the sha256 (`x`) of the media bytes is the identity; entries sharing
+ * a hash are collapsed regardless of which URL serves the bytes.
  */
 
 import {
@@ -11,6 +13,7 @@ import {
 } from '@/constants'
 import { eventMatchesNip50LocalFullTextQuery } from '@/lib/nip50-local-text-match'
 import { grantRelayConnectionOperationScope } from '@/lib/read-only-relay-personal'
+import { clipEmotionsFromTags } from '@/lib/reaction-clip'
 import { chunkPubkeys, dedupeMediaPickerRelayUrls } from '@/lib/media-picker-relay-utils'
 import { kinds, type Event as NEvent, type Filter } from 'nostr-tools'
 import { queryService } from './client.service'
@@ -23,9 +26,11 @@ export interface GifMetadata {
   mimeType?: string
   width?: number
   height?: number
-  /** Human-readable label from kind 1063 `content`, `alt`, or extra `#t` tags (for search / cache). */
+  /** Human-readable label from clip/1063 `content`, `alt`, or extra `#t` tags (for search / cache). */
   description?: string
-  /** Nostr kind of the event this row was parsed from (1063 vs note vs comment). */
+  /** Reaction clip emotion labels (kind 1090, NIP-32 `emotion` namespace). */
+  emotions?: string[]
+  /** Nostr kind of the event this row was parsed from (1090 vs 1063 vs note vs comment). */
   sourceKind: number
   eventId: string
   pubkey: string
@@ -43,10 +48,11 @@ export function isNostrBuildHostedUrl(url: string): boolean {
 }
 
 /**
- * External GIF from a note/comment: offer “archive” = publish kind 1063 + insert.
- * Not shown for 1063 events or when the URL already points at nostr.build.
+ * External GIF from a note/comment: offer “archive” = publish clip/1063 + insert.
+ * Not shown for clip/1063 events or when the URL already points at nostr.build.
  */
 export function gifShouldOfferNip94Archive(gif: GifMetadata): boolean {
+  if (gif.sourceKind === ExtendedKind.REACTION_CLIP) return false
   if (gif.sourceKind === ExtendedKind.FILE_METADATA) return false
   if (isNostrBuildHostedUrl(gif.url)) return false
   if (gif.fallbackUrl?.trim() && isNostrBuildHostedUrl(gif.fallbackUrl.trim())) return false
@@ -89,6 +95,7 @@ function normalizeGifUrl(url: string): string {
 
 /** Higher wins when the same GIF URL appears from multiple Nostr events. */
 function gifSourceKindPriority(sourceKind: number): number {
+  if (sourceKind === ExtendedKind.REACTION_CLIP) return 4
   if (sourceKind === ExtendedKind.FILE_METADATA) return 3
   if (sourceKind === ExtendedKind.COMMENT) return 2
   if (sourceKind === kinds.ShortTextNote) return 1
@@ -103,7 +110,11 @@ function shouldPreferGif(candidate: GifMetadata, existing: GifMetadata): boolean
   return candidate.createdAt > existing.createdAt
 }
 
-/** One grid row per GIF URL; kind 1063 beats kind 1 / 1111 / 11 from notes. */
+/**
+ * One grid row per GIF; kind 1090 beats 1063 beats kind 1 / 1111 / 11 from notes.
+ * First pass merges by URL, second pass merges by media sha256 (`x`) so the same
+ * bytes served from different hosts collapse into one entry (content-addressed identity).
+ */
 export function dedupeGifsByUrl(gifs: readonly GifMetadata[]): GifMetadata[] {
   const byUrl = new Map<string, GifMetadata>()
   for (const gif of gifs) {
@@ -114,7 +125,23 @@ export function dedupeGifsByUrl(gifs: readonly GifMetadata[]): GifMetadata[] {
       byUrl.set(key, gif)
     }
   }
-  return [...byUrl.values()]
+  const out: GifMetadata[] = []
+  const byHash = new Map<string, number>()
+  for (const gif of byUrl.values()) {
+    const hash = gif.sha256?.trim().toLowerCase()
+    if (!hash) {
+      out.push(gif)
+      continue
+    }
+    const existingIdx = byHash.get(hash)
+    if (existingIdx === undefined) {
+      byHash.set(hash, out.length)
+      out.push(gif)
+    } else if (shouldPreferGif(gif, out[existingIdx])) {
+      out[existingIdx] = gif
+    }
+  }
+  return out
 }
 
 /** `#t` tokens derived from a user description (always includes literal `gif` separately). */
@@ -132,7 +159,7 @@ function topicTagsFromGifDescription(description: string): string[] {
 }
 
 /** Append NIP-94 `alt` + searchable `#t` tags for a GIF description onto kind 1063 tag lists. */
-export function appendGifDescriptionTo1063Tags(tags: string[][], description?: string): void {
+function appendGifDescriptionTo1063Tags(tags: string[][], description?: string): void {
   const desc = description?.trim() ?? ''
   if (!desc) return
   tags.push(['alt', desc])
@@ -175,8 +202,10 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
   let mimeType: string | undefined
   let width: number | undefined
   let height: number | undefined
-  let fallbackUrl: string | undefined
   let sha256: string | undefined
+
+  // Kind 1090 reaction clips declare animated media by definition (webp/gif/mp4) — no `.gif` heuristics.
+  const isReactionClip = event.kind === ExtendedKind.REACTION_CLIP
 
   // imeta tags (NIP-92): accept url when it contains .gif or when m is image/gif
   const imetaTags = event.tags.filter((t) => t[0] === 'imeta')
@@ -190,7 +219,7 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
         const candidateUrl = field.substring(4).trim()
         if (!candidateUrl) continue
         const urlHasGif = candidateUrl.toLowerCase().includes('.gif')
-        if (urlHasGif || isGifMime) {
+        if (urlHasGif || isGifMime || isReactionClip) {
           url = candidateUrl
           if (mimeField) mimeType = imetaMime
           const dimField = imetaTag.find((f) => f?.startsWith('dim '))
@@ -268,6 +297,7 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
 
   const urlLower = url.toLowerCase()
   const isGif =
+    isReactionClip ||
     mimeType === 'image/gif' ||
     urlLower.endsWith('.gif') ||
     urlLower.includes('.gif?') ||
@@ -293,9 +323,21 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
 
   const sha256Tag = event.tags.find((t) => t[0] === 'x' && t[1])
   sha256 = sha256Tag?.[1]
+  if (!sha256) {
+    // NIP-92 imeta may carry the hash even when no top-level `x` tag exists (e.g. notes).
+    for (const imetaTag of imetaTags) {
+      const xField = imetaTag.find((f) => f?.startsWith('x '))
+      const candidate = xField?.substring(2).trim()
+      if (candidate) {
+        sha256 = candidate
+        break
+      }
+    }
+  }
   const fallbackTag = event.tags.find((t) => t[0] === 'fallback' && t[1])
-  fallbackUrl = fallbackTag?.[1]
+  const fallbackUrl = fallbackTag?.[1]
   const description = descriptionFromGifEvent(event)
+  const emotions = isReactionClip ? clipEmotionsFromTags(event.tags) : []
 
   return {
     url,
@@ -305,6 +347,7 @@ function parseGifFromEvent(event: NEvent): GifMetadata | null {
     width,
     height,
     description,
+    emotions: emotions.length > 0 ? emotions : undefined,
     sourceKind: event.kind,
     eventId: event.id,
     pubkey: event.pubkey,
@@ -394,7 +437,7 @@ async function fetch1063Paginated(
   for (let page = 0; page < GIF_AUTHOR_1063_MAX_PAGES; page++) {
     const filter: Filter = {
       ...filterBase,
-      kinds: [ExtendedKind.FILE_METADATA],
+      kinds: [ExtendedKind.REACTION_CLIP, ExtendedKind.FILE_METADATA],
       limit: GIF_1063_PAGE_LIMIT,
       ...(until != null ? { until } : {})
     }
@@ -523,6 +566,7 @@ export function gifMetadataMatchesSearch(gif: GifMetadata, query: string): boole
   if (!q) return true
   const haystack = [
     gif.description,
+    ...(gif.emotions ?? []),
     gif.url,
     gif.fallbackUrl,
     gif.eventId,

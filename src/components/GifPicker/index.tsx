@@ -24,9 +24,17 @@ import {
   gifMetadataMatchesSearch,
   gifShouldOfferNip94Archive,
   buildKind1063GifPublishDraft,
-  appendGifDescriptionTo1063Tags,
   type GifMetadata
 } from '@/services/gif.service'
+import {
+  REACTION_CLIP_EMOTIONS,
+  REACTION_CLIP_MAX_EMOTIONS,
+  buildReactionClipDraft,
+  fetchAndHashMediaUrl,
+  normalizeClipEmotions,
+  sha256FromContentAddressedUrl
+} from '@/lib/reaction-clip'
+import { sha256HexOfFile } from '@/lib/upload-nip94-imeta'
 import mediaUpload from '@/services/media-upload.service'
 import { Download, ExternalLink, X } from 'lucide-react'
 import { kinds } from 'nostr-tools'
@@ -39,12 +47,14 @@ import { useFollowListOptional } from '@/providers/follow-list-context'
 let _sessionGifs: GifMetadata[] = []
 import { useTranslation } from 'react-i18next'
 
-const GIFBUDDY_URL = 'https://www.gifbuddy.lol/'
+const TENOR_URL = 'https://tenor.com/'
 /** Stable empty follows list — avoids re-running picker fetch every render. */
 const EMPTY_FOLLOWING_PUBKEYS: readonly string[] = []
-/** Query param gifbuddy may use for pre-filled search (common convention). */
-const GIFBUDDY_SEARCH_URL = (q: string) =>
-  q.trim() ? `${GIFBUDDY_URL}gifsearch?q=${encodeURIComponent(q.trim())}` : GIFBUDDY_URL
+/** Tenor search pages use dash-joined terms with a `-gifs` suffix. */
+const TENOR_SEARCH_URL = (q: string) => {
+  const terms = q.trim().split(/\s+/).filter(Boolean).map(encodeURIComponent)
+  return terms.length > 0 ? `${TENOR_URL}search/${terms.join('-')}-gifs` : TENOR_URL
+}
 
 type GifPickerTab = 'find' | 'import'
 
@@ -107,8 +117,8 @@ export default function GifPicker({
   const [publishingPaste, setPublishingPaste] = useState(false)
   const [archivingEventId, setArchivingEventId] = useState<string | null>(null)
   const [publishDescription, setPublishDescription] = useState('')
+  const [selectedEmotions, setSelectedEmotions] = useState<string[]>([])
   const fileInputRef = useRef<HTMLInputElement | null>(null)
-  const gifbuddyPopupRef = useRef<Window | null>(null)
   const pickerRootRef = useRef<HTMLDivElement>(null)
   const composerPanelRef = useRef<HTMLDivElement>(null)
   const searchFieldRef = useRef<HTMLInputElement>(null)
@@ -120,8 +130,64 @@ export default function GifPicker({
 
   const userReadRelays = useUserReadInboxUrls()
 
-  /** Kind 1063 publish targets — GIF relays only. */
+  /** Clip / kind 1063 publish targets — GIF relays only. */
   const gif1063PublishRelayUrls = useMemo(() => getGif1063RelayUrls(), [])
+
+  /**
+   * Publish a kind 1090 reaction clip when the draft-NIP requirements are met (media sha256 +
+   * at least one emotion label), otherwise fall back to a legacy kind 1063 publish.
+   */
+  const publishClipOrLegacy = useCallback(
+    async (input: {
+      url: string
+      description: string
+      emotions: readonly string[]
+      sha256?: string | null
+      mimeType?: string
+      dim?: string
+      size?: number
+    }) => {
+      const emotions = normalizeClipEmotions(input.emotions)
+      let sha256 = input.sha256?.trim().toLowerCase() || sha256FromContentAddressedUrl(input.url)
+      if (!sha256 && emotions.length > 0) {
+        sha256 = (await fetchAndHashMediaUrl(input.url))?.sha256 ?? null
+      }
+      const isClip = Boolean(sha256) && emotions.length > 0
+      const draft = isClip
+        ? buildReactionClipDraft({
+            url: input.url,
+            sha256: sha256!,
+            mimeType: input.mimeType,
+            dim: input.dim,
+            size: input.size,
+            description: input.description,
+            emotions
+          })
+        : buildKind1063GifPublishDraft(input.url, input.description)
+      const published = await publish(draft, { specifiedRelayUrls: gif1063PublishRelayUrls })
+      await cachePublishedGif({
+        url: input.url,
+        sha256: sha256 ?? undefined,
+        mimeType: input.mimeType || 'image/gif',
+        description: input.description || undefined,
+        emotions: isClip ? emotions : undefined,
+        sourceKind: draft.kind,
+        eventId: published.id,
+        pubkey: published.pubkey,
+        createdAt: published.created_at
+      })
+      return published
+    },
+    [publish, gif1063PublishRelayUrls]
+  )
+
+  const toggleEmotion = useCallback((emotion: string) => {
+    setSelectedEmotions((prev) => {
+      if (prev.includes(emotion)) return prev.filter((e) => e !== emotion)
+      if (prev.length >= REACTION_CLIP_MAX_EMOTIONS) return prev
+      return [...prev, emotion]
+    })
+  }, [])
 
   /** Keep gifsRef, session cache, and React state in sync. */
   const setGifs = useCallback((newGifs: GifMetadata[], isSearch = false) => {
@@ -185,7 +251,7 @@ export default function GifPicker({
         if (gifPoolRef.current.length === 0 && !searchInputRef.current.trim()) {
           setError(
             t(
-              'No GIFs found. Try searching or add your own. GIFs come from Nostr kind 1063 (NIP-94) events on GIF relays.'
+              'No GIFs found. Try searching or add your own. GIFs come from Nostr reaction clips (kind 1090) and kind 1063 (NIP-94) events on GIF relays.'
             )
           )
         }
@@ -327,29 +393,23 @@ export default function GifPicker({
     (gif: GifMetadata) => {
       const url = (gif.fallbackUrl?.trim() || gif.url).trim()
       if (!url) return
-      const desc = publishDescription.trim()
+      const desc = publishDescription.trim() || gif.description?.trim() || ''
       onSelect?.(url)
       handleOpenChange(false)
       if (!pubkey || !/^https?:\/\//i.test(url)) return
       // Fire-and-forget: waiting on every relay can freeze the UI when relays are down.
-      void publish(buildKind1063GifPublishDraft(url, desc), {
-        specifiedRelayUrls: gif1063PublishRelayUrls
-      })
-        .then((event) =>
-          cachePublishedGif({
-            url,
-            mimeType: 'image/gif',
-            description: desc || undefined,
-            sourceKind: ExtendedKind.FILE_METADATA,
-            eventId: event.id,
-            pubkey: event.pubkey,
-            createdAt: event.created_at
-          })
-        )
-        .catch(() => {})
-      if (desc) setPublishDescription('')
+      // Reuses the source clip's emotions so re-picking someone's 1090 republishes a proper clip.
+      void publishClipOrLegacy({
+        url,
+        description: desc,
+        emotions: gif.emotions?.length ? gif.emotions : selectedEmotions,
+        sha256: gif.sha256,
+        mimeType: gif.mimeType,
+        dim: gif.width && gif.height ? `${gif.width}x${gif.height}` : undefined
+      }).catch(() => {})
+      if (publishDescription.trim()) setPublishDescription('')
     },
-    [pubkey, onSelect, publish, gif1063PublishRelayUrls, publishDescription, handleOpenChange]
+    [pubkey, onSelect, publishClipOrLegacy, selectedEmotions, publishDescription, handleOpenChange]
   )
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -362,30 +422,19 @@ export default function GifPicker({
         setUploadError(t('{{name}} is not a GIF file', { name: file.name }))
         return
       }
-      const { url } = await mediaUpload.upload(file)
+      const { url, tags: uploadTags } = await mediaUpload.upload(file)
       const desc = publishDescription.trim()
-      const tags: string[][] = [
-        ['file', url, file.type || 'image/gif', `size ${file.size}`],
-        ['url', url],
-        ['m', file.type || 'image/gif'],
-        ['t', 'gif']
-      ]
-      appendGifDescriptionTo1063Tags(tags, desc)
-      const draft = {
-        kind: ExtendedKind.FILE_METADATA,
-        content: desc,
-        tags,
-        created_at: Math.floor(Date.now() / 1000)
-      }
-      const published = await publish(draft, { specifiedRelayUrls: gif1063PublishRelayUrls })
-      await cachePublishedGif({
+      const tagValue = (name: string) =>
+        uploadTags.find((row) => row[0] === name && row[1]?.trim())?.[1]?.trim()
+      const sha256 = tagValue('x') ?? (await sha256HexOfFile(file))
+      await publishClipOrLegacy({
         url,
+        description: desc,
+        emotions: selectedEmotions,
+        sha256,
         mimeType: file.type || 'image/gif',
-        description: desc || undefined,
-        sourceKind: ExtendedKind.FILE_METADATA,
-        eventId: published.id,
-        pubkey: published.pubkey,
-        createdAt: published.created_at
+        dim: tagValue('dim'),
+        size: file.size
       })
       setPublishDescription('')
       setSearchInput('')
@@ -402,36 +451,14 @@ export default function GifPicker({
 
   const isLoggedIn = !!pubkey
 
-  /** Open GifBuddy in a new tab (not a popup) so the picker doesn't close from focus loss. Listen for postMessage in case GifBuddy adds embed support. */
-  const openGifBuddySearch = useCallback(() => {
-    const url = GIFBUDDY_SEARCH_URL(pasteUrl || searchInput)
-    const w = window.open(url, '_blank', 'noopener,noreferrer')
-    gifbuddyPopupRef.current = w ?? null
-    const handler = (event: MessageEvent) => {
-      if (event.origin !== 'https://www.gifbuddy.lol' && event.origin !== 'https://gifbuddy.lol') return
-      const data = event.data
-      const urlToInsert =
-        typeof data === 'string' && (data.startsWith('http://') || data.startsWith('https://'))
-          ? data
-          : data?.url ?? data?.gifUrl
-      if (urlToInsert && typeof urlToInsert === 'string') {
-        window.removeEventListener('message', handler)
-        gifbuddyPopupRef.current = null
-        onSelect?.(urlToInsert)
-        handleOpenChange(false)
-      }
-    }
-    window.addEventListener('message', handler)
-    const t = setTimeout(() => {
-      window.removeEventListener('message', handler)
-      gifbuddyPopupRef.current = null
-    }, 10 * 60 * 1000)
-    if (w) w.addEventListener('beforeunload', () => { clearTimeout(t); window.removeEventListener('message', handler) })
-  }, [pasteUrl, searchInput, onSelect, handleOpenChange])
+  /** Open Tenor in a new tab (not a popup) so the picker doesn't close from focus loss. */
+  const openTenorSearch = useCallback(() => {
+    window.open(TENOR_SEARCH_URL(pasteUrl || searchInput), '_blank', 'noopener,noreferrer')
+  }, [pasteUrl, searchInput])
 
   const descriptionForPublish = publishDescription.trim()
 
-  /** Insert pasted GIF URL and publish kind 1063 so it's added to Nostr GIF library. */
+  /** Insert pasted GIF URL and publish it to the Nostr GIF library (kind 1090 clip when possible). */
   const handlePasteUrlInsert = useCallback(async () => {
     const url = pasteUrl.trim()
     if (!url || !/^https?:\/\//i.test(url)) return
@@ -441,17 +468,10 @@ export default function GifPicker({
     if (pubkey) {
       setPublishingPaste(true)
       try {
-        const published = await publish(buildKind1063GifPublishDraft(url, descriptionForPublish), {
-          specifiedRelayUrls: gif1063PublishRelayUrls
-        })
-        await cachePublishedGif({
+        await publishClipOrLegacy({
           url,
-          mimeType: 'image/gif',
-          description: descriptionForPublish || undefined,
-          sourceKind: ExtendedKind.FILE_METADATA,
-          eventId: published.id,
-          pubkey: published.pubkey,
-          createdAt: published.created_at
+          description: descriptionForPublish,
+          emotions: selectedEmotions
         })
         setPublishDescription('')
       } catch {
@@ -460,9 +480,9 @@ export default function GifPicker({
         setPublishingPaste(false)
       }
     }
-  }, [pasteUrl, pubkey, onSelect, publish, gif1063PublishRelayUrls, descriptionForPublish, handleOpenChange])
+  }, [pasteUrl, pubkey, onSelect, publishClipOrLegacy, selectedEmotions, descriptionForPublish, handleOpenChange])
 
-  /** External GIF from a note: publish kind 1063, then insert URL and close (same relays as grid pick). */
+  /** External GIF from a note: publish clip/1063, then insert URL and close (same relays as grid pick). */
   const handleArchiveAndInsert = useCallback(
     (e: React.MouseEvent, gif: GifMetadata) => {
       e.preventDefault()
@@ -470,25 +490,36 @@ export default function GifPicker({
       if (!pubkey) return
       const url = (gif.fallbackUrl?.trim() || gif.url).trim()
       if (!url || !/^https?:\/\//i.test(url)) return
-      const desc = publishDescription.trim()
+      const desc = publishDescription.trim() || gif.description?.trim() || ''
       setArchivingEventId(gif.eventId)
       onSelect?.(url)
       handleOpenChange(false)
       void loadGifs(true)
-      void publish(buildKind1063GifPublishDraft(url, desc), {
-        specifiedRelayUrls: gif1063PublishRelayUrls
+      void publishClipOrLegacy({
+        url,
+        description: desc,
+        emotions: gif.emotions?.length ? gif.emotions : selectedEmotions,
+        sha256: gif.sha256,
+        mimeType: gif.mimeType,
+        dim: gif.width && gif.height ? `${gif.width}x${gif.height}` : undefined
       })
         .catch(() => {})
         .finally(() => {
           setArchivingEventId(null)
-          if (desc) setPublishDescription('')
+          if (publishDescription.trim()) setPublishDescription('')
         })
     },
-    [pubkey, publish, gif1063PublishRelayUrls, onSelect, loadGifs, publishDescription, handleOpenChange]
+    [pubkey, publishClipOrLegacy, selectedEmotions, onSelect, loadGifs, publishDescription, handleOpenChange]
   )
 
   const gifSourceKindTitle = useCallback(
     (gif: GifMetadata) => {
+      if (gif.sourceKind === ExtendedKind.REACTION_CLIP) {
+        const emotions = gif.emotions?.join(', ')
+        return emotions
+          ? t('Reaction clip (kind 1090), content-addressed by the sha256 of its bytes. Emotions: {{emotions}}', { emotions })
+          : t('Reaction clip (kind 1090), content-addressed by the sha256 of its bytes.')
+      }
       if (gif.sourceKind === ExtendedKind.FILE_METADATA) {
         return t(
           'This GIF comes from kind 1063 (NIP-94 file metadata). Choosing it still publishes your own kind 1063 to your write relays (and fast write relays as fallback) so your relays index the URL.'
@@ -510,6 +541,7 @@ export default function GifPicker({
   )
 
   const gifSourceKindShortLabel = (gif: GifMetadata) => {
+    if (gif.sourceKind === ExtendedKind.REACTION_CLIP) return '1090'
     if (gif.sourceKind === ExtendedKind.FILE_METADATA) return '1063'
     if (gif.sourceKind === kinds.ShortTextNote) return '1'
     if (gif.sourceKind === ExtendedKind.COMMENT) return '1111'
@@ -578,10 +610,10 @@ export default function GifPicker({
                   className="absolute bottom-1 right-1 z-10 h-7 w-7 shadow-md touch-manipulation"
                   disabled={archivingEventId === gif.eventId}
                   title={t(
-                    'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
+                    'Publish this GIF to the Nostr GIF library (reaction clip when possible) and insert the URL into your post'
                   )}
                   aria-label={t(
-                    'Publish kind 1063 (NIP-94) for this GIF and insert the URL into your post'
+                    'Publish this GIF to the Nostr GIF library (reaction clip when possible) and insert the URL into your post'
                   )}
                   onClick={(e) => handleArchiveAndInsert(e, gif)}
                 >
@@ -631,19 +663,19 @@ export default function GifPicker({
 
   const importPanel = (
     <div className="flex flex-col gap-3">
-      <p className="text-xs text-muted-foreground">{t('Paste a GIF URL, upload your own file, or search GifBuddy.')}</p>
+      <p className="text-xs text-muted-foreground">{t('Paste a GIF URL, upload your own file, or search Tenor.')}</p>
       <Button
         type="button"
         variant="outline"
         size="sm"
         className="w-full touch-manipulation"
-        onClick={openGifBuddySearch}
+        onClick={openTenorSearch}
       >
         <ExternalLink className="size-3.5 mr-1.5" />
-        {t('Search on GifBuddy')}
+        {t('Search on Tenor')}
       </Button>
       <p className="text-xs text-muted-foreground">
-        {t('Opens GifBuddy in a new tab. Copy a GIF URL there, then paste it below.')}
+        {t('Opens Tenor in a new tab. Copy a GIF URL there, then paste it below.')}
       </p>
       <div className="grid gap-1">
         <Label className="text-xs text-muted-foreground">{t('Paste URL of a GIF')}</Label>
@@ -660,7 +692,7 @@ export default function GifPicker({
             className="shrink-0 touch-manipulation"
             disabled={!pasteUrl.trim() || publishingPaste}
             onClick={handlePasteUrlInsert}
-            title={t('Insert URL into your post and publish to Nostr GIF library (NIP-94).')}
+            title={t('Insert URL into your post and publish to the Nostr GIF library.')}
           >
             {publishingPaste ? t('Adding…') : t('Insert')}
           </Button>
@@ -677,6 +709,35 @@ export default function GifPicker({
             onChange={(e) => setPublishDescription(e.target.value)}
             className="min-w-0"
           />
+        </div>
+      )}
+      {isLoggedIn && (
+        <div className="grid gap-1">
+          <Label className="text-xs text-muted-foreground">{t('Emotions (up to 6)')}</Label>
+          <div className="flex flex-wrap gap-1">
+            {REACTION_CLIP_EMOTIONS.map((emotion) => {
+              const active = selectedEmotions.includes(emotion)
+              return (
+                <button
+                  key={emotion}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => toggleEmotion(emotion)}
+                  className={cn(
+                    'rounded-full border px-2 py-0.5 text-xs touch-manipulation transition-colors',
+                    active
+                      ? 'border-primary bg-primary/15 text-foreground'
+                      : 'border-border text-muted-foreground hover:border-primary/60'
+                  )}
+                >
+                  {emotion}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {t('With at least one emotion your GIF is published as a reaction clip (kind 1090, browsable by emotion); without emotions it falls back to legacy kind 1063.')}
+          </p>
         </div>
       )}
       {isLoggedIn && (

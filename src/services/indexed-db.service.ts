@@ -3232,6 +3232,11 @@ class IndexedDbService {
     gifs: {
       url: string
       fallbackUrl?: string
+      sha256?: string
+      mimeType?: string
+      width?: number
+      height?: number
+      emotions?: string[]
       sourceKind?: number
       description?: string
       eventId: string
@@ -3255,6 +3260,11 @@ class IndexedDbService {
             gifs: row.value.gifs as {
               url: string
               fallbackUrl?: string
+              sha256?: string
+              mimeType?: string
+              width?: number
+              height?: number
+              emotions?: string[]
               sourceKind?: number
               description?: string
               eventId: string
@@ -3278,6 +3288,11 @@ class IndexedDbService {
     gifs: {
       url: string
       fallbackUrl?: string
+      sha256?: string
+      mimeType?: string
+      width?: number
+      height?: number
+      emotions?: string[]
       sourceKind?: number
       description?: string
       eventId: string
