@@ -25,7 +25,10 @@ export default function WikiCard({
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
-  const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
+  const bodyBlurb = useMemo(
+    () => cardEventBodyBlurb(event.content, { markup: 'asciidoc' }),
+    [event.content]
+  )
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
 
   const handleCardClick = (e: React.MouseEvent) => {

@@ -18,7 +18,8 @@ export default function ArticleCardCoverImage({
   imageUrl?: string
   /** Deprecated: prefer per-author policy via {@link useShouldAutoLoadMedia}. Kept for callers that pass it. */
   autoLoadMedia?: boolean
-  layout: 'stacked' | 'row'
+  /** `stacked-full`: image on top spanning the whole card width (vertical cards). */
+  layout: 'stacked' | 'stacked-full' | 'row'
   /** Passed through to {@link ContentImage} when an `image` tag URL exists. */
   hideImageIfError?: boolean
 }) {
@@ -32,7 +33,9 @@ export default function ArticleCardCoverImage({
         className={
           layout === 'stacked'
             ? 'mb-3 aspect-video w-full max-w-[400px]'
-            : 'w-full rounded-lg bg-foreground object-cover aspect-[4/3] xl:aspect-video'
+            : layout === 'stacked-full'
+              ? 'mb-3 aspect-video w-full object-cover'
+              : 'w-full rounded-lg bg-foreground object-cover aspect-[4/3] xl:aspect-video'
         }
         classNames={
           layout === 'row' ? { wrapper: 'w-2/5 max-w-[200px] shrink-0' } : undefined
@@ -47,9 +50,9 @@ export default function ArticleCardCoverImage({
     <div
       className={cn(
         'flex items-center justify-center overflow-hidden rounded-lg bg-muted',
-        layout === 'stacked'
-          ? 'mb-3 h-44 w-full max-w-[400px]'
-          : 'w-2/5 max-w-[200px] shrink-0 aspect-square'
+        layout === 'stacked' && 'mb-3 h-44 w-full max-w-[400px]',
+        layout === 'stacked-full' && 'mb-3 h-44 w-full',
+        layout === 'row' && 'w-2/5 max-w-[200px] shrink-0 aspect-square'
       )}
     >
       <UserAvatar
@@ -58,9 +61,9 @@ export default function ArticleCardCoverImage({
         deferRemoteAvatar={false}
         className={cn(
           'rounded-xl',
-          layout === 'stacked'
-            ? '!h-[7.5rem] !w-[7.5rem]'
-            : '!h-3/5 !w-3/5 max-h-[7.5rem] max-w-[7.5rem]'
+          layout === 'row'
+            ? '!h-3/5 !w-3/5 max-h-[7.5rem] max-w-[7.5rem]'
+            : '!h-[7.5rem] !w-[7.5rem]'
         )}
       />
     </div>

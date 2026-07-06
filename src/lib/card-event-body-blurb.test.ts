@@ -17,4 +17,37 @@ describe('cardEventBodyBlurb', () => {
   it('strips simple markdown image syntax', () => {
     expect(cardEventBodyBlurb('![](https://example.com/a.jpg)Hello world')).toBe('Hello world')
   })
+
+  it('strips setext heading underlines in markdown', () => {
+    const content = 'NIP-FF-3\n======\nEdit-Durable Content Attribution\n------------------\nNIP-03 was designed for immutable events.'
+    expect(cardEventBodyBlurb(content)).toBe(
+      'NIP-FF-3 Edit-Durable Content Attribution NIP-03 was designed for immutable events.'
+    )
+  })
+
+  it('strips asciidoc markup (headings, attributes, comments, macros, delimiters)', () => {
+    const content = [
+      '= Wiki Article',
+      ':toc: macro',
+      '// internal note',
+      '',
+      '== Background',
+      '',
+      'See image::diagram.png[The diagram] and link:https://example.com[the site].',
+      '',
+      '----',
+      'code block',
+      '----',
+      '',
+      '.Block title',
+      'Body text here.'
+    ].join('\n')
+    expect(cardEventBodyBlurb(content, { markup: 'asciidoc' })).toBe(
+      'Wiki Article Background See The diagram and the site. code block Block title Body text here.'
+    )
+  })
+
+  it('respects a custom max length', () => {
+    expect(cardEventBodyBlurb('one two three four', { max: 7 })).toBe('one two…')
+  })
 })

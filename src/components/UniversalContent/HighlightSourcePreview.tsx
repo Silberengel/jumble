@@ -17,9 +17,15 @@ interface HighlightSourcePreviewProps {
     bech32: string
   }
   className?: string
+  /** URL sources: render only the OpenGraph card (no bare-link fallback) — e.g. when a "Source:" line already links the URL. */
+  ogCardOnly?: boolean
 }
 
-export default function HighlightSourcePreview({ source, className }: HighlightSourcePreviewProps) {
+export default function HighlightSourcePreview({
+  source,
+  className,
+  ogCardOnly = false
+}: HighlightSourcePreviewProps) {
   // Always call hooks first, before any conditional returns
   const alexandriaUrl = useMemo(() => {
     if (source.type === 'url') {
@@ -99,7 +105,9 @@ export default function HighlightSourcePreview({ source, className }: HighlightS
     }
   } else if (source.type === 'url') {
     if (isLikelyWebPageUrl(source.value)) {
-      content = <HttpUrlOpenGraphOrLink url={source.value} block className="w-full" />
+      content = (
+        <HttpUrlOpenGraphOrLink url={source.value} block ogCardOnly={ogCardOnly} className="w-full" />
+      )
     } else {
       content = (
         <div className={`p-3 border rounded-lg bg-muted/50 ${className}`}>

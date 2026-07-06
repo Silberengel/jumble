@@ -3,7 +3,6 @@ import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { useSecondaryPageOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
-import { useScreenSizeOptional } from '@/providers/ScreenSizeProvider'
 import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
@@ -25,8 +24,6 @@ export default function LongFormCard({
   interactive?: boolean
 }) {
   const { t } = useTranslation()
-  const screenSize = useScreenSizeOptional()
-  const isSmallScreen = screenSize?.isSmallScreen ?? false
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => {
     window.location.href = url
@@ -88,43 +85,21 @@ export default function LongFormCard({
     interactive && 'cursor-pointer hover:bg-muted/50'
   )
 
-  if (isSmallScreen) {
-    return (
-      <div className={shellClass}>
-        <div className={cardClass} onClick={interactive ? handleCardClick : undefined}>
-          <ArticleCardCoverImage
-            event={event}
-            imageUrl={metadata.image}
-            autoLoadMedia={autoLoadMedia}
-            layout="stacked"
-          />
-          <div className="space-y-2">
-            {titleComponent}
-            {summaryComponent}
-            {tagsComponent}
-            {tagsReadonly}
-          </div>
-        </div>
-      </div>
-    )
-  }
-
+  // Vertical card on all screen sizes: cover image on top, text below.
   return (
     <div className={cn('w-full min-w-0', shellClass)}>
       <div className={cn(cardClass, 'min-w-0')} onClick={interactive ? handleCardClick : undefined}>
-        <div className="flex min-w-0 gap-4">
-          <ArticleCardCoverImage
-            event={event}
-            imageUrl={metadata.image}
-            autoLoadMedia={autoLoadMedia}
-            layout="row"
-          />
-          <div className="min-w-0 flex-1 basis-0 space-y-2 overflow-hidden">
-            {titleComponent}
-            {summaryComponent}
-            {tagsComponent}
-            {tagsReadonly}
-          </div>
+        <ArticleCardCoverImage
+          event={event}
+          imageUrl={metadata.image}
+          autoLoadMedia={autoLoadMedia}
+          layout="stacked-full"
+        />
+        <div className="min-w-0 space-y-2">
+          {titleComponent}
+          {summaryComponent}
+          {tagsComponent}
+          {tagsReadonly}
         </div>
       </div>
     </div>

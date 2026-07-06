@@ -407,24 +407,34 @@ export default function Highlight({
               </div>
             )}
 
-            {/* Source preview card (skip bare http link when Source: line above already links it) */}
-            {source && !httpSourceAlreadyLinked && (
-              <div className="mt-3">
+            {/* Source preview card. When the Source: line above already links the http URL,
+                still show the OpenGraph card but suppress the bare-link fallback (ogCardOnly). */}
+            {source && (
+              <>
                 {/* Only show simple author card if:
                     1. We have the author pubkey
                     2. The referenced event doesn't have a special card (like LongFormArticle preview)
                     3. For r-tags: only if it's a Nostr address, not a regular URL (URLs have OpenGraph cards)
                 */}
                 {referencedEventAuthor && !hasSpecialCard ? (
-                  <HighlightAuthorCard 
-                    authorPubkey={referencedEventAuthor} 
-                    eventId={sourceBech32 || undefined}
-                  />
+                  <div className="mt-3">
+                    <HighlightAuthorCard
+                      authorPubkey={referencedEventAuthor}
+                      eventId={sourceBech32 || undefined}
+                    />
+                  </div>
                 ) : (
-                  // For sources with special cards, URLs with OpenGraph, or while loading, show full preview
-                  <HighlightSourcePreview source={source} className="w-full" />
+                  // For sources with special cards, URLs with OpenGraph, or while loading, show full preview.
+                  // Wrapper hides itself (incl. margin) when ogCardOnly yields no card.
+                  <div className="mt-3 [&:has(>div:empty)]:hidden">
+                    <HighlightSourcePreview
+                      source={source}
+                      ogCardOnly={httpSourceAlreadyLinked}
+                      className="w-full"
+                    />
+                  </div>
                 )}
-              </div>
+              </>
             )}
           </div>
         </div>

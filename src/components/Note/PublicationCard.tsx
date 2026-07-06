@@ -49,7 +49,10 @@ export default function PublicationCard({
     () => (event.kind === ExtendedKind.PUBLICATION ? getPublicationIndexMetadataFromEvent(event) : null),
     [event]
   )
-  const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
+  const bodyBlurb = useMemo(
+    () => cardEventBodyBlurb(event.content, { markup: 'asciidoc' }),
+    [event.content]
+  )
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
   const isPublicationIndex = event.kind === ExtendedKind.PUBLICATION
 

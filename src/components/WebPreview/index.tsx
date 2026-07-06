@@ -5,7 +5,6 @@ import { ExtendedKind } from '@/constants'
 import { getLongFormArticleMetadataFromEvent, dTagToTitleCase } from '@/lib/event-metadata'
 import { cn } from '@/lib/utils'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
-import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink } from 'lucide-react'
 import { nip19, type Event } from 'nostr-tools'
@@ -111,7 +110,6 @@ export default function WebPreview({
   prefetchedOpenGraph?: { title?: string; description?: string; image?: string }
 }) {
   const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey, sourceEvent)
-  const { isSmallScreen } = useScreenSize()
 
   const cleanedUrl = useMemo(() => cleanUrl(url), [url])
   /** Link cards and URLs in highlights stay visible on cellular; OG fetch is gated by the same policy as heavy media. */
@@ -449,11 +447,11 @@ export default function WebPreview({
   if (!isInternalAppLink && ogLoading) {
     return (
       <div
-        className={cn(WEB_PREVIEW_CARD, 'p-2 flex w-full border rounded-lg overflow-hidden gap-2 max-w-full', className)}
+        className={cn(WEB_PREVIEW_CARD, 'flex w-full flex-col border rounded-lg overflow-hidden max-w-full', className)}
         onClick={(e) => e.stopPropagation()}
       >
-        <Skeleton className="h-20 w-20 sm:w-40 shrink-0 rounded-l-md rounded-r-none" />
-        <div className="flex-1 min-w-0 space-y-2 py-1">
+        <Skeleton className="w-full aspect-[1.91/1] rounded-b-none" />
+        <div className="min-w-0 space-y-2 p-3">
           <Skeleton className="h-3 w-24" />
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-3 w-4/5" />
@@ -486,28 +484,30 @@ export default function WebPreview({
       // Get title with fallbacks
       const eventTitle = getTitleWithFallbacks(fetchedEvent || null, eventMetadata) || eventTypeName
 
-      // Render all images on left side, crop wider ones
+      // Vertical event card: cover image on top, text below.
       return (
         <div
           className={cn(
             WEB_PREVIEW_CARD,
-            'p-3 flex w-full border border-border rounded-lg overflow-hidden gap-0 bg-card bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
+            'p-3 flex w-full flex-col border border-border rounded-lg overflow-hidden bg-card bg-gradient-to-b from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
             className
           )}
         >
           {displayImage && isSafeMediaUrl(displayImage) && (
-            <div className={cn(
-              'flex-shrink-0 bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 -my-3 -ml-3 -mr-0 flex items-center justify-center rounded-l-lg overflow-hidden',
-              imageAspectRatio !== null && imageAspectRatio > 1 ? "w-24 sm:w-32 md:w-52 lg:w-[416px] max-w-[120px] sm:max-w-[160px] md:max-w-[208px] lg:max-w-none" : "w-20 sm:w-28 md:w-40 lg:w-52 max-w-[80px] sm:max-w-[112px] md:max-w-[160px] lg:max-w-none"
-            )}>
+            <div className="-mx-3 -mt-3 mb-3 flex items-center justify-center overflow-hidden bg-gradient-to-b from-primary/[0.07] to-transparent dark:from-primary/15">
               <Image
                 image={{ url: displayImage, pubkey: fetchedEvent?.pubkey }}
-                className="w-full h-full object-cover"
+                className={cn(
+                  'w-full',
+                  imageAspectRatio !== null && imageAspectRatio < 1
+                    ? 'max-h-80 object-contain'
+                    : 'aspect-[1.91/1] object-cover'
+                )}
                 hideIfError
               />
             </div>
           )}
-          <div className="flex-1 min-w-0 pl-3 overflow-hidden">
+          <div className="min-w-0 overflow-hidden">
             <div className="flex items-center gap-1.5 mb-1">
               <div className="flex items-center gap-1.5 flex-1 min-w-0">
                 {fetchedEvent ? (
@@ -715,64 +715,24 @@ export default function WebPreview({
     return null
   }
 
-  // All OG images render on left with cropping
-
-  if (isSmallScreen && image && isSafeMediaUrl(image)) {
-    // Small screen: always use horizontal layout with image on left
-    return (
-      <div className={cn(WEB_PREVIEW_CARD, 'rounded-lg border mt-2 overflow-hidden flex w-full')}>
-        <div className={cn(
-          "flex-shrink-0 bg-muted flex items-center justify-center rounded-l-lg overflow-hidden",
-          ogImageAspectRatio !== null && ogImageAspectRatio > 1 ? "w-24 max-w-[120px]" : "w-20 max-w-[80px]"
-        )}>
-          <Image image={{ url: image }} className="w-full h-full object-cover" hideIfError />
-        </div>
-        <div className="bg-muted p-2 flex-1 min-w-0">
-          <div className="flex items-center gap-2">
-            <div className="web-preview-muted text-muted-foreground truncate flex-1 min-w-0">{hostname}</div>
-            <a
-              href={cleanedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="flex-shrink-0"
-            >
-              <ExternalLink className="w-3 h-3 text-muted-foreground" />
-            </a>
-          </div>
-          {title && <div className="web-preview-title font-semibold line-clamp-1 break-words">{title}</div>}
-          {!title && description && <div className="web-preview-title font-semibold line-clamp-1 break-words">{description}</div>}
-          <hr className="mt-4 mb-2 border-t border-border" />
-          <a
-            href={cleanedUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="web-preview-muted text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
-          >
-            {url}
-          </a>
-        </div>
-      </div>
-    )
-  }
-
-  // Render all OG images on left side, crop wider ones
+  // Vertical link card on all screen sizes: OG image on top, text below.
   return (
-    <div className={cn(WEB_PREVIEW_CARD, 'p-2 flex w-full border rounded-lg overflow-hidden gap-0 max-w-full', className)}>
+    <div className={cn(WEB_PREVIEW_CARD, 'flex w-full flex-col border rounded-lg overflow-hidden max-w-full', className)}>
       {image && isSafeMediaUrl(image) && (
-        <div className={cn(
-          "flex-shrink-0 bg-muted flex items-center justify-center -my-2 -ml-2 -mr-0 rounded-l-lg overflow-hidden",
-          ogImageAspectRatio !== null && ogImageAspectRatio > 1 ? "w-32 sm:w-52 md:w-[416px]" : "w-20 sm:w-40 md:w-52"
-        )}>
+        <div className="w-full bg-muted flex items-center justify-center overflow-hidden">
           <Image
             image={{ url: image }}
-            className="w-full h-full object-cover"
+            className={cn(
+              'w-full',
+              ogImageAspectRatio !== null && ogImageAspectRatio < 1
+                ? 'max-h-80 object-contain'
+                : 'aspect-[1.91/1] object-cover'
+            )}
             hideIfError
           />
         </div>
       )}
-      <div className="flex-1 min-w-0 p-2 pl-2 overflow-hidden">
+      <div className="min-w-0 p-3 overflow-hidden">
         <div className="flex items-center gap-2 mb-1">
           <div className="web-preview-muted text-muted-foreground truncate flex-1 min-w-0">{hostname}</div>
           <a

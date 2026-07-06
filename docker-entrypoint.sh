@@ -28,17 +28,25 @@ write_json_atomic() {
   mv "$tmp" "$dest"
 }
 
-if [ ! -s "$HTML/health.json" ]; then
-  version="${APP_VERSION:-unknown}"
-  git_commit="${GIT_COMMIT:-unknown}"
-  built_at="${BUILD_TIME:-$(date -Iseconds)}"
-  write_json_atomic "$HTML/health.json" -n \
-    --arg version "$version" \
-    --arg gitTag "v${version}" \
-    --arg gitCommit "$git_commit" \
-    --arg builtAt "$built_at" \
-    '{status:"ok", name:"imwald", version:$version, gitTag:$gitTag, gitCommit:$gitCommit, builtAt:$builtAt}'
+# Rewrite health.json on every start so runtime env (compose overrides, recreated deployments)
+# is always reflected. The build bakes dist/health.json with richer fallbacks (package.json
+# version), so env values only win when set to something meaningful (non-empty, not "unknown");
+# otherwise the baked build metadata is preserved.
+base='{}'
+if [ -s "$HTML/health.json" ] && jq -e . "$HTML/health.json" >/dev/null 2>&1; then
+  base=$(cat "$HTML/health.json")
 fi
+write_json_atomic "$HTML/health.json" -n \
+  --argjson base "$base" \
+  --arg version "${APP_VERSION:-}" \
+  --arg gitCommit "${GIT_COMMIT:-}" \
+  --arg builtAt "${BUILD_TIME:-}" \
+  '
+  (if ($version != "" and $version != "unknown") then $version else ($base.version // "unknown") end) as $v
+  | (if ($gitCommit != "" and $gitCommit != "unknown") then $gitCommit else ($base.gitCommit // "unknown") end) as $gc
+  | (if $builtAt != "" then $builtAt else ($base.builtAt // (now | todate)) end) as $ba
+  | {status:"ok", name:($base.name // "imwald"), version:$v, gitTag:("v" + $v), gitCommit:$gc, builtAt:$ba}
+  '
 
 if [ -n "$NIP66_MONITOR_NPUB" ]; then
   write_json_atomic "$HTML/config.json" -n \
