@@ -174,16 +174,17 @@ export default function ParentNotePreview({
     )
     const card =
       finalEvent.kind === kinds.ShortTextNote ? (
-        <StandardTextNoteEmbedCard event={finalEvent} header={replyLabel} lineClampClassName="line-clamp-3" />
+        <StandardTextNoteEmbedCard
+          event={finalEvent}
+          header={replyLabel}
+          lineClampClassName="line-clamp-3"
+          onCardClick={handleClick}
+        />
       ) : (
         <EmbeddedKindCard event={finalEvent} />
       )
     return (
-      <div
-        data-parent-note-preview
-        className={cn('not-prose max-w-full', finalEvent && 'cursor-pointer', className)}
-        onClick={handleClick}
-      >
+      <div data-parent-note-preview className={cn('not-prose max-w-full', className)}>
         {card}
       </div>
     )

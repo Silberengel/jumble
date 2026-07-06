@@ -43,6 +43,7 @@ export default function EmbeddedKindCard({
         event={event}
         className={cn('w-full', className)}
         header={header}
+        originalNoteId={originalNoteId}
       />
     )
   }

@@ -2076,6 +2076,7 @@ export default {
     "Comma-separated genre tags (kind 36787 also adds t=music automatically)": "Comma-separated genre tags (kind 36787 also adds t=music automatically)",
     "Copy failed": "Copy failed",
     "Copy nevent": "Copy nevent",
+    "Copy naddr": "Copy naddr",
     "Cover image URL": "Cover image URL",
     "Creator: {{name}}": "Creator: {{name}}",
     Done: "Done",
