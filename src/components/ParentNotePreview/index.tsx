@@ -10,8 +10,10 @@ import { useFavoriteRelaysOptional } from '@/providers/favorite-relays-context'
 import { useNostrOptional } from '@/providers/nostr-context'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Event } from 'nostr-tools'
+import { Event, kinds } from 'nostr-tools'
 import ContentPreview from '../ContentPreview'
+import EmbeddedKindCard from '../Embedded/EmbeddedKindCard'
+import StandardTextNoteEmbedCard from '../Note/StandardTextNoteEmbedCard'
 import UserAvatar from '../UserAvatar'
 import logger from '@/lib/logger'
 
@@ -24,7 +26,9 @@ export default function ParentNotePreview({
   /** Child reply — pins kind-1 blurb to the revision cited in the reply, or original text if none. */
   replyContext,
   /** Inline hint without pill background (e.g. reply thread rows). */
-  appearance = 'default'
+  appearance = 'default',
+  /** Notifications feed: show the parent as an embedded card instead of a one-line blurb. */
+  layout = 'blurb'
 }: {
   eventId: string
   className?: string
@@ -32,6 +36,7 @@ export default function ParentNotePreview({
   relayHints?: string[]
   replyContext?: Event
   appearance?: 'default' | 'subtle'
+  layout?: 'blurb' | 'embed-card'
 }) {
   const { t } = useTranslation()
   const nostr = useNostrOptional()
@@ -161,6 +166,27 @@ export default function ParentNotePreview({
         void fetchFromSearchableRelays()
       }
     }
+  }
+
+  if (layout === 'embed-card' && finalEvent) {
+    const replyLabel = (
+      <span className="text-xs font-medium text-muted-foreground">{t('reply to')}</span>
+    )
+    const card =
+      finalEvent.kind === kinds.ShortTextNote ? (
+        <StandardTextNoteEmbedCard event={finalEvent} header={replyLabel} lineClampClassName="line-clamp-3" />
+      ) : (
+        <EmbeddedKindCard event={finalEvent} />
+      )
+    return (
+      <div
+        data-parent-note-preview
+        className={cn('not-prose max-w-full', finalEvent && 'cursor-pointer', className)}
+        onClick={handleClick}
+      >
+        {card}
+      </div>
+    )
   }
 
   return (

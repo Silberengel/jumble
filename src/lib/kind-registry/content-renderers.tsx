@@ -10,12 +10,12 @@ import { kinds } from 'nostr-tools'
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import client from '@/services/client.service'
-import ContentPreview from '@/components/ContentPreview'
-import { EmbeddedNote, HttpUrlOpenGraphOrLink } from '@/components/Embedded'
-import UserAvatar from '@/components/UserAvatar'
+import EmbeddedKindCard from '@/components/Embedded/EmbeddedKindCard'
+import { HttpUrlOpenGraphOrLink } from '@/components/Embedded/HttpUrlOpenGraphOrLink'
 import MarkdownArticle from '@/components/Note/LazyMarkdownArticle'
 import AsciidocArticle from '@/components/Note/LazyAsciidocArticle'
 import ShortNoteEditedContent from '@/components/Note/ShortNoteEditedContent'
+import StandardTextNoteEmbedCard from '@/components/Note/StandardTextNoteEmbedCard'
 import NotificationEventCard from '@/components/Note/NotificationEventCard'
 import type { RenderCtx } from './types'
 import { Repeat2 } from 'lucide-react'
@@ -67,30 +67,27 @@ function StringifiedNostrEventPreviewCard({
     cacheEmbeddedRepostTarget(hostEvent, targetEvent)
   }, [hostEvent.id, targetEvent])
 
-  return (
-    <div
-      data-embedded-note
-      className={cn(
-        'not-prose rounded-lg border border-border bg-card p-3 text-card-foreground shadow-sm',
-        className
-      )}
-    >
-      <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <Repeat2 className="size-4 shrink-0" aria-hidden />
-        <span>{t('Boost')}</span>
-      </div>
-      <div className="flex min-w-0 gap-2">
-        <UserAvatar
-          userId={targetEvent.pubkey}
-          size="tiny"
-          className="mt-0.5 shrink-0"
-          deferRemoteAvatar={deferAuthorAvatar}
-        />
-        <div className="min-w-0 flex-1">
-          <ContentPreview event={targetEvent} className="line-clamp-4" />
-        </div>
-      </div>
+  const boostHeader = (
+    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+      <Repeat2 className="size-4 shrink-0" aria-hidden />
+      <span>{t('Boost')}</span>
     </div>
+  )
+
+  const kind = targetEvent.kind
+  if (kind === kinds.ShortTextNote || kind === ExtendedKind.COMMENT) {
+    return (
+      <StandardTextNoteEmbedCard
+        event={targetEvent}
+        className={className}
+        header={boostHeader}
+        deferAuthorAvatar={deferAuthorAvatar}
+      />
+    )
+  }
+
+  return (
+    <EmbeddedKindCard event={targetEvent} className={className} />
   )
 }
 
@@ -151,6 +148,16 @@ export function RepostEventContent({ event, className }: { event: import('nostr-
 /** Shared markdown / asciidoc / nip84 / edit path for text-like kinds. */
 export function renderMarkdownContent(ctx: RenderCtx, className = 'mt-2') {
   const { displayEvent, hideMetadata, autoLoadMedia, fullCalendarInvite, deferAuthorAvatar } = ctx
+
+  if (
+    ctx.surface === 'embed' &&
+    !ctx.showFull &&
+    (displayEvent.kind === kinds.ShortTextNote || displayEvent.kind === ExtendedKind.COMMENT)
+  ) {
+    return (
+      <StandardTextNoteEmbedCard event={displayEvent} className={cn(className, 'mt-0')} deferAuthorAvatar={deferAuthorAvatar} />
+    )
+  }
 
   if (isNip18RepostKind(displayEvent.kind)) {
     return <RepostEventContent className={className} event={displayEvent} />
@@ -257,4 +264,4 @@ export function bodyClass(ctx: RenderCtx, extra?: string) {
 
 export { getWebBookmarkReplaceableEventNaddr } from '@/lib/web-bookmark-nip'
 export { getWebBookmarkArticleUrl } from '@/lib/rss-article'
-export { HttpUrlOpenGraphOrLink, EmbeddedNote }
+export { HttpUrlOpenGraphOrLink }

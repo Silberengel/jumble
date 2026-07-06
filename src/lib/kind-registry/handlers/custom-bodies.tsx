@@ -36,9 +36,9 @@ import GitRepublicEventCard from '@/components/Note/GitRepublicEventCard'
 import LearningResourceCard from '@/components/Note/LearningResourceCard'
 import ApplicationHandlerInfo from '@/components/ApplicationHandlerInfo'
 import ApplicationHandlerRecommendation from '@/components/ApplicationHandlerRecommendation'
+import { EmbeddedNote } from '@/components/Embedded/EmbeddedNote'
 import {
   bodyClass,
-  EmbeddedNote,
   HttpUrlOpenGraphOrLink,
   renderMarkdownContent,
   RepostEventContent

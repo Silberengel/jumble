@@ -9,6 +9,7 @@ import {
 import { getWebBookmarkArticleUrl } from '@/lib/rss-article'
 import { useTranslation } from 'react-i18next'
 import NormalContentPreview from '@/components/ContentPreview/NormalContentPreview'
+import StandardTextNoteEmbedCard from '@/components/Note/StandardTextNoteEmbedCard'
 import HighlightPreview from '@/components/ContentPreview/HighlightPreview'
 import PollPreview from '@/components/ContentPreview/PollPreview'
 import LongFormCard from '@/components/Note/LongFormCard'
@@ -34,7 +35,20 @@ import { cn } from '@/lib/utils'
 import type { RenderCtx } from '../types'
 
 export function renderTextContentPreview(ctx: RenderCtx) {
-  return <NormalContentPreview event={ctx.displayEvent} />
+  if (
+    ctx.surface === 'embed' ||
+    (ctx.surface === 'preview' && ctx.showPaymentAttestationAction)
+  ) {
+    return (
+      <StandardTextNoteEmbedCard
+        event={ctx.displayEvent}
+        className={ctx.className}
+        lineClampClassName={ctx.surface === 'embed' ? 'line-clamp-4' : 'line-clamp-3'}
+        deferAuthorAvatar={ctx.deferAuthorAvatar}
+      />
+    )
+  }
+  return <NormalContentPreview event={ctx.displayEvent} className={ctx.className} />
 }
 
 export function renderDiscussionPreview(ctx: RenderCtx) {

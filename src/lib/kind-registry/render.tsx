@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import UnknownNote from '@/components/Note/UnknownNote'
 import GenericCard from './GenericCard'
+import { normalizeEventKind } from './normalize-kind'
 import { handlerFor, registeredHandlerFor } from './registry'
 import type { RenderCtx, Surface } from './types'
 
@@ -9,7 +10,8 @@ function clampForSurface(surface: Surface): boolean {
 }
 
 function dispatchBody(ctx: RenderCtx, mode: 'body' | 'preview'): ReactNode {
-  const handler = handlerFor(ctx.event.kind)
+  const kind = normalizeEventKind(ctx.event.kind)
+  const handler = handlerFor(kind)
   if (!handler) {
     return (
       <UnknownNote
@@ -41,12 +43,12 @@ function dispatchBody(ctx: RenderCtx, mode: 'body' | 'preview'): ReactNode {
         clampBody={clampForSurface(ctx.surface)}
         hideMetadata={ctx.hideMetadata}
         autoLoadMedia={ctx.autoLoadMedia}
-        showUnsupportedBanner={!registeredHandlerFor(ctx.event.kind)}
+        showUnsupportedBanner={!registeredHandlerFor(kind)}
       />
     )
   }
 
-  if (!registeredHandlerFor(ctx.event.kind)) {
+  if (!registeredHandlerFor(kind)) {
     return (
       <UnknownNote
         className={ctx.className}
@@ -75,7 +77,9 @@ export function kindHandlerHideBody(kind: number): boolean {
 }
 
 export function isKindRenderable(kind: number): boolean {
-  const registered = registeredHandlerFor(kind)
+  const k = normalizeEventKind(kind)
+  if (!Number.isFinite(k)) return false
+  const registered = registeredHandlerFor(k)
   if (registered) return registered.renderable !== false
   return false
 }

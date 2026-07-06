@@ -4,7 +4,8 @@ import { FAST_READ_RELAY_URLS, PROFILE_RELAY_URLS } from '@/constants'
 import { getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { LIVE_ACTIVITY_KINDS } from '@/lib/live-activities'
 import { isCalendarEventKind } from '@/lib/calendar-event'
-import { isRenderableNoteKind } from '@/lib/note-renderable-kinds'
+import EmbeddedKindCard from './EmbeddedKindCard'
+import { isKindRenderable } from '@/lib/kind-registry/render'
 import {
   shouldDropEventOnIngest,
   type ShouldDropEventOnIngestOptions
@@ -41,8 +42,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { relayHintsForEmbeddedNotePointer } from '@/lib/event'
 import { Event, nip19 } from 'nostr-tools'
 import ClientSelect from '../ClientSelect'
-import MainNoteCard from '../NoteCard/MainNoteCard'
-import UnknownNote from '../Note/UnknownNote'
 import { EmbeddedCalendarEvent } from './EmbeddedCalendarEvent'
 import logger from '@/lib/logger'
 import {
@@ -540,34 +539,16 @@ function EmbeddedNoteFetched({
     )
   }
 
-  if (!isRenderableNoteKind(finalEvent.kind)) {
-    return (
-      <div
-        data-embedded-note
-        data-embedded-unsupported
-        className="not-prose max-w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <UnknownNote
-          event={finalEvent}
-          showAuthorSummary
-          className={cn('my-0 p-2 sm:p-3 border rounded-lg w-full', className)}
-        />
-      </div>
-    )
-  }
-
-  // Otherwise, render as regular embedded note
   return (
     <div
       data-embedded-note
       className="not-prose max-w-full"
+      data-embedded-unsupported={isKindRenderable(finalEvent.kind) ? undefined : true}
       onClick={(e) => e.stopPropagation()}
     >
-      <MainNoteCard
+      <EmbeddedKindCard
         className={cn('w-full', className)}
         event={finalEvent}
-        embedded
         showFull={showFull}
         originalNoteId={noteId}
       />

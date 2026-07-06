@@ -420,6 +420,7 @@ export default function Note({
             replyContext={event}
             relayHints={parentFetchRelayHints}
             className="mt-2"
+            layout={showPaymentAttestationAction ? 'embed-card' : 'blurb'}
             onClick={(e) => {
               e.stopPropagation()
               const parentEv = client.peekSessionCachedEvent(parentEventId)
