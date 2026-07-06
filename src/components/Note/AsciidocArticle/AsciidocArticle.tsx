@@ -55,6 +55,11 @@ import {
   plainAsciiDocSourceToHtml,
   resolveRelativeImagesInAsciidocHtml
 } from '@/lib/asciidoc-parse'
+import {
+  looksLikeNativeAsciidoc,
+  protectAsciiDocVerbatimRegions,
+  restoreAsciiDocVerbatimRegions
+} from '@/lib/asciidoc-verbatim-protect'
 import { useTranslation } from 'react-i18next'
 import katex from 'katex'
 import '@/styles/katex-bundle.css'
@@ -69,6 +74,14 @@ function truncateLinkText(text: string, maxLength: number = 200): string {
     return text
   }
   return text.substring(0, maxLength) + '...'
+}
+
+function inlineCodePlaceholder(index: number): string {
+  return `@@JUMBLE_INLINE_CODE_${index}@@`
+}
+
+function codeBlockPlaceholder(index: number): string {
+  return `@@JUMBLE_CODE_BLOCK_${index}@@`
 }
 
 /**
@@ -98,7 +111,7 @@ function convertMarkdownToAsciidoc(content: string): string {
   // Protect code blocks - we'll process them separately
   const codeBlockPlaceholders: string[] = []
   asciidoc = asciidoc.replace(/```(\w+)?\n([\s\S]*?)```/g, (_match, lang, code) => {
-    const placeholder = `__CODE_BLOCK_${codeBlockPlaceholders.length}__`
+    const placeholder = codeBlockPlaceholder(codeBlockPlaceholders.length)
     codeBlockPlaceholders.push(`[source${lang ? ',' + lang : ''}]\n----\n${code.trim()}\n----`)
     return placeholder
   })
@@ -130,13 +143,13 @@ function convertMarkdownToAsciidoc(content: string): string {
         return processed
       }
       // Mixed content - keep as code but with stem inside (won't work well, but preserve it)
-      const placeholder = `__INLINE_CODE_${inlineCodePlaceholders.length}__`
+      const placeholder = inlineCodePlaceholder(inlineCodePlaceholders.length)
       inlineCodePlaceholders.push(`\`${processed}\``)
       return placeholder
     }
     
     // Regular inline code - preserve it
-    const placeholder = `__INLINE_CODE_${inlineCodePlaceholders.length}__`
+    const placeholder = inlineCodePlaceholder(inlineCodePlaceholders.length)
     inlineCodePlaceholders.push(`\`${content}\``)
     return placeholder
   })
@@ -338,12 +351,12 @@ function convertMarkdownToAsciidoc(content: string): string {
   
   // Restore inline code
   inlineCodePlaceholders.forEach((code, index) => {
-    asciidoc = asciidoc.replace(`__INLINE_CODE_${index}__`, code)
+    asciidoc = asciidoc.replace(inlineCodePlaceholder(index), code)
   })
   
   // Restore code blocks
   codeBlockPlaceholders.forEach((block, index) => {
-    asciidoc = asciidoc.replace(`__CODE_BLOCK_${index}__`, block)
+    asciidoc = asciidoc.replace(codeBlockPlaceholder(index), block)
   })
   
   return asciidoc
@@ -389,13 +402,17 @@ export default function AsciidocArticle({
     
     // Normalize excessive newlines (reduce 3+ to 2)
     content = content.replace(/\n\s*\n\s*\n+/g, '\n\n')
+
+    const nativeAsciidoc = looksLikeNativeAsciidoc(content)
+    const { text: shielded, blocks: verbatimBlocks } = protectAsciiDocVerbatimRegions(content)
+    let work = shielded
     
     // PROTECT WIKILINKS FIRST before any other processing
     // This prevents AsciiDoc or other processors from converting them to regular links
     
     // Protect citations by converting them to passthrough format
     // Don't use [[...]] inside passthrough as AsciiDoc processes it - use a plain marker instead
-    content = content.replace(/\[\[citation::(end|foot|foot-end|inline|quote|prompt-end|prompt-inline)::([^\]]+)\]\]/g, (_match, citationType, citationId) => {
+    work = work.replace(/\[\[citation::(end|foot|foot-end|inline|quote|prompt-end|prompt-inline)::([^\]]+)\]\]/g, (_match, citationType, citationId) => {
       // Strip all nostr: prefixes if present (handle cases like nostr:nostr:nevent1...)
       let cleanId = citationId.trim()
       while (cleanId.startsWith('nostr:')) {
@@ -407,7 +424,7 @@ export default function AsciidocArticle({
     
     // Then protect regular wikilinks by converting them to passthrough format
     // This prevents AsciiDoc from processing them and prevents URLs inside from being processed
-    content = content.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
+    work = work.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
       // Skip citations - they're already processed above
       if (linkContent.startsWith('citation::')) {
         return match
@@ -419,19 +436,21 @@ export default function AsciidocArticle({
       return `+++WIKILINK:${linkContent}+++`
     })
     
-    // Convert all markdown syntax to AsciiDoc syntax
-    content = convertMarkdownToAsciidoc(content)
+    // Convert markdown syntax to AsciiDoc only when the body is not already AsciiDoc
+    if (!nativeAsciidoc) {
+      work = convertMarkdownToAsciidoc(work)
+    }
     
     // Now process raw URLs that aren't already in AsciiDoc syntax
-    content = preprocessAsciidocMediaLinks(content)
+    work = preprocessAsciidocMediaLinks(work)
     
     // Convert "Read naddr... instead." patterns to AsciiDoc links
     const redirectRegex = /Read (naddr1[a-z0-9]+) instead\./gi
-    content = content.replace(redirectRegex, (_match, naddr) => {
+    work = work.replace(redirectRegex, (_match, naddr) => {
       return `Read link:/notes/${naddr}[${naddr}] instead.`
     })
-    
-    return content
+
+    return restoreAsciiDocVerbatimRegions(work, verbatimBlocks)
   }, [event.content])
   
   // Extract all media from event
@@ -1655,7 +1674,11 @@ export default function AsciidocArticle({
               const element = block as HTMLElement
               element.style.color = 'inherit'
               element.classList.add('text-gray-900', 'dark:text-gray-100')
-              hljs.highlightElement(element)
+              const alreadyHighlighted =
+                element.classList.contains('hljs') && element.querySelector('span[class]')
+              if (!alreadyHighlighted) {
+                hljs.highlightElement(element)
+              }
               element.style.color = 'inherit'
             })
           }
