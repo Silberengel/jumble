@@ -17,6 +17,7 @@ describe('wikilink helpers', () => {
     // accented letters are lowercased but not stripped
     expect(wikilinkTargetToDTag('Ñoño')).toBe('ñoño')
     expect(wikilinkTargetToDTag('Article 1')).toBe('article-1')
+    expect(wikilinkTargetToDTag('NKBIP-01')).toBe('nkbip-01')
   })
 
   it('parses plain and aliased inner content', () => {

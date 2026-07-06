@@ -41,6 +41,11 @@ describe('normalizeWikiDTag', () => {
     expect(normalizeWikiDTag('ウィキペディア')).toBe('ウィキペディア')
     expect(normalizeWikiDTag('Café 2')).toBe('café-2')
   })
+
+  it('preserves hyphens in slugs like NKBIP-01', () => {
+    expect(normalizeWikiDTag('NKBIP-01')).toBe('nkbip-01')
+    expect(normalizeWikiDTag('nkbip-01')).toBe('nkbip-01')
+  })
 })
 
 describe('wiki marker parsing', () => {

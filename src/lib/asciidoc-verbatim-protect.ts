@@ -123,12 +123,13 @@ export function protectAsciiDocVerbatimRegions(content: string): {
   const ranges = collectAsciiDocVerbatimRanges(content)
   if (ranges.length === 0) return { text: content, blocks: [] }
 
-  const blocks: string[] = []
+  const blocks: string[] = new Array(ranges.length)
   let text = content
+  // Replace from end → start so earlier indices stay valid; placeholder index matches range order.
   for (let i = ranges.length - 1; i >= 0; i--) {
     const [start, end] = ranges[i]!
-    blocks.unshift(content.slice(start, end))
-    text = text.slice(0, start) + verbatimPlaceholder(blocks.length - 1) + text.slice(end)
+    blocks[i] = content.slice(start, end)
+    text = text.slice(0, start) + verbatimPlaceholder(i) + text.slice(end)
   }
   return { text, blocks }
 }

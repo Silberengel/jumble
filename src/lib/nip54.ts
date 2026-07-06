@@ -14,7 +14,8 @@ import { nip19, type Event } from 'nostr-tools'
  *
  * - lowercase (case variants folded);
  * - whitespace → `-`;
- * - punctuation / symbols removed;
+ * - existing `-` preserved (valid in NIP-54 d-tags);
+ * - other punctuation / symbols removed;
  * - consecutive `-` collapsed, leading/trailing `-` trimmed;
  * - **non-ASCII letters preserved** (Japanese, Cyrillic, Arabic, …) and numbers preserved.
  */
@@ -24,10 +25,12 @@ export function normalizeWikiDTag(input: string): string {
   for (const ch of lowered) {
     if (/\s/u.test(ch)) {
       out += '-'
+    } else if (ch === '-') {
+      out += '-'
     } else if (/[\p{L}\p{N}]/u.test(ch)) {
       out += ch
     }
-    // punctuation / symbols are dropped
+    // other punctuation / symbols are dropped
   }
   return out.replace(/-+/g, '-').replace(/^-+|-+$/g, '')
 }

@@ -2691,16 +2691,9 @@ function parseMarkdownContentLegacy(
         parts.push(<span key={`hashtag-space-${patternIdx}`} className="whitespace-pre"> </span>)
       }
     } else if (pattern.type === 'wikilink') {
-      const linkContent = pattern.data
-      
-      // Regular wikilink
-      let target = linkContent.includes('|') ? linkContent.split('|')[0].trim() : linkContent.trim()
-      let displayText = linkContent.includes('|') ? linkContent.split('|')[1].trim() : linkContent.trim()
-      
-      const dtag = target.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      
+      const { dTag, displayText } = parseWikilinkInner(pattern.data as string)
       parts.push(
-        <Wikilink key={`wikilink-${patternIdx}`} dTag={dtag} displayText={displayText} />
+        <Wikilink key={`wikilink-${patternIdx}`} dTag={dTag} displayText={displayText} />
       )
     }
     

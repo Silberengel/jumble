@@ -32,6 +32,22 @@ describe('protectAsciiDocVerbatimRegions', () => {
     expect(text).not.toContain('[source,json]')
     expect(blocks[0]).toMatch(/^\[source,json\]/)
   })
+
+  it('preserves order of multiple source blocks', () => {
+    const blockA = `[source,json]\n----\n{"id": "first"}\n----`
+    const blockB = `[source,json]\n----\n{"id": "second"}\n----`
+    const blockC = `[source,json]\n----\n{"id": "third"}\n----`
+    const input = `Before\n\n${blockA}\n\nBetween A and B\n\n${blockB}\n\nBetween B and C\n\n${blockC}\n\nAfter`
+    const { text, blocks } = protectAsciiDocVerbatimRegions(input)
+    expect(blocks).toHaveLength(3)
+    expect(blocks[0]).toContain('"first"')
+    expect(blocks[1]).toContain('"second"')
+    expect(blocks[2]).toContain('"third"')
+    const restored = restoreAsciiDocVerbatimRegions(text, blocks)
+    expect(restored).toBe(input)
+    expect(restored.indexOf('"first"')).toBeLessThan(restored.indexOf('"second"'))
+    expect(restored.indexOf('"second"')).toBeLessThan(restored.indexOf('"third"'))
+  })
 })
 
 describe('looksLikeNativeAsciidoc', () => {

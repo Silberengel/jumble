@@ -48,6 +48,7 @@ import {
   NOSTR_HTML_BECH32_RELAXED
 } from '@/lib/content-patterns'
 import { shouldLeaveDoubleBracketForAsciidoctor } from '@/lib/asciidoc-double-bracket-guard'
+import { parseWikilinkInner } from '@/lib/wikilink'
 import { cn } from '@/lib/utils'
 import logger from '@/lib/logger'
 import {
@@ -1524,11 +1525,7 @@ export default function AsciidocArticle({
       if (!linkContent) return
       
       // Parse wikilink: extract target and display text
-      let target = linkContent.includes('|') ? linkContent.split('|')[0].trim() : linkContent.trim()
-      let displayText = linkContent.includes('|') ? linkContent.split('|')[1].trim() : linkContent.trim()
-      
-      // Convert to d-tag format (same as MarkdownArticle)
-      const dtag = target.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      const { dTag: dtag, displayText } = parseWikilinkInner(linkContent)
       
       // Create a container for React component
       const container = document.createElement('span')
