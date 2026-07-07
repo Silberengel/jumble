@@ -1137,6 +1137,10 @@ export const WAVLAKE_OPEN_URL_REGEX =
 export const FOUNTAIN_OPEN_URL_REGEX =
   /https?:\/\/(?:www\.)?fountain\.fm\/(?:episode|show)\/[A-Za-z0-9]+(?:\?[^\s#]*)?(?:#[^\s]*)?/gi
 
+/** tidal.com track / album / playlist / video (optional browse/ segment; listen.tidal.com) */
+export const TIDAL_OPEN_URL_REGEX =
+  /https?:\/\/(?:www\.|listen\.)?tidal\.com\/(?:browse\/)?(?:track|album|playlist|video)\/[0-9a-f-]+(?:\?[^\s#]*)?(?:#[^\s]*)?/gi
+
 /** zap.stream live player: path must be a bare NIP-19 naddr (`/naddr1…`). */
 export const ZAP_STREAM_WATCH_URL_REGEX =
   /https?:\/\/(?:www\.)?zap\.stream\/(naddr1[02-9ac-hj-np-z]+)(?:\?[^\s#]*)?(?:#[^\s]*)?/gi

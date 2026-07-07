@@ -15,6 +15,7 @@ import { logContentSpacing, reprString } from '@/lib/content-spacing-debug'
 import { findHttpUrlsInText, isBlossomBudBlobUrl, isHlsPlaylistUrl, isImage, isMedia } from '@/lib/url'
 import { isSpotifyOpenUrl } from './spotify-url'
 import { isFountainOpenUrl } from './fountain-url'
+import { isTidalOpenUrl } from './tidal-url'
 import { isWavlakeOpenUrl } from './wavlake-url'
 import { isZapStreamWatchUrl } from './zap-stream-url'
 import { WIKILINK_INLINE_REGEX, isCitationWikilink } from './wikilink'
@@ -36,6 +37,7 @@ export type TEmbeddedNodeType =
   | 'spotify'
   | 'wavlake'
   | 'fountain'
+  | 'tidal'
   | 'zapstream'
   | 'payto'
   | 'wikilink'
@@ -149,6 +151,8 @@ export const EmbeddedUrlParser: TContentParser = (content: string) => {
       type = 'wavlake'
     } else if (isFountainOpenUrl(url)) {
       type = 'fountain'
+    } else if (isTidalOpenUrl(url)) {
+      type = 'tidal'
     } else if (isZapStreamWatchUrl(url)) {
       type = 'zapstream'
     }

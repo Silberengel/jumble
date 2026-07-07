@@ -3,6 +3,7 @@ import { findHttpUrlsInText, formatBareHttpUrlForMarkdownAutolink, isImage, isVi
 import { isYouTubeUrl } from '@/lib/youtube-url'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isTidalOpenUrl } from '@/lib/tidal-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 
@@ -87,6 +88,10 @@ export function preprocessMarkdownMediaLinks(content: string): string {
     }
 
     if (isFountainOpenUrl(url)) {
+      continue
+    }
+
+    if (isTidalOpenUrl(url)) {
       continue
     }
 

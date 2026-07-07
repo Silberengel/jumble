@@ -37,6 +37,7 @@ import ImageGallery from '../ImageGallery'
 import MediaPlayer from '../MediaPlayer'
 import SpotifyEmbeddedPlayer from '../SpotifyEmbeddedPlayer'
 import FountainEmbeddedPlayer from '../FountainEmbeddedPlayer'
+import TidalEmbeddedPlayer from '../TidalEmbeddedPlayer'
 import WavlakeEmbeddedPlayer from '../WavlakeEmbeddedPlayer'
 import YoutubeEmbeddedPlayer from '../YoutubeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '../ZapStreamLiveEventEmbed'
@@ -44,6 +45,7 @@ import { toNote } from '@/lib/link'
 import { isYouTubeUrl } from '@/lib/youtube-url'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isTidalOpenUrl } from '@/lib/tidal-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { shouldDeferLongVideoAutoload } from '@/lib/long-video-load-policy'
@@ -198,6 +200,7 @@ export default function Content({
           !isSpotifyOpenUrl(url) &&
           !isWavlakeOpenUrl(url) &&
           !isFountainOpenUrl(url) &&
+          !isTidalOpenUrl(url) &&
           !isZapStreamWatchUrl(url)
         ) {
           const cleaned = cleanUrl(url)
@@ -309,6 +312,28 @@ export default function Content({
     return urls
   }, [event, nodes])
 
+  const tidalUrlsFromTags = useMemo(() => {
+    if (!event) return []
+    const urls: string[] = []
+    const seenUrls = new Set<string>()
+    const hasTidalInContent = nodes?.some((node) => node.type === 'tidal') || false
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (isTidalOpenUrl(url)) {
+          const cleaned = cleanUrl(url)
+          if (cleaned && !hasTidalInContent && !seenUrls.has(cleaned)) {
+            urls.push(cleaned)
+            seenUrls.add(cleaned)
+          }
+        }
+      })
+
+    return urls
+  }, [event, nodes])
+
   const zapStreamCanonicalInContent = useMemo(() => {
     if (!nodes) return new Set<string>()
     const s = new Set<string>()
@@ -361,6 +386,7 @@ export default function Content({
           !isSpotifyOpenUrl(url) &&
           !isWavlakeOpenUrl(url) &&
           !isFountainOpenUrl(url) &&
+          !isTidalOpenUrl(url) &&
           !isZapStreamWatchUrl(url)
         ) {
           const cleaned = cleanUrl(url)
@@ -619,6 +645,16 @@ export default function Content({
         />
       ))}
 
+      {tidalUrlsFromTags.map((url) => (
+        <TidalEmbeddedPlayer
+          key={`tag-tidal-${url}`}
+          url={url}
+          className="mt-2"
+          mustLoad={mustLoadMedia}
+          authorPubkey={authorPubkey}
+        />
+      ))}
+
       {zapstreamUrlsFromTags.map((url) => (
         <ZapStreamLiveEventEmbed
           key={`tag-zapstream-${url}`}
@@ -814,6 +850,17 @@ export default function Content({
               className="mt-2"
               mustLoad={mustLoadMedia}
           authorPubkey={authorPubkey}
+            />
+          )
+        }
+        if (node.type === 'tidal') {
+          return (
+            <TidalEmbeddedPlayer
+              key={index}
+              url={node.data}
+              className="mt-2"
+              mustLoad={mustLoadMedia}
+              authorPubkey={authorPubkey}
             />
           )
         }

@@ -16,9 +16,11 @@ import { HttpUrlOpenGraphOrLink } from './HttpUrlOpenGraphOrLink'
 import { EmbeddedNote } from './EmbeddedNote'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
 import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
+import TidalEmbeddedPlayer from '@/components/TidalEmbeddedPlayer'
 import WavlakeEmbeddedPlayer from '@/components/WavlakeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '@/components/ZapStreamLiveEventEmbed'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isTidalOpenUrl } from '@/lib/tidal-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { isEmbeddableYoutubeUrl } from '@/lib/youtube-url'
 import { isZapStreamWatchUrl } from '@/lib/zap-stream-url'
@@ -86,6 +88,17 @@ export function HttpNostrAwareUrl({
         url={cleaned}
         className={cn('mt-2 max-w-[400px]', className)}
         mustLoad={renderMode === 'article'}
+      />
+    )
+  }
+
+  if (isTidalOpenUrl(cleaned)) {
+    return (
+      <TidalEmbeddedPlayer
+        url={cleaned}
+        className={cn('mt-2 max-w-[400px]', className)}
+        mustLoad={renderMode === 'article'}
+        authorPubkey={containingEvent?.pubkey}
       />
     )
   }

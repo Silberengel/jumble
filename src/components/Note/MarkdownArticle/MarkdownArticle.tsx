@@ -9,6 +9,7 @@ import { WIKILINK_INLINE_REGEX, isCitationWikilink, parseWikilinkInner } from '@
 import { HttpUrlOpenGraphOrLink } from '@/components/Embedded'
 import SpotifyEmbeddedPlayer from '@/components/SpotifyEmbeddedPlayer'
 import FountainEmbeddedPlayer from '@/components/FountainEmbeddedPlayer'
+import TidalEmbeddedPlayer from '@/components/TidalEmbeddedPlayer'
 import WavlakeEmbeddedPlayer from '@/components/WavlakeEmbeddedPlayer'
 import ZapStreamLiveEventEmbed from '@/components/ZapStreamLiveEventEmbed'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
@@ -46,6 +47,7 @@ import {
   isNip52CalendarCardKind,
   SPOTIFY_OPEN_URL_REGEX,
   FOUNTAIN_OPEN_URL_REGEX,
+  TIDAL_OPEN_URL_REGEX,
   WAVLAKE_OPEN_URL_REGEX,
   WS_URL_REGEX,
   YOUTUBE_URL_REGEX,
@@ -53,6 +55,7 @@ import {
 } from '@/constants'
 import { isSpotifyOpenUrl } from '@/lib/spotify-url'
 import { isFountainOpenUrl } from '@/lib/fountain-url'
+import { isTidalOpenUrl } from '@/lib/tidal-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { isEmbeddableYoutubeUrl, isYouTubeUrl } from '@/lib/youtube-url'
@@ -449,6 +452,10 @@ function isWavlakeUrl(url: string): boolean {
 
 function isFountainUrl(url: string): boolean {
   return isFountainOpenUrl(url)
+}
+
+function isTidalUrl(url: string): boolean {
+  return isTidalOpenUrl(url)
 }
 
 function isZapStreamUrl(url: string): boolean {
@@ -1380,6 +1387,35 @@ function parseMarkdownContentLegacy(
     }
   })
 
+  const tidalUrlMatches = Array.from(content.matchAll(TIDAL_OPEN_URL_REGEX))
+  tidalUrlMatches.forEach((match) => {
+    if (match.index !== undefined) {
+      const url = match[0]
+      const start = match.index
+      const end = match.index + match[0].length
+      const isInMarkdown = patterns.some(
+        (p) =>
+          (p.type === 'markdown-link' ||
+            p.type === 'markdown-image-link' ||
+            p.type === 'markdown-image' ||
+            p.type === 'youtube-url' ||
+            p.type === 'spotify-url' ||
+            p.type === 'wavlake-url' ||
+            p.type === 'fountain-url') &&
+          start >= p.index &&
+          start < p.end
+      )
+      if (!isInMarkdown && !isWithinBlockPattern(start, end, blockPatterns) && isTidalUrl(url)) {
+        patterns.push({
+          index: start,
+          end: end,
+          type: 'tidal-url',
+          data: { url }
+        })
+      }
+    }
+  })
+
   const zapstreamUrlMatches = Array.from(content.matchAll(ZAP_STREAM_WATCH_URL_REGEX))
   zapstreamUrlMatches.forEach((match) => {
     if (match.index !== undefined) {
@@ -1394,7 +1430,8 @@ function parseMarkdownContentLegacy(
             p.type === 'youtube-url' ||
             p.type === 'spotify-url' ||
             p.type === 'wavlake-url' ||
-            p.type === 'fountain-url') &&
+            p.type === 'fountain-url' ||
+            p.type === 'tidal-url') &&
           start >= p.index &&
           start < p.end
       )
@@ -1418,7 +1455,7 @@ function parseMarkdownContentLegacy(
       const end = match.index + match[0].length
       // Only add if not already covered by a markdown link/image-link/image or YouTube URL and not in block pattern
       const isInMarkdown = patterns.some(p => 
-        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'wavlake-url' || p.type === 'fountain-url' || p.type === 'zapstream-url') &&
+        (p.type === 'markdown-link' || p.type === 'markdown-image-link' || p.type === 'markdown-image' || p.type === 'youtube-url' || p.type === 'spotify-url' || p.type === 'wavlake-url' || p.type === 'fountain-url' || p.type === 'tidal-url' || p.type === 'zapstream-url') &&
         start >= p.index && 
         start < p.end
       )
@@ -2326,6 +2363,13 @@ function parseMarkdownContentLegacy(
       parts.push(
         <div key={`fountain-url-${patternIdx}`} className="my-2">
           <FountainEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+        </div>
+      )
+    } else if (pattern.type === 'tidal-url') {
+      const { url } = pattern.data
+      parts.push(
+        <div key={`tidal-url-${patternIdx}`} className="my-2">
+          <TidalEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
         </div>
       )
     } else if (pattern.type === 'zapstream-url') {
@@ -3774,6 +3818,13 @@ function parseMarkdownContentMarked(
                     </div>
                   )
                 }
+                if (isTidalUrl(cleaned)) {
+                  return (
+                    <div key={`${key}-line-tidal-${lineIdx}`} className="my-2">
+                      <TidalEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                    </div>
+                  )
+                }
                 if (isZapStreamUrl(cleaned)) {
                   return (
                     <div key={`${key}-line-zapstream-${lineIdx}`} className="my-2">
@@ -3969,6 +4020,13 @@ function parseMarkdownContentMarked(
             </div>
           )
         }
+        if (isTidalUrl(cleaned)) {
+          return (
+            <div key={`${key}-tidal-url`} className="my-2">
+              <TidalEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+            </div>
+          )
+        }
         if (isZapStreamUrl(cleaned)) {
           return (
             <div key={`${key}-zapstream-url`} className="my-2">
@@ -4055,6 +4113,13 @@ function parseMarkdownContentMarked(
         return (
           <div key={`${key}-fountain-sole-link`} className="my-2">
             <FountainEmbeddedPlayer url={soleHref} className="max-w-[400px]" mustLoad={!lazyMedia} />
+          </div>
+        )
+      }
+      if (soleHref && isTidalUrl(soleHref)) {
+        return (
+          <div key={`${key}-tidal-sole-link`} className="my-2">
+            <TidalEmbeddedPlayer url={soleHref} className="max-w-[400px]" mustLoad={!lazyMedia} />
           </div>
         )
       }
@@ -4200,6 +4265,15 @@ function parseMarkdownContentMarked(
               nodes.push(
                 <div key={`${key}-inline-fountain-with-media-${idx}`} className="my-2">
                   <FountainEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+              return
+            }
+            if (cleaned && isTidalUrl(cleaned)) {
+              flushInlineSegment(segmentIdx++)
+              nodes.push(
+                <div key={`${key}-inline-tidal-with-media-${idx}`} className="my-2">
+                  <TidalEmbeddedPlayer url={cleaned} className="max-w-[400px]" mustLoad={!lazyMedia} />
                 </div>
               )
               return
@@ -5674,6 +5748,27 @@ export default function MarkdownArticle({
     return fountainUrls
   }, [event.id, JSON.stringify(event.tags)])
 
+  const tagTidalUrls = useMemo(() => {
+    const tidalUrls: string[] = []
+    const seenUrls = new Set<string>()
+
+    event.tags
+      .filter((tag) => tag[0] === 'r' && tag[1])
+      .forEach((tag) => {
+        const url = tag[1]!
+        if (!url.startsWith('http://') && !url.startsWith('https://')) return
+        if (!isTidalUrl(url)) return
+
+        const cleaned = cleanUrl(url)
+        if (cleaned && !seenUrls.has(cleaned)) {
+          tidalUrls.push(cleaned)
+          seenUrls.add(cleaned)
+        }
+      })
+
+    return tidalUrls
+  }, [event.id, JSON.stringify(event.tags)])
+
   const tagZapStreamUrls = useMemo(() => {
     const zapUrls: string[] = []
     const seenUrls = new Set<string>()
@@ -5710,6 +5805,7 @@ export default function MarkdownArticle({
         if (isSpotifyUrl(url)) return
         if (isWavlakeUrl(url)) return
         if (isFountainUrl(url)) return
+        if (isTidalUrl(url)) return
         if (isZapStreamWatchUrl(url)) return
 
         const cleaned = cleanUrl(url)
@@ -5849,6 +5945,17 @@ export default function MarkdownArticle({
     return urls
   }, [event.content])
 
+  const tidalUrlsInContent = useMemo(() => {
+    const urls = new Set<string>()
+    for (const { url } of findHttpUrlsInText(event.content)) {
+      const cleaned = cleanUrl(url)
+      if (cleaned && isTidalUrl(cleaned)) {
+        urls.add(cleaned)
+      }
+    }
+    return urls
+  }, [event.content])
+
   const zapstreamUrlsInContent = useMemo(() => {
     const urls = new Set<string>()
     for (const { url } of findHttpUrlsInText(event.content)) {
@@ -5875,6 +5982,7 @@ export default function MarkdownArticle({
         !isSpotifyUrl(url) &&
         !isWavlakeUrl(url) &&
         !isFountainUrl(url) &&
+        !isTidalUrl(url) &&
         !isZapStreamWatchUrl(url)
       ) {
         const cleaned = cleanUrl(url)
@@ -5998,6 +6106,13 @@ export default function MarkdownArticle({
       return cleaned && !fountainUrlsInContent.has(cleaned)
     })
   }, [tagFountainUrls, fountainUrlsInContent])
+
+  const leftoverTagTidalUrls = useMemo(() => {
+    return tagTidalUrls.filter((url) => {
+      const cleaned = cleanUrl(url)
+      return cleaned && !tidalUrlsInContent.has(cleaned)
+    })
+  }, [tagTidalUrls, tidalUrlsInContent])
 
   const leftoverTagZapStreamUrls = useMemo(() => {
     return tagZapStreamUrls.filter((canon) => !zapstreamUrlsInContent.has(canon))
@@ -6477,6 +6592,19 @@ export default function MarkdownArticle({
               return (
                 <div key={`tag-fountain-${cleaned}`} className="my-2">
                   <FountainEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {leftoverTagTidalUrls.length > 0 && (
+          <div className="space-y-4 mb-6">
+            {leftoverTagTidalUrls.map((url) => {
+              const cleaned = cleanUrl(url)
+              return (
+                <div key={`tag-tidal-${cleaned}`} className="my-2">
+                  <TidalEmbeddedPlayer url={url} className="max-w-[400px]" mustLoad={!lazyMedia} />
                 </div>
               )
             })}

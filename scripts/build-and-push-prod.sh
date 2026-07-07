@@ -53,7 +53,7 @@ docker build \
   -t "$IMAGE_APP:latest" -t "$IMAGE_APP:$VERSION" .
 
 echo "Building NIP-66 monitor (version: $VERSION)"
-docker build -t "$IMAGE_MONITOR:latest" -t "$IMAGE_MONITOR:$VERSION" ./nip66-cron
+docker build -f nip66-cron/Dockerfile -t "$IMAGE_MONITOR:latest" -t "$IMAGE_MONITOR:$VERSION" .
 
 echo "Building Piper HTTP TTS proxy (version: $VERSION)"
 docker build \
