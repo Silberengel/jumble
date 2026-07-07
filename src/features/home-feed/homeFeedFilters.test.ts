@@ -47,6 +47,16 @@ describe('shouldHideHomeFeedEvent', () => {
     }
     expect(shouldHideHomeFeedEvent(note('a', 1_700_000_000), ctx)).toBe(true)
   })
+
+  it('hides unknown seen-on on strict relay-authoritative feeds', () => {
+    const ctx: HomeFeedFilterContext = {
+      ...baseCtx(),
+      relayAuthoritativeFeedOnly: true,
+      seenOnAllowlist: ['wss://allowed.example.com/'],
+      getSeenOnRelays: () => []
+    }
+    expect(shouldHideHomeFeedEvent(note('a', 1_700_000_000), ctx)).toBe(true)
+  })
 })
 
 describe('filterVisibleHomeFeedEvents', () => {

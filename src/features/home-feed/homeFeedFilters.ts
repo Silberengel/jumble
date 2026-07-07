@@ -59,7 +59,9 @@ export function shouldHideHomeFeedEvent(event: Event, ctx: HomeFeedFilterContext
   if (
     allowlist?.length &&
     (ctx.listMode === 'posts' || ctx.relayAuthoritativeFeedOnly) &&
-    !eventSeenOnMatchesAllowlist(ctx.getSeenOnRelays(event.id), allowlist)
+    !eventSeenOnMatchesAllowlist(ctx.getSeenOnRelays(event.id), allowlist, {
+      strictUnknownSeenOn: ctx.relayAuthoritativeFeedOnly
+    })
   ) {
     return true
   }

@@ -1,5 +1,9 @@
-import { describe, expect, it, beforeEach } from 'vitest'
-import { isRelayStrikeEntryActive, relaySessionStrikes } from './relay-strikes'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  isRelayStrikeEntryActive,
+  RelayConnectivityBreaker,
+  relaySessionStrikes
+} from './relay-strikes'
 import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
 function row(
@@ -183,6 +187,115 @@ describe('relaySessionStrikes.isSessionStrikeActiveForUrl', () => {
   })
 })
 
+describe('relaySessionStrikes exponential read-strike backoff', () => {
+  beforeEach(() => {
+    relaySessionStrikes.reset()
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('doubles the skip cooldown for each strike round without a success', () => {
+    const url = 'wss://dead.example.com/'
+    // First strike round: 5 connection failures → 3 min cooldown.
+    for (let i = 0; i < 5; i++) relaySessionStrikes.recordReadFailure(url, 'connection')
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+
+    // Just past the first 3 min cooldown: relay is probeable again.
+    vi.advanceTimersByTime(3 * 60 * 1000 + 1000)
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(false)
+
+    // Second strike round → 6 min cooldown, so 4 min later it's still skipped.
+    relaySessionStrikes.recordReadFailure(url, 'connection')
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+    vi.advanceTimersByTime(4 * 60 * 1000)
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+    vi.advanceTimersByTime(2 * 60 * 1000 + 1000)
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(false)
+  })
+
+  it('resets the escalation level on read success', () => {
+    const url = 'wss://flaky.example.com/'
+    for (let i = 0; i < 5; i++) relaySessionStrikes.recordReadFailure(url, 'connection')
+    vi.advanceTimersByTime(3 * 60 * 1000 + 1000)
+    relaySessionStrikes.recordReadSuccess(url)
+
+    // After a success the next strike round is back to the base 3 min cooldown.
+    for (let i = 0; i < 5; i++) relaySessionStrikes.recordReadFailure(url, 'connection')
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
+    vi.advanceTimersByTime(3 * 60 * 1000 + 1000)
+    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(false)
+  })
+})
+
+describe('RelayConnectivityBreaker', () => {
+  it('pauses after failures on 8 distinct hosts within the window', () => {
+    const breaker = new RelayConnectivityBreaker()
+    const now = 1_000_000
+    for (let i = 0; i < 7; i++) {
+      breaker.recordFailure(`wss://relay${i}.example.com/`, now)
+    }
+    expect(breaker.isPaused(now)).toBe(false)
+    breaker.recordFailure('wss://relay7.example.com/', now)
+    expect(breaker.isPaused(now)).toBe(true)
+  })
+
+  it('does not trip on repeated failures of the same host', () => {
+    const breaker = new RelayConnectivityBreaker()
+    const now = 1_000_000
+    for (let i = 0; i < 20; i++) {
+      breaker.recordFailure('wss://same.example.com/', now + i)
+    }
+    expect(breaker.isPaused(now + 20)).toBe(false)
+  })
+
+  it('ignores failures outside the 30s window', () => {
+    const breaker = new RelayConnectivityBreaker()
+    const start = 1_000_000
+    for (let i = 0; i < 7; i++) {
+      breaker.recordFailure(`wss://relay${i}.example.com/`, start)
+    }
+    // 31s later the earlier failures have expired; one more failure is not enough.
+    breaker.recordFailure('wss://relay7.example.com/', start + 31_000)
+    expect(breaker.isPaused(start + 31_000)).toBe(false)
+  })
+
+  it('ignores local network relays', () => {
+    const breaker = new RelayConnectivityBreaker()
+    const now = 1_000_000
+    for (let i = 0; i < 20; i++) {
+      breaker.recordFailure(`ws://192.168.1.${i}:4869/`, now)
+    }
+    expect(breaker.isPaused(now)).toBe(false)
+  })
+
+  it('escalates the pause on consecutive trips and resets on success', () => {
+    const breaker = new RelayConnectivityBreaker()
+    const t0 = 1_000_000
+    const trip = (at: number) => {
+      for (let i = 0; i < 8; i++) {
+        breaker.recordFailure(`wss://relay${i}.example.com/`, at)
+      }
+    }
+    trip(t0)
+    expect(breaker.isPaused(t0 + 14_000)).toBe(true)
+    expect(breaker.isPaused(t0 + 16_000)).toBe(false)
+
+    // Second trip doubles the pause to 30s.
+    trip(t0 + 16_000)
+    expect(breaker.isPaused(t0 + 16_000 + 29_000)).toBe(true)
+    expect(breaker.isPaused(t0 + 16_000 + 31_000)).toBe(false)
+
+    // A successful connection fully resets — next trip pauses only 15s again.
+    breaker.recordSuccess()
+    trip(t0 + 60_000)
+    expect(breaker.isPaused(t0 + 60_000 + 14_000)).toBe(true)
+    expect(breaker.isPaused(t0 + 60_000 + 16_000)).toBe(false)
+  })
+})
+
 describe('isRelayStrikeEntryActive', () => {
   it('is false for empty entry', () => {
     expect(
@@ -190,6 +303,7 @@ describe('isRelayStrikeEntryActive', () => {
         readFailures: 0,
         readLastStrikeIncrementAt: 0,
         readStrikeSkipUntil: 0,
+        readStrikeLevel: 0,
         slowSignals: 0,
         slowParkUntil: 0,
         publishFailures: 0,

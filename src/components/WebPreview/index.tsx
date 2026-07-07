@@ -1,3 +1,4 @@
+import { getEventTypeName } from '@/lib/content/event-type-name'
 import { useFetchWebMetadata } from '@/hooks/useFetchWebMetadata'
 import { useFetchEvent } from '@/hooks/useFetchEvent'
 import { useFetchProfile } from '@/hooks/useFetchProfile'
@@ -21,11 +22,134 @@ import { getImetaInfosFromEvent } from '@/lib/event'
 import MarkdownArticle from '../Note/LazyMarkdownArticle'
 import AsciidocArticle from '../Note/LazyAsciidocArticle'
 import ProfileAbout from '@/components/ProfileAbout'
+import ArticleHeroCard, {
+  ARTICLE_HERO_ASPECT,
+  ARTICLE_HERO_COVER_DIM,
+  ARTICLE_HERO_IMAGE_CLASS,
+  ARTICLE_HERO_IMAGE_WRAPPER_CLASS,
+  isArticleHeroCardKind
+} from '../Note/ArticleHeroCard'
 
 /** Scales with Settings → font size via `--content-font-size` (see index.css). */
 const WEB_PREVIEW_CARD = 'web-preview-card'
 
-import { getEventTypeName } from '@/lib/content/event-type-name'
+function OpenGraphHeroCard({
+  cleanedUrl,
+  url,
+  hostname,
+  title,
+  description,
+  image,
+  className
+}: {
+  cleanedUrl: string
+  url: string
+  hostname: string
+  title?: string | null
+  description?: string | null
+  image?: string | null
+  className?: string
+}) {
+  const hasImage = Boolean(image && isSafeMediaUrl(image))
+  const onImage = hasImage
+
+  return (
+    <div
+      className={cn(
+        WEB_PREVIEW_CARD,
+        'relative w-full border rounded-lg overflow-hidden max-w-full',
+        hasImage ? ARTICLE_HERO_ASPECT : 'bg-card',
+        className
+      )}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {hasImage && (
+        <>
+          <Image
+            image={{ url: image!, dim: ARTICLE_HERO_COVER_DIM }}
+            className={ARTICLE_HERO_IMAGE_CLASS}
+            classNames={{ wrapper: ARTICLE_HERO_IMAGE_WRAPPER_CLASS }}
+            hideIfError
+          />
+          <div
+            className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/15"
+            aria-hidden
+          />
+        </>
+      )}
+      <div
+        className={cn(
+          'relative z-[1] flex min-h-0 min-w-0 flex-col justify-end p-3',
+          onImage && 'absolute inset-0'
+        )}
+      >
+        <div className="mb-0.5 flex min-w-0 items-center gap-2">
+          <div
+            className={cn(
+              'web-preview-muted min-w-0 flex-1 truncate',
+              onImage ? 'text-white/75' : 'text-muted-foreground'
+            )}
+          >
+            {hostname}
+          </div>
+          <a
+            href={cleanedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="relative z-[2] shrink-0"
+          >
+            <ExternalLink className={cn('h-3 w-3', onImage ? 'text-white/90' : 'text-muted-foreground')} />
+          </a>
+        </div>
+        {title && (
+          <div
+            className={cn(
+              'web-preview-title mb-0.5 line-clamp-2 break-words font-semibold',
+              onImage ? 'text-white' : undefined
+            )}
+          >
+            {title}
+          </div>
+        )}
+        {description && (
+          <div
+            className={cn(
+              'line-clamp-2 break-words',
+              onImage
+                ? 'web-preview-muted text-white/85'
+                : title
+                  ? 'web-preview-muted text-muted-foreground'
+                  : 'web-preview-title font-semibold'
+            )}
+          >
+            {description}
+          </div>
+        )}
+        {!title && !description && (
+          <div className={cn('web-preview-muted', onImage ? 'text-white/80' : 'text-muted-foreground')}>
+            No description available
+          </div>
+        )}
+        <a
+          href={cleanedUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className={cn(
+            'web-preview-muted mt-2 line-clamp-1 break-all hover:underline underline-offset-2',
+            onImage
+              ? 'text-white/70 hover:text-white'
+              : 'text-muted-foreground hover:text-foreground'
+          )}
+        >
+          {url}
+        </a>
+      </div>
+    </div>
+  )
+}
+
 function extractFirstHeader(content: string): string | null {
   if (!content) return null
   
@@ -399,47 +523,6 @@ export default function WebPreview({
     const matchingImeta = imetaInfos.find(info => cleanUrl(info.url) === cleanedEventImage)
     eventImageThumbnail = matchingImeta?.thumb || eventImage
   }
-  const displayImageForDetection = eventImageThumbnail || image
-
-  // Detect image aspect ratio to determine width - MUST be called unconditionally
-  const [imageAspectRatio, setImageAspectRatio] = useState<number | null>(null)
-  const [ogImageAspectRatio, setOgImageAspectRatio] = useState<number | null>(null)
-  
-  useEffect(() => {
-    if (!displayImageForDetection || !isSafeMediaUrl(displayImageForDetection)) {
-      setImageAspectRatio(null)
-      return
-    }
-
-    const img = new window.Image()
-    img.onload = () => {
-      const aspectRatio = img.width / img.height
-      setImageAspectRatio(aspectRatio)
-    }
-    img.onerror = () => {
-      setImageAspectRatio(null)
-    }
-    img.src = displayImageForDetection
-  }, [displayImageForDetection])
-
-  // Detect OG image aspect ratio
-  useEffect(() => {
-    if (!image || !isSafeMediaUrl(image)) {
-      setOgImageAspectRatio(null)
-      return
-    }
-
-    const img = new window.Image()
-    img.onload = () => {
-      const aspectRatio = img.width / img.height
-      setOgImageAspectRatio(aspectRatio)
-    }
-    img.onerror = () => {
-      setOgImageAspectRatio(null)
-    }
-    img.src = image
-  }, [image])
-
   // Prefer the page's own Open Graph / meta when the fetch returns anything useful.
   const hasOpengraphData = !isInternalAppLink && hasUsableOpenGraphMetadata({ title, description, image })
 
@@ -447,14 +530,20 @@ export default function WebPreview({
   if (!isInternalAppLink && ogLoading) {
     return (
       <div
-        className={cn(WEB_PREVIEW_CARD, 'flex w-full flex-col border rounded-lg overflow-hidden max-w-full', className)}
+        className={cn(
+          WEB_PREVIEW_CARD,
+          'relative w-full overflow-hidden rounded-lg border',
+          ARTICLE_HERO_ASPECT,
+          className
+        )}
         onClick={(e) => e.stopPropagation()}
       >
-        <Skeleton className="w-full aspect-[1.91/1] rounded-b-none" />
-        <div className="min-w-0 space-y-2 p-3">
-          <Skeleton className="h-3 w-24" />
-          <Skeleton className="h-4 w-full" />
-          <Skeleton className="h-3 w-4/5" />
+        <Skeleton className="absolute inset-0 h-full w-full rounded-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" aria-hidden />
+        <div className="absolute inset-x-0 bottom-0 z-[1] space-y-2 p-3">
+          <Skeleton className="h-3 w-24 bg-white/20" />
+          <Skeleton className="h-4 w-full bg-white/25" />
+          <Skeleton className="h-3 w-4/5 bg-white/20" />
         </div>
       </div>
     )
@@ -484,105 +573,119 @@ export default function WebPreview({
       // Get title with fallbacks
       const eventTitle = getTitleWithFallbacks(fetchedEvent || null, eventMetadata) || eventTypeName
 
-      // Vertical event card: cover image on top, text below.
-      return (
-        <div
-          className={cn(
-            WEB_PREVIEW_CARD,
-            'p-3 flex w-full flex-col border border-border rounded-lg overflow-hidden bg-card bg-gradient-to-b from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
-            className
-          )}
-        >
-          {displayImage && isSafeMediaUrl(displayImage) && (
-            <div className="-mx-3 -mt-3 mb-3 flex items-center justify-center overflow-hidden bg-gradient-to-b from-primary/[0.07] to-transparent dark:from-primary/15">
-              <Image
-                image={{ url: displayImage, pubkey: fetchedEvent?.pubkey }}
-                className={cn(
-                  'w-full',
-                  imageAspectRatio !== null && imageAspectRatio < 1
-                    ? 'max-h-80 object-contain'
-                    : 'aspect-[1.91/1] object-cover'
-                )}
-                hideIfError
-              />
+      const renderEventFooter = (titleOnHero: boolean) => (
+        <div className="min-w-0 overflow-hidden">
+          <div className="mb-1 flex items-center gap-1.5">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              {fetchedEvent ? (
+                <>
+                  <Username userId={fetchedEvent.pubkey} className="web-preview-muted" />
+                  {eventAuthorProfile?.avatar && (
+                    <img
+                      src={eventAuthorProfile.avatar}
+                      alt=""
+                      className="h-5 w-5 shrink-0 rounded-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )}
+                  <span className="web-preview-muted shrink-0 text-muted-foreground">•</span>
+                  <span className="web-preview-muted truncate text-muted-foreground">{eventTypeName}</span>
+                </>
+              ) : (
+                <span className="web-preview-muted truncate text-muted-foreground">
+                  {isFetchingEventFinal ? 'Loading event...' : 'Event'}
+                </span>
+              )}
             </div>
-          )}
-          <div className="min-w-0 overflow-hidden">
-            <div className="flex items-center gap-1.5 mb-1">
-              <div className="flex items-center gap-1.5 flex-1 min-w-0">
-                {fetchedEvent ? (
-                  <>
-                    <Username userId={fetchedEvent.pubkey} className="web-preview-muted" />
-                    {eventAuthorProfile?.avatar && (
-                      <img
-                        src={eventAuthorProfile.avatar}
-                        alt=""
-                        className="w-5 h-5 rounded-full flex-shrink-0 object-cover"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none'
-                        }}
-                      />
-                    )}
-                    <span className="web-preview-muted text-muted-foreground flex-shrink-0">•</span>
-                    <span className="web-preview-muted text-muted-foreground truncate">{eventTypeName}</span>
-                  </>
-                ) : (
-                  <span className="web-preview-muted text-muted-foreground truncate">
-                    {isFetchingEventFinal ? 'Loading event...' : 'Event'}
-                  </span>
-                )}
-              </div>
-              <a
-                href={cleanedUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="flex-shrink-0"
-              >
-                <ExternalLink className="w-3 h-3 text-primary" />
-              </a>
-            </div>
-            {fetchedEvent && (
-              <>
-                {/* Always show title in card header, hide it in content preview */}
-                {eventTitle && (
-                  <div className="web-preview-title font-display font-semibold line-clamp-2 mb-1 text-brand-wordmark">
-                    {eventTitle}
-                  </div>
-                )}
-                {eventSummary && !showContentPreview && (
-                  <div className="web-preview-muted text-muted-foreground line-clamp-2 mb-1">{eventSummary}</div>
-                )}
-                {showContentPreview && (
-                  <div className="my-2 web-preview-muted line-clamp-6 overflow-hidden [&_img]:hidden [&_h1]:hidden [&_h2]:hidden">
-                    {isAsciidocEvent ? (
-                      <AsciidocArticle 
-                        event={previewEvent} 
-                        className="pointer-events-none"
-                        hideImagesAndInfo={true}
-                      />
-                    ) : (
-                      <MarkdownArticle 
-                        event={previewEvent} 
-                        className="pointer-events-none"
-                        hideMetadata={true}
-                      />
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-            <hr className="mt-4 mb-2 border-t border-border" />
             <a
               href={cleanedUrl}
               target="_blank"
               rel="noopener noreferrer"
               onClick={(e) => e.stopPropagation()}
-              className="web-preview-muted text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
+              className="shrink-0"
             >
-              {truncatedUrl}
+              <ExternalLink className="h-3 w-3 text-primary" />
             </a>
           </div>
+          {fetchedEvent && !titleOnHero && eventTitle ? (
+            <div className="web-preview-title mb-1 line-clamp-2 font-display font-semibold text-brand-wordmark">
+              {eventTitle}
+            </div>
+          ) : null}
+          {fetchedEvent && !titleOnHero && eventSummary && !showContentPreview ? (
+            <div className="web-preview-muted mb-1 line-clamp-2 text-muted-foreground">{eventSummary}</div>
+          ) : null}
+          {fetchedEvent && showContentPreview ? (
+            <div className="web-preview-muted my-2 line-clamp-6 overflow-hidden [&_h1]:hidden [&_h2]:hidden [&_img]:hidden">
+              {isAsciidocEvent ? (
+                <AsciidocArticle
+                  event={previewEvent}
+                  className="pointer-events-none"
+                  hideImagesAndInfo={true}
+                />
+              ) : (
+                <MarkdownArticle event={previewEvent} className="pointer-events-none" hideMetadata={true} />
+              )}
+            </div>
+          ) : null}
+          <hr className="mb-2 mt-3 border-t border-border" />
+          <a
+            href={cleanedUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="web-preview-muted block truncate break-all text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-2"
+          >
+            {truncatedUrl}
+          </a>
+        </div>
+      )
+
+      if (fetchedEvent && isArticleHeroCardKind(fetchedEvent.kind)) {
+        return (
+          <ArticleHeroCard
+            className={cn(WEB_PREVIEW_CARD, 'max-w-full', className)}
+            event={fetchedEvent}
+            imageUrl={displayImage && isSafeMediaUrl(displayImage) ? displayImage : undefined}
+            title={
+              eventTitle ? (
+                <span className="font-display text-brand-wordmark">{eventTitle}</span>
+              ) : undefined
+            }
+            summary={!showContentPreview && eventSummary ? eventSummary : undefined}
+            footer={renderEventFooter(true)}
+            onClick={(e) => e.stopPropagation()}
+          />
+        )
+      }
+
+      // Vertical event card: cover image on top, text below (non-article kinds).
+      return (
+        <div
+          className={cn(
+            WEB_PREVIEW_CARD,
+            'flex w-full max-w-full flex-col overflow-hidden rounded-lg border border-border bg-card bg-gradient-to-b from-primary/[0.07] to-transparent p-3 dark:from-primary/15',
+            className
+          )}
+        >
+          {displayImage && isSafeMediaUrl(displayImage) && (
+            <div
+              className={cn(
+                '-mx-3 -mt-3 relative mb-3 overflow-hidden bg-gradient-to-b from-primary/[0.07] to-transparent dark:from-primary/15',
+                ARTICLE_HERO_ASPECT
+              )}
+            >
+              <Image
+                image={{ url: displayImage, pubkey: fetchedEvent?.pubkey, dim: ARTICLE_HERO_COVER_DIM }}
+                className={ARTICLE_HERO_IMAGE_CLASS}
+                classNames={{ wrapper: ARTICLE_HERO_IMAGE_WRAPPER_CLASS }}
+                hideIfError
+              />
+            </div>
+          )}
+          {renderEventFooter(false)}
         </div>
       )
     }
@@ -715,56 +818,16 @@ export default function WebPreview({
     return null
   }
 
-  // Vertical link card on all screen sizes: OG image on top, text below.
+  // Link preview: cropped hero image with title/domain overlaid (not stacked below).
   return (
-    <div className={cn(WEB_PREVIEW_CARD, 'flex w-full flex-col border rounded-lg overflow-hidden max-w-full', className)}>
-      {image && isSafeMediaUrl(image) && (
-        <div className="w-full bg-muted flex items-center justify-center overflow-hidden">
-          <Image
-            image={{ url: image }}
-            className={cn(
-              'w-full',
-              ogImageAspectRatio !== null && ogImageAspectRatio < 1
-                ? 'max-h-80 object-contain'
-                : 'aspect-[1.91/1] object-cover'
-            )}
-            hideIfError
-          />
-        </div>
-      )}
-      <div className="min-w-0 p-3 overflow-hidden">
-        <div className="flex items-center gap-2 mb-1">
-          <div className="web-preview-muted text-muted-foreground truncate flex-1 min-w-0">{hostname}</div>
-          <a
-            href={cleanedUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="flex-shrink-0"
-          >
-            <ExternalLink className="w-3 h-3 text-muted-foreground" />
-          </a>
-        </div>
-        {title && <div className="web-preview-title font-semibold line-clamp-2 mb-1 break-words">{title}</div>}
-        {description && (
-          <div className={cn('line-clamp-3 mb-1 break-words', title ? 'web-preview-muted text-muted-foreground' : 'web-preview-title font-semibold')}>
-            {description}
-          </div>
-        )}
-        {!title && !description && (
-          <div className="web-preview-muted text-muted-foreground mb-1">No description available</div>
-        )}
-        <hr className="mt-4 mb-2 border-t border-border" />
-        <a
-          href={cleanedUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          className="web-preview-muted text-muted-foreground truncate block hover:text-foreground hover:underline underline-offset-2 transition-colors break-all"
-        >
-          {url}
-        </a>
-      </div>
-    </div>
+    <OpenGraphHeroCard
+      cleanedUrl={cleanedUrl}
+      url={url}
+      hostname={hostname}
+      title={title}
+      description={description}
+      image={image}
+      className={className}
+    />
   )
 }

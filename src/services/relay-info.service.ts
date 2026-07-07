@@ -2,9 +2,9 @@ import { isViewerRelayBlocked } from '@/lib/viewer-blocked-relays'
 import { isHiddenNetworkRelayUrl } from '@/lib/hidden-network-relay'
 import { isNostrArchivesSearchRelayUrl, isWispTrendingNotesRelayUrl } from '@/lib/wisp-trending-relay'
 import {
+  deriveRelayHomepageUrl,
   devProxyCorsProblematicHttpsIndexRelayBase,
   devProxyLoopbackHttpRelayBase,
-  normalizeHttpRelayUrl,
   simplifyUrl
 } from '@/lib/url'
 import indexDb from '@/services/indexed-db.service'
@@ -179,8 +179,8 @@ class RelayInfoService {
       return undefined
     }
     try {
-      const httpCandidate = url.trim().replace(/^ws:\/\//i, 'http://').replace(/^wss:\/\//i, 'https://')
-      const httpBase = normalizeHttpRelayUrl(httpCandidate) || httpCandidate
+      const httpBase = deriveRelayHomepageUrl(url)
+      if (!httpBase) return undefined
       // WS relay NIP-11 must NOT go through the dev proxy — the proxy is fixed to the HTTP index relay
       // port and would return that relay's NIP-11 for any localhost WS relay (wrong data).
       // HTTP index relay URLs do use the proxy to avoid CORS.

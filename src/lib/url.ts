@@ -356,6 +356,10 @@ export function normalizeHttpUrl(url: string): string {
     }
     p.pathname = p.pathname.replace(/\/+/g, '/')
     if (p.pathname.endsWith('/')) p.pathname = p.pathname.slice(0, -1)
+    // Mercury index relay: WebSocket is at /relay; HTTPS API and NIP-11 are at the origin.
+    if (p.hostname.toLowerCase() === 'mercury-relay.imwald.eu' && p.pathname === '/relay') {
+      p.pathname = ''
+    }
     if (
       (p.port === '80' && p.protocol === 'http:') ||
       (p.port === '443' && p.protocol === 'https:')

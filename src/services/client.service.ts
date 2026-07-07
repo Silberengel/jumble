@@ -166,7 +166,7 @@ import {
 } from '@/lib/url'
 import { canonicalFeedFilter, canonicalRelayUrls } from '@/features/feed/descriptor'
 import { initRelayPoolIdle, touchRelayPoolActivity, closePublishTransientRelaySockets, closeRelayPoolSocketsIfIdle } from '@/lib/relay-pool-idle'
-import { classifyRelayNotice, relaySessionStrikes } from '@/lib/relay-strikes'
+import { classifyRelayNotice, relayConnectivityBreaker, relaySessionStrikes } from '@/lib/relay-strikes'
 import { isSafari } from '@/lib/utils'
 import {
   ISigner,
@@ -447,6 +447,11 @@ class ClientService extends EventTarget {
       if (!navigator.onLine && !isLocalNetworkUrl(url)) {
         throw new Error(`[offline] skipping non-local relay ${url}`)
       }
+      // Widespread failures across many distinct hosts → network is likely down even though
+      // navigator.onLine says otherwise. Pause all non-local connection attempts.
+      if (relayConnectivityBreaker.isPaused() && !isLocalNetworkUrl(url)) {
+        throw new Error(`[connectivity-breaker] network appears down, skipping relay ${url}`)
+      }
       const hiddenNetworkBlock = hiddenNetworkRelayUnavailableReason(url)
       if (hiddenNetworkBlock) {
         throw new Error(hiddenNetworkBlock)
@@ -488,15 +493,17 @@ class ClientService extends EventTarget {
           msg.includes('[relay-rate-limit]') ||
           msg.includes('[offline]') ||
           msg.includes('[http-index-relay]') ||
+          msg.includes('[connectivity-breaker]') ||
           msg.includes('[hidden-network-relay]')
-        if (
-          !skipStrike &&
-          (params?.purpose !== 'write' || isLocalNetworkUrl(url))
-        ) {
-          relaySessionStrikes.recordConnectionFailure(url, msg, 'connection')
+        if (!skipStrike) {
+          relayConnectivityBreaker.recordFailure(url)
+          if (params?.purpose !== 'write' || isLocalNetworkUrl(url)) {
+            relaySessionStrikes.recordConnectionFailure(url, msg, 'connection')
+          }
         }
         throw err
       }
+      relayConnectivityBreaker.recordSuccess()
       patchPoolRelayAuthRaceAndFeedback(relay)
       applyRelayNip42AckTimeout(relay)
       touchRelayPoolActivity(url)

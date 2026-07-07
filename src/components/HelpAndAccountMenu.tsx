@@ -19,6 +19,7 @@ import {
   hexPubkeysEqual,
   pubkeyToNpub
 } from '@/lib/pubkey'
+import { toNostrBuildThumbUrl } from '@/lib/nostr-build'
 import { isVideo } from '@/lib/url'
 import { cn } from '@/lib/utils'
 import { openBrowseCacheFromRegistry } from '@/contexts/cache-browser-context'
@@ -44,9 +45,42 @@ function profileForActivePubkey(
 ): TProfile | null {
   const pk = pubkey ? accountPubkeyToHex(pubkey) : null
   if (!pk) return null
-  if (fetchedProfile && hexPubkeysEqual(fetchedProfile.pubkey, pk)) return fetchedProfile
-  if (nostrProfile && hexPubkeysEqual(nostrProfile.pubkey, pk)) return nostrProfile
-  return null
+
+  const nostr =
+    nostrProfile && hexPubkeysEqual(nostrProfile.pubkey, pk) ? nostrProfile : null
+  const fetched =
+    fetchedProfile &&
+    hexPubkeysEqual(fetchedProfile.pubkey, pk) &&
+    !fetchedProfile.batchPlaceholder
+      ? fetchedProfile
+      : null
+
+  if (!nostr && !fetched) {
+    if (fetchedProfile && hexPubkeysEqual(fetchedProfile.pubkey, pk)) return fetchedProfile
+    return null
+  }
+  if (!nostr) return fetched
+  if (!fetched) return nostr
+
+  // Session profile from NostrProvider (IDB) often has the picture URL immediately; per-row
+  // useFetchProfile can return username-first rows from feed batching or a slow relay refresh
+  // without avatar — never let that override a picture we already have locally.
+  return {
+    ...fetched,
+    ...nostr,
+    avatar: fetched.avatar || nostr.avatar,
+    pictureSize: fetched.pictureSize ?? nostr.pictureSize,
+    username: fetched.username || nostr.username
+  }
+}
+
+/** Prefer thumb URLs on i.nostr.build; identicon when kind 0 has no picture yet. */
+function accountMenuAvatarSrc(avatar: string | undefined, defaultAvatar: string): string {
+  const a = avatar?.trim()
+  if (!a) return defaultAvatar
+  if (isVideo(a)) return a
+  if (/^https?:\/\//i.test(a)) return toNostrBuildThumbUrl(a)
+  return a
 }
 
 const titlebarAccountMenuContentClassName =
@@ -140,7 +174,10 @@ function SidebarAccountMenu({
   const npub = pubkey ? pubkeyToNpub(pubkey) : null
   const fallbackUsername = npub ? formatNpub(npub) : pubkey ? formatPubkey(pubkey) : t('accountSwitch.anon')
   const { username, avatar } = resolvedProfile
-    ? { username: resolvedProfile.username, avatar: resolvedProfile.avatar ?? defaultAvatar }
+    ? {
+        username: resolvedProfile.username,
+        avatar: accountMenuAvatarSrc(resolvedProfile.avatar, defaultAvatar)
+      }
     : { username: fallbackUsername, avatar: defaultAvatar }
 
   return (
@@ -165,7 +202,12 @@ function SidebarAccountMenu({
             </div>
           ) : (
             <Avatar className="size-8 shrink-0" key={pubkey}>
-              <AvatarImage src={avatar || defaultAvatar} className="object-cover object-center" />
+              <AvatarImage
+                src={avatar || defaultAvatar}
+                className="object-cover object-center"
+                fetchPriority="high"
+                loading="eager"
+              />
               <AvatarFallback delayMs={0}>
                 <AvatarIdenticon src={defaultAvatar} />
               </AvatarFallback>
@@ -214,6 +256,10 @@ function TitlebarAccountMenu({
     () => (resolvedProfile?.pubkey ? generateImageByPubkey(resolvedProfile.pubkey) : ''),
     [resolvedProfile]
   )
+  const titlebarAvatarSrc = useMemo(
+    () => accountMenuAvatarSrc(resolvedProfile?.avatar, defaultAvatar),
+    [resolvedProfile?.avatar, defaultAvatar]
+  )
   const active = useMemo(() => current === 'profile' && display, [display, current])
 
   return (
@@ -236,8 +282,10 @@ function TitlebarAccountMenu({
             ) : (
               <Avatar className={cn('w-6 h-6', active ? 'ring-primary ring-1' : '')} key={pubkey}>
                 <AvatarImage
-                  src={resolvedProfile.avatar || defaultAvatar}
+                  src={titlebarAvatarSrc || defaultAvatar}
                   className="object-cover object-center"
+                  fetchPriority="high"
+                  loading="eager"
                 />
                 <AvatarFallback delayMs={0}>
                   <AvatarIdenticon src={defaultAvatar} />

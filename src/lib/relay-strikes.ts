@@ -18,6 +18,8 @@ const CACHE_RELAY_STRIKE_FAILURES_THRESHOLD = 2
 /** LAN / loopback WS: same fast skip on connection refused. */
 const LOCAL_NETWORK_STRIKE_FAILURES_THRESHOLD = 2
 const STRIKE_COOLDOWN_MS = 3 * 60 * 1000
+/** Each further strike round doubles the cooldown (3 → 6 → 12 min …) up to this cap. */
+const MAX_STRIKE_COOLDOWN_MS = 30 * 60 * 1000
 
 /** Rate-limit style NOTICE / overload → cool down without incrementing strike counter. */
 const RATE_LIMIT_COOLDOWN_MS = 10 * 60 * 1000
@@ -45,6 +47,8 @@ type StrikeEntry = {
   readFailures: number
   readLastStrikeIncrementAt: number
   readStrikeSkipUntil: number
+  /** How many strike rounds this relay went through without a success (escalates the cooldown). */
+  readStrikeLevel: number
   slowSignals: number
   slowParkUntil: number
   publishFailures: number
@@ -73,6 +77,7 @@ function emptyEntry(): StrikeEntry {
     readFailures: 0,
     readLastStrikeIncrementAt: 0,
     readStrikeSkipUntil: 0,
+    readStrikeLevel: 0,
     slowSignals: 0,
     slowParkUntil: 0,
     publishFailures: 0,
@@ -252,8 +257,21 @@ class RelaySessionStrikes {
     e.readFailures += 1
     const threshold = this.readStrikeThresholdForKey(key, source, urlForLocalCheck)
     if (e.readFailures >= threshold) {
-      e.readStrikeSkipUntil = Math.max(e.readStrikeSkipUntil, now + STRIKE_COOLDOWN_MS)
-      logger.debug('[RelayStrikes] read path strike skip', { key, readFailures: e.readFailures, threshold })
+      // Exponential backoff: each strike round without a success doubles the cooldown (capped),
+      // so a relay that stays dead gets probed less and less often instead of every 3 minutes.
+      const cooldownMs = Math.min(
+        STRIKE_COOLDOWN_MS * 2 ** e.readStrikeLevel,
+        MAX_STRIKE_COOLDOWN_MS
+      )
+      e.readStrikeLevel += 1
+      e.readStrikeSkipUntil = Math.max(e.readStrikeSkipUntil, now + cooldownMs)
+      logger.debug('[RelayStrikes] read path strike skip', {
+        key,
+        readFailures: e.readFailures,
+        threshold,
+        strikeLevel: e.readStrikeLevel,
+        cooldownMs
+      })
     }
     this.emitChange()
   }
@@ -277,6 +295,7 @@ class RelaySessionStrikes {
     if (!e) return
     e.readFailures = 0
     e.readStrikeSkipUntil = 0
+    e.readStrikeLevel = 0
     e.readLastStrikeIncrementAt = 0
     e.slowSignals = 0
     e.slowParkUntil = 0
@@ -440,3 +459,75 @@ class RelaySessionStrikes {
 }
 
 export const relaySessionStrikes = new RelaySessionStrikes()
+
+/** Distinct hosts that must fail within {@link BREAKER_WINDOW_MS} before the global breaker trips. */
+const BREAKER_DISTINCT_HOST_THRESHOLD = 8
+/** Sliding window for counting distinct failing hosts. */
+const BREAKER_WINDOW_MS = 30 * 1000
+/** First pause once tripped; doubles per consecutive trip without a success. */
+const BREAKER_INITIAL_PAUSE_MS = 15 * 1000
+const BREAKER_MAX_PAUSE_MS = 5 * 60 * 1000
+
+/**
+ * Global “network is probably down” circuit breaker.
+ *
+ * `navigator.onLine` misses many real outage shapes (captive portals, dead Wi-Fi uplink, VPN drop),
+ * during which every relay in the pool fails and per-relay strikes each still allow several retries.
+ * When many *distinct* hosts fail in a short window, this pauses all new non-local connection
+ * attempts, with exponential backoff until one connection succeeds again.
+ */
+export class RelayConnectivityBreaker {
+  /** host → last failure timestamp within the current window. */
+  private failedHosts = new Map<string, number>()
+  private pausedUntil = 0
+  /** Consecutive trips without an intervening success (escalates the pause). */
+  private tripLevel = 0
+
+  private hostOf(url: string): string | null {
+    try {
+      return new URL(url).host || null
+    } catch {
+      return null
+    }
+  }
+
+  /** True while new (non-local) connection attempts should be skipped. */
+  isPaused(now = Date.now()): boolean {
+    return now < this.pausedUntil
+  }
+
+  recordFailure(url: string, now = Date.now()): void {
+    if (isLocalNetworkUrl(url)) return
+    const host = this.hostOf(url)
+    if (!host) return
+    this.failedHosts.set(host, now)
+    for (const [h, t] of this.failedHosts) {
+      if (now - t > BREAKER_WINDOW_MS) this.failedHosts.delete(h)
+    }
+    if (this.isPaused(now)) return
+    if (this.failedHosts.size < BREAKER_DISTINCT_HOST_THRESHOLD) return
+    const pauseMs = Math.min(BREAKER_INITIAL_PAUSE_MS * 2 ** this.tripLevel, BREAKER_MAX_PAUSE_MS)
+    this.tripLevel += 1
+    this.pausedUntil = now + pauseMs
+    this.failedHosts.clear()
+    logger.warn('[RelayConnectivityBreaker] widespread connection failures — pausing new relay connections', {
+      distinctHosts: BREAKER_DISTINCT_HOST_THRESHOLD,
+      pauseMs,
+      tripLevel: this.tripLevel
+    })
+  }
+
+  /** Any successful relay connection proves the network works: fully reset. */
+  recordSuccess(): void {
+    if (this.tripLevel === 0 && this.failedHosts.size === 0 && this.pausedUntil === 0) return
+    this.failedHosts.clear()
+    this.pausedUntil = 0
+    this.tripLevel = 0
+  }
+
+  reset(): void {
+    this.recordSuccess()
+  }
+}
+
+export const relayConnectivityBreaker = new RelayConnectivityBreaker()

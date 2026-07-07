@@ -143,7 +143,7 @@ const Relay = forwardRef<
       // (favorites merge, localhost vs 127.0.0.1, etc.) — hiding would empty the relay-only feed.
       if (normalizedUrl && isLocalNetworkUrl(normalizedUrl)) return false
       const seen = client.getSeenEventRelayUrls(ev.id)
-      if (seen.length === 0) return false
+      if (seen.length === 0) return true
       return !seen.some((u) => canonicalRelaySessionKey(u) === relaySeenMatchKey)
     },
     [relaySeenMatchKey, normalizedUrl, allowKindlessRelayExplore]

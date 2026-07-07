@@ -1,4 +1,4 @@
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { isLocalNetworkUrl, normalizeAnyRelayUrl } from '@/lib/url'
 
 function relayHostname(url: string): string | null {
   const normalized = normalizeAnyRelayUrl(url) || url.trim()
@@ -44,15 +44,37 @@ export function filterRelaysToUserAllowlist(
   return out
 }
 
+export type EventSeenOnAllowlistOptions = {
+  /**
+   * Single-relay explore: hide rows with no recorded delivery relay (session / archive cache)
+   * instead of treating unknown provenance as a match.
+   */
+  strictUnknownSeenOn?: boolean
+}
+
 /**
  * When the session has recorded delivery relays, require at least one on the allowlist.
- * Empty seen-on (e.g. fresh live REQ row) is treated as allowed.
+ * By default empty seen-on (e.g. fresh live REQ row) is treated as allowed.
  */
 export function eventSeenOnMatchesAllowlist(
   seenRelayUrls: readonly string[],
-  allowlist: readonly string[]
+  allowlist: readonly string[],
+  options?: EventSeenOnAllowlistOptions
 ): boolean {
   if (!allowlist.length) return true
-  if (seenRelayUrls.length === 0) return true
+  if (seenRelayUrls.length === 0) return !options?.strictUnknownSeenOn
   return seenRelayUrls.some((u) => isRelayInUserAllowlist(u, allowlist))
+}
+
+/** Keep only events delivered by a relay on `allowlist` (strict: no seen-on → drop). */
+export function filterEventsToStrictRelayAllowlist<T extends { id: string }>(
+  events: readonly T[],
+  allowlist: readonly string[],
+  getSeenOn: (eventId: string) => readonly string[]
+): T[] {
+  if (!allowlist.length) return [...events]
+  if (allowlist.some((u) => isLocalNetworkUrl(u))) return [...events]
+  return events.filter((e) =>
+    eventSeenOnMatchesAllowlist(getSeenOn(e.id), allowlist, { strictUnknownSeenOn: true })
+  )
 }

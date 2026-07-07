@@ -32,6 +32,10 @@ import { useViewerPersonalRelayKeysRevision } from '@/hooks/useViewerPersonalRel
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
 import { feedSeenOnAllowlistFromSubRequests } from '@/lib/feed-seen-on-allowlist'
+import {
+  eventSeenOnMatchesAllowlist,
+  filterEventsToStrictRelayAllowlist
+} from '@/lib/relay-allowlist'
 import { isLocalNetworkUrl, normalizeUrl } from '@/lib/url'
 import { collapseStaleAddressableRevisions } from '@/lib/replaceable-revision'
 import { eventPassesNoteListKindPicker } from '@/lib/feed-kind-filter'
@@ -1112,6 +1116,24 @@ const NoteList = forwardRef(
       return feedSeenOnAllowlistFromSubRequests(subRequests, followingFeedDeltaSubRequests)
     }, [seenOnAllowlistProp, subRequestsKey, followingFeedDeltaSubRequestsKey, followingFeedDeltaSubRequests])
 
+    const strictRelaySeenOnAllowlist = useMemo(() => {
+      if (!relayAuthoritativeFeedOnly || effectiveSeenOnAllowlist.length === 0) return undefined
+      if (effectiveSeenOnAllowlist.some((u) => isLocalNetworkUrl(u))) return undefined
+      return effectiveSeenOnAllowlist
+    }, [relayAuthoritativeFeedOnly, effectiveSeenOnAllowlist])
+
+    const filterToStrictRelayAllowlist = useCallback(
+      (rows: readonly Event[]) => {
+        if (!strictRelaySeenOnAllowlist?.length) return [...rows]
+        return filterEventsToStrictRelayAllowlist(rows, strictRelaySeenOnAllowlist, (id) =>
+          client.getSeenEventRelayUrls(id)
+        )
+      },
+      [strictRelaySeenOnAllowlist]
+    )
+    const filterToStrictRelayAllowlistRef = useRef(filterToStrictRelayAllowlist)
+    filterToStrictRelayAllowlistRef.current = filterToStrictRelayAllowlist
+
     const effectiveShowKinds = useMemo(() => {
       if (!progressiveDocumentKinds?.length) return showKinds
       return Array.from(new Set([...showKinds, ...progressiveDocumentKinds])).sort((a, b) => a - b)
@@ -1429,6 +1451,16 @@ const NoteList = forwardRef(
 
         if (extraShouldHideEvent?.(evt)) return true
 
+        if (strictRelaySeenOnAllowlist?.length) {
+          if (
+            !eventSeenOnMatchesAllowlist(client.getSeenEventRelayUrls(evt.id), strictRelaySeenOnAllowlist, {
+              strictUnknownSeenOn: true
+            })
+          ) {
+            return true
+          }
+        }
+
         return false
       },
       [
@@ -1439,7 +1471,8 @@ const NoteList = forwardRef(
         pinnedEventHexIdSet,
         isEventDeleted,
         incomingPaymentRecipientPubkey,
-        extraShouldHideEvent
+        extraShouldHideEvent,
+        strictRelaySeenOnAllowlist
       ]
     )
 
@@ -2659,7 +2692,7 @@ const NoteList = forwardRef(
             })
             .then((diskRaw) => {
               if (!effectActive || timelineEffectStale()) return
-              const diskNarrowed = narrowLiveBatch(diskRaw)
+              const diskNarrowed = filterToStrictRelayAllowlistRef.current(narrowLiveBatch(diskRaw))
               if (diskNarrowed.length === 0) return
 
               setEvents((prev) => {
@@ -2706,7 +2739,9 @@ const NoteList = forwardRef(
             eventsRef.current.length === 0
           ) {
             feedPaintSessionPendingRef.current = true
-            const restored = collapseDuplicateNip18RepostTimelineRows(sessionSnap)
+            const restored = collapseDuplicateNip18RepostTimelineRows(
+              filterToStrictRelayAllowlistRef.current(sessionSnap)
+            )
             timelineMergeBootstrapRef.current = restored.slice()
             setEvents(restored)
             lastEventsForTimelinePrefetchRef.current = restored
@@ -3381,7 +3416,7 @@ const NoteList = forwardRef(
                   clearTimeout(kindlessEoseTimeoutRef.current)
                   kindlessEoseTimeoutRef.current = null
                 }
-                const narrowed = narrowLiveBatch(batch)
+                const narrowed = filterToStrictRelayAllowlistRef.current(narrowLiveBatch(batch))
                 const paintDoneBefore = feedPaintLiveRelayDoneRef.current
                 if (!feedPaintLiveRelayDoneRef.current) {
                   if (narrowed.length > 0) {
@@ -3622,7 +3657,10 @@ const NoteList = forwardRef(
           (hostPrimaryPageNameRef.current === 'relay' ||
             (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
         if (!relayAuthoritativeFeedOnlyRef.current || strictSingleRelayAuthoritativeCleanup) {
-          setSessionFeedSnapshot(snapshotKeyForCleanup, eventsRef.current)
+          setSessionFeedSnapshot(
+            snapshotKeyForCleanup,
+            filterToStrictRelayAllowlistRef.current(eventsRef.current)
+          )
         }
         if (feedTimelineScopeKey && !oneShotFetch) {
           persistFeedSince(feedTimelineScopeKey, eventsRef.current)
@@ -3931,7 +3969,10 @@ const NoteList = forwardRef(
           (allowKindlessRelayExploreRef.current && useFilterAsIsRef.current))
       if (relayAuthoritativeFeedOnlyRef.current && !strictSingleRelayAuthoritative) return
       const timer = window.setTimeout(() => {
-        setSessionFeedSnapshot(sessionSnapshotIdentityKey, events)
+        setSessionFeedSnapshot(
+          sessionSnapshotIdentityKey,
+          filterToStrictRelayAllowlistRef.current(events)
+        )
         if (feedTimelineScopeKey && !oneShotFetch) {
           persistFeedSince(feedTimelineScopeKey, events)
         }
@@ -4316,12 +4357,14 @@ const NoteList = forwardRef(
             const existingIds = new Set(latestEvents.map((e) => e.id))
             const diskReq = subRequestsRef.current as Array<{ urls: string[]; filter: TSubRequestFilter }>
 
-            newEvents = await client.getLocalFeedEventsOlderThan(
-              diskReq,
-              until,
-              LIMIT,
-              existingIds
-            )
+            if (!relayAuthoritativeFeedOnlyRef.current) {
+              newEvents = await client.getLocalFeedEventsOlderThan(
+                diskReq,
+                until,
+                LIMIT,
+                existingIds
+              )
+            }
 
             if (newEvents.length === 0) {
               const pageRuntime = new FeedRuntime({
@@ -4373,11 +4416,9 @@ const NoteList = forwardRef(
                 until,
                 existingIds
               )
-              const hasMoreLocal = await client.hasMoreLocalFeedEventsOlderThan(
-                diskReq,
-                until,
-                existingIds
-              )
+              const hasMoreLocal = relayAuthoritativeFeedOnlyRef.current
+                ? false
+                : await client.hasMoreLocalFeedEventsOlderThan(diskReq, until, existingIds)
 
               if (hasMoreCached || hasMoreLocal) {
                 setHasMore(true)
@@ -4460,7 +4501,7 @@ const NoteList = forwardRef(
 
             let toAppend = accumulated
 
-            if (toAppend.length < LOAD_MORE_MIN_NEW_EVENTS) {
+            if (toAppend.length < LOAD_MORE_MIN_NEW_EVENTS && !relayAuthoritativeFeedOnlyRef.current) {
               const oldestLoaded = latestEvents.length
                 ? latestEvents[latestEvents.length - 1]!.created_at - 1
                 : dayjs().unix()
@@ -4484,11 +4525,9 @@ const NoteList = forwardRef(
                 oldestLoaded,
                 existingIds
               )
-              const hasMoreLocal = await client.hasMoreLocalFeedEventsOlderThan(
-                diskReq,
-                oldestLoaded,
-                existingIds
-              )
+              const hasMoreLocal = relayAuthoritativeFeedOnlyRef.current
+                ? false
+                : await client.hasMoreLocalFeedEventsOlderThan(diskReq, oldestLoaded, existingIds)
               if (hasMoreCached || hasMoreLocal) {
                 setHasMore(true)
                 setLoading(false)

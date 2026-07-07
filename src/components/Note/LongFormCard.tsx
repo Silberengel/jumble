@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import ArticleCardCoverImage from './ArticleCardCoverImage'
+import ArticleHeroCard from './ArticleHeroCard'
 
 /**
  * Feed / embed / preview surface for NIP-23 long-form (kind 30023): title, summary, image, tags — no “Show more” body.
@@ -41,10 +41,6 @@ export default function LongFormCard({
     push(toNote(event))
   }
 
-  const titleComponent = (
-    <div className="min-w-0 text-xl font-semibold break-words sm:line-clamp-2">{displayTitle}</div>
-  )
-
   const tagsComponent = interactive && metadata.tags.length > 0 && (
     <div className="flex flex-wrap gap-1">
       {metadata.tags.map((tag) => (
@@ -75,33 +71,17 @@ export default function LongFormCard({
     </div>
   )
 
-  const summaryComponent = summaryText ? (
-    <div className="text-base text-muted-foreground line-clamp-4 break-words">{summaryText}</div>
-  ) : null
-
-  const shellClass = cn(className, !interactive && 'pointer-events-none')
-  const cardClass = cn(
-    'rounded-lg border p-4 transition-colors',
-    interactive && 'cursor-pointer hover:bg-muted/50'
-  )
-
-  // Vertical card on all screen sizes: cover image on top, text below.
   return (
-    <div className={cn('w-full min-w-0', shellClass)}>
-      <div className={cn(cardClass, 'min-w-0')} onClick={interactive ? handleCardClick : undefined}>
-        <ArticleCardCoverImage
-          event={event}
-          imageUrl={metadata.image}
-          autoLoadMedia={autoLoadMedia}
-          layout="stacked-full"
-        />
-        <div className="min-w-0 space-y-2">
-          {titleComponent}
-          {summaryComponent}
-          {tagsComponent}
-          {tagsReadonly}
-        </div>
-      </div>
-    </div>
+    <ArticleHeroCard
+      className={cn(className, !interactive && 'pointer-events-none')}
+      cardClassName={cn(interactive && 'cursor-pointer hover:bg-muted/50')}
+      event={event}
+      imageUrl={metadata.image}
+      autoLoadMedia={autoLoadMedia}
+      title={displayTitle}
+      summary={summaryText || undefined}
+      footer={tagsComponent || tagsReadonly}
+      onClick={interactive ? handleCardClick : undefined}
+    />
   )
 }

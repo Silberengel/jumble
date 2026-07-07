@@ -8,6 +8,7 @@ import {
   relayUrlFingerprintColors
 } from '@/lib/relay-icon-source'
 import { cn } from '@/lib/utils'
+import { deriveRelayHomepageUrl } from '@/lib/url'
 import type { TRelayInfo } from '@/types'
 import { Home, Search, Server } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
@@ -26,7 +27,8 @@ function resolveRelayImageUrl(raw: string, relayUrl: string): string | undefined
   if (raw.startsWith('https://') || raw.startsWith('http://')) return raw
   if (raw.startsWith('/')) {
     try {
-      const base = relayUrl.replace(/^wss?:\/\//i, 'https://').replace(/^ws:\/\//i, 'http://')
+      const base = deriveRelayHomepageUrl(relayUrl)
+      if (!base) return undefined
       const u = new URL(base)
       return `${u.protocol}//${u.host}${raw}`
     } catch {

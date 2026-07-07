@@ -31,4 +31,13 @@ describe('relay-allowlist', () => {
       eventSeenOnMatchesAllowlist(['wss://nostr.wine/', 'wss://theforest.nostr1.com/'], allow)
     ).toBe(true)
   })
+
+  it('strictUnknownSeenOn hides rows with no delivery relay', () => {
+    expect(eventSeenOnMatchesAllowlist([], allow, { strictUnknownSeenOn: true })).toBe(false)
+    expect(
+      eventSeenOnMatchesAllowlist(['wss://theforest.nostr1.com/'], allow, {
+        strictUnknownSeenOn: true
+      })
+    ).toBe(true)
+  })
 })

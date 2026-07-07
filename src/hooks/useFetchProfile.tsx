@@ -730,9 +730,13 @@ export function useFetchProfile(id?: string, skipCache = false) {
       /^[0-9a-f]{64}$/i.test(profilePk) &&
       normalizeHexPubkey(profilePk) === targetPk &&
       !profile?.batchPlaceholder
-    if (haveFullLocal) return
+    if (haveFullLocal && (profile?.avatar || !acc.avatar)) return
 
-    setProfile(acc)
+    setProfile({
+      ...acc,
+      avatar: acc.avatar || profile?.avatar,
+      pictureSize: acc.pictureSize ?? profile?.pictureSize
+    })
     setIsFetching(false)
     setError(null)
     processingPubkeyRef.current = targetPk

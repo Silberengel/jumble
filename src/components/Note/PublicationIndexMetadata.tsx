@@ -61,11 +61,13 @@ export default function PublicationIndexMetadata({
   event,
   variant = 'compact',
   showTitle = true,
+  showSummary = true,
   className
 }: {
   event: Event
   variant?: 'compact' | 'full'
   showTitle?: boolean
+  showSummary?: boolean
   className?: string
 }) {
   const { t } = useTranslation()
@@ -173,7 +175,7 @@ export default function PublicationIndexMetadata({
         className={isFull ? 'text-sm' : 'text-xs'}
       />
 
-      {metadata.summary ? (
+      {showSummary && metadata.summary ? (
         <div
           className={cn(
             'min-w-0 break-words text-muted-foreground',

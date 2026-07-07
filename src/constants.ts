@@ -474,7 +474,8 @@ export const READ_ONLY_RELAY_URLS = [
   'wss://feeds.nostrarchives.com',
   'wss://search.nostrarchives.com',
   'wss://nosmero.com/nip78-relay',
-  'wss://njump.me'
+  'wss://njump.me',
+  'wss://mercury-relay.imwald.eu/relay'
 ]
 
 /**
