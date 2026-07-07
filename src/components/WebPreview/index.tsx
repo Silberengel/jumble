@@ -8,15 +8,17 @@ import { cn } from '@/lib/utils'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink } from 'lucide-react'
 import { nip19, type Event } from 'nostr-tools'
-import { useMemo, useEffect, useState, useCallback } from 'react'
+import { useMemo, useEffect, useState } from 'react'
 import Image from '../Image'
 import Username from '../Username'
 import {
   getSiteOrigin,
+  isImwaldAvatarProxyUrl,
   ogImageAbsoluteUrlForUrl,
   resolveImwaldRouteSocialCopy
 } from '@/lib/document-meta'
 import { parseSameOriginAppNostrUrl } from '@/lib/nostr-from-http-url'
+import { MediaForceAutoLoadProvider } from '@/providers/MediaAutoLoadEventContext'
 import { hasUsableOpenGraphMetadata } from '@/lib/open-graph-preview'
 import { cleanUrl, isSafeMediaUrl } from '@/lib/url'
 import { tagNameEquals } from '@/lib/tag'
@@ -37,13 +39,62 @@ import ArticleHeroCard, {
 /** Scales with Settings → font size via `--content-font-size` (see index.css). */
 const WEB_PREVIEW_CARD = 'web-preview-card'
 
+function isUsablePreviewHeroUrl(url: string | null | undefined): url is string {
+  const u = url?.trim()
+  return Boolean(u && isSafeMediaUrl(u) && !isImwaldAvatarProxyUrl(u))
+}
+
+function webPreviewHeroCandidates(...urls: (string | null | undefined)[]): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of urls) {
+    if (!isUsablePreviewHeroUrl(raw)) continue
+    const cleaned = cleanUrl(raw)
+    if (seen.has(cleaned)) continue
+    seen.add(cleaned)
+    out.push(cleaned)
+  }
+  return out
+}
+
+/** Link-preview hero: always loads immediately and steps through fallbacks on error. */
+function WebPreviewHeroImage({
+  candidates,
+  pubkey,
+  onExhausted
+}: {
+  candidates: string[]
+  pubkey?: string
+  onExhausted?: () => void
+}) {
+  const [index, setIndex] = useState(0)
+  useEffect(() => {
+    setIndex(0)
+  }, [candidates.join('\0')])
+  const current = candidates[index]
+  if (!current) return null
+  return (
+    <Image
+      image={{ url: current, pubkey, dim: ARTICLE_HERO_COVER_DIM }}
+      className={ARTICLE_HERO_IMAGE_CLASS}
+      classNames={{ wrapper: cn(ARTICLE_HERO_IMAGE_WRAPPER_CLASS, 'z-0') }}
+      holdUntilClick={false}
+      hideIfError={false}
+      onFinalError={() => {
+        if (index + 1 < candidates.length) setIndex(index + 1)
+        else onExhausted?.()
+      }}
+    />
+  )
+}
+
 function OpenGraphHeroCard({
   cleanedUrl,
   url,
   hostname,
   title,
   description,
-  image,
+  imageCandidates = [],
   className
 }: {
   cleanedUrl: string
@@ -51,16 +102,15 @@ function OpenGraphHeroCard({
   hostname: string
   title?: string | null
   description?: string | null
-  image?: string | null
+  imageCandidates?: string[]
   className?: string
 }) {
-  const hasImageUrl = Boolean(image && isSafeMediaUrl(image))
-  const [heroImageOk, setHeroImageOk] = useState(true)
-  const onHeroImageError = useCallback(() => setHeroImageOk(false), [])
+  const candidates = imageCandidates ?? []
+  const [heroExhausted, setHeroExhausted] = useState(false)
   useEffect(() => {
-    setHeroImageOk(true)
-  }, [image])
-  const showHeroImage = hasImageUrl && heroImageOk
+    setHeroExhausted(false)
+  }, [candidates.join('\0')])
+  const showHeroImage = candidates.length > 0 && !heroExhausted
   const onImage = showHeroImage
 
   return (
@@ -76,13 +126,9 @@ function OpenGraphHeroCard({
       {showHeroImage && (
         <>
           <div className="absolute inset-0 z-0 bg-muted" aria-hidden />
-          <Image
-            image={{ url: image!, dim: ARTICLE_HERO_COVER_DIM }}
-            className={ARTICLE_HERO_IMAGE_CLASS}
-            classNames={{ wrapper: cn(ARTICLE_HERO_IMAGE_WRAPPER_CLASS, 'z-0') }}
-            hideIfError
-            holdUntilClick={false}
-            onFinalError={onHeroImageError}
+          <WebPreviewHeroImage
+            candidates={candidates}
+            onExhausted={() => setHeroExhausted(true)}
           />
           <div
             className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/90 via-black/50 to-black/15"
@@ -231,7 +277,15 @@ function getTitleWithFallbacks(event: Event | null, eventMetadata: { title?: str
   return null
 }
 
-export default function WebPreview({
+export default function WebPreview(props: Parameters<typeof WebPreviewInner>[0]) {
+  return (
+    <MediaForceAutoLoadProvider force>
+      <WebPreviewInner {...props} />
+    </MediaForceAutoLoadProvider>
+  )
+}
+
+function WebPreviewInner({
   url,
   className,
   authorPubkey: _authorPubkey,
@@ -561,6 +615,9 @@ export default function WebPreview({
     eventImageThumbnail = matchingImeta?.thumb || eventImage
   }
   const internalSiteOgImage = isInternalAppLink ? ogImageAbsoluteUrlForUrl(cleanedUrl) : null
+  const firstImetaUrl = imetaInfos
+    .map((info) => cleanUrl(info.url))
+    .find((u) => isUsablePreviewHeroUrl(u))
   // Prefer the page's own Open Graph / meta when the fetch returns anything useful.
   const hasOpengraphData = !isInternalAppLink && hasUsableOpenGraphMetadata({ title, description, image })
 
@@ -594,10 +651,13 @@ export default function WebPreview({
       const eventTypeName = fetchedEvent ? getEventTypeName(fetchedEvent.kind) : null
       const eventSummary = eventMetadata?.summary || description
 
-      // Fallback to OG image from website if event doesn't have an image
-      // The OG image is already converted to absolute URL by useFetchWebMetadata
-      // Prioritize: event image tag > OG image from URL metadata (not favicon)
-      const displayImage = eventImageThumbnail || image || internalSiteOgImage
+      // Prioritize: event image tag > imeta > page OG (skip avatar proxy) > site OG for Imwald links
+      const heroImageCandidates = webPreviewHeroCandidates(
+        eventImageThumbnail,
+        firstImetaUrl,
+        image,
+        internalSiteOgImage
+      )
       
       // Truncate original URL to 150 characters
       const truncatedUrl = url.length > 150 ? url.substring(0, 150) + '...' : url
@@ -687,7 +747,9 @@ export default function WebPreview({
             className={cn(WEB_PREVIEW_CARD, 'max-w-full', className)}
             event={fetchedEvent}
             autoLoadMedia
-            imageUrl={displayImage && isSafeMediaUrl(displayImage) ? displayImage : undefined}
+            hideImageIfError={false}
+            imageUrl={heroImageCandidates[0]}
+            heroImageFallbacks={heroImageCandidates.slice(1)}
             title={
               eventTitle ? (
                 <span className="font-display text-brand-wordmark">{eventTitle}</span>
@@ -709,18 +771,16 @@ export default function WebPreview({
             className
           )}
         >
-          {displayImage && isSafeMediaUrl(displayImage) && (
+          {heroImageCandidates.length > 0 && (
             <div
               className={cn(
                 '-mx-3 -mt-3 relative mb-3 overflow-hidden bg-gradient-to-b from-primary/[0.07] to-transparent dark:from-primary/15',
                 ARTICLE_HERO_ASPECT
               )}
             >
-              <Image
-                image={{ url: displayImage, pubkey: fetchedEvent?.pubkey, dim: ARTICLE_HERO_COVER_DIM }}
-                className={ARTICLE_HERO_IMAGE_CLASS}
-                classNames={{ wrapper: ARTICLE_HERO_IMAGE_WRAPPER_CLASS }}
-                hideIfError
+              <WebPreviewHeroImage
+                candidates={heroImageCandidates}
+                pubkey={fetchedEvent?.pubkey}
               />
             </div>
           )}
@@ -818,7 +878,7 @@ export default function WebPreview({
           hostname={hostname}
           title={imwaldPreview.ogTitle}
           description={imwaldPreview.description}
-          image={ogImageAbsoluteUrlForUrl(cleanedUrl)}
+          imageCandidates={webPreviewHeroCandidates(ogImageAbsoluteUrlForUrl(cleanedUrl))}
           className={className}
         />
       )
@@ -835,7 +895,7 @@ export default function WebPreview({
       hostname={hostname}
       title={title}
       description={description}
-      image={image}
+      imageCandidates={webPreviewHeroCandidates(image, internalSiteOgImage)}
       className={className}
     />
   )

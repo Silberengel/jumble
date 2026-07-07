@@ -35,7 +35,7 @@ import {
   imageIdentitySetKey
 } from '@/lib/image-url-identity'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
-import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
+import { getSuppressedImetaMedia, isTagMediaRedundantWithContent, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet, collectMediaUrlsInContent } from '@/lib/imeta-content-match'
 import { buildImetaDimMap, type ImetaDim } from '@/lib/imeta-display'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
 import { URI_LINK_CLASS } from '@/lib/link-styles'
@@ -5660,8 +5660,8 @@ export default function MarkdownArticle({
       }
     }
     
-    return media
-  }, [event.id, JSON.stringify(event.tags)])
+    return media.filter((entry) => !isTagMediaRedundantWithContent(event, entry.url, event.content))
+  }, [event.id, JSON.stringify(event.tags), event.content])
   
   // Extract YouTube URLs from tags (for display at top)
   const tagYouTubeUrls = useMemo(() => {
@@ -5888,6 +5888,9 @@ export default function MarkdownArticle({
   // Parse content to find media URLs that are already rendered
   const mediaUrlsInContent = useMemo(() => {
     const urls = collectMediaUrlKeysInText(event.content)
+    for (const url of collectMediaUrlsInContent(event.content)) {
+      urls.add(url)
+    }
     for (const { url } of findHttpUrlsInText(event.content)) {
       const cleaned = cleanUrl(url)
       if (
@@ -6051,10 +6054,12 @@ export default function MarkdownArticle({
   const leftoverTagMedia = useMemo(() => {
     const metadataImageUrl = metadata.image ? cleanUrl(metadata.image) : null
     const parentImageUrlCleaned = parentImageUrl ? cleanUrl(parentImageUrl) : null
-    return tagMedia.filter(media => {
+    return tagMedia.filter((media) => {
       const cleaned = cleanUrl(media.url)
       if (!cleaned) return false
-      
+
+      if (isTagMediaRedundantWithContent(event, media.url, event.content)) return false
+
       // Check if already in content by cleaned URL
       if (mediaUrlsInContent.has(cleaned)) return false
       
@@ -6067,10 +6072,10 @@ export default function MarkdownArticle({
       
       // Skip if this matches the parent publication's image (to avoid duplicate cover images)
       if (parentImageUrlCleaned && cleaned === parentImageUrlCleaned) return false
-      if (media.source === 'imeta' && suppressedImetaUrls.has(cleaned)) return false
+      if (suppressedImetaUrls.has(cleaned)) return false
       return true
     })
-  }, [tagMedia, mediaUrlsInContent, metadata.image, hideMetadata, parentImageUrl, suppressedImetaUrls])
+  }, [tagMedia, mediaUrlsInContent, metadata.image, hideMetadata, parentImageUrl, suppressedImetaUrls, event])
 
   const suppressedImetaMedia = useMemo(
     () => getSuppressedImetaMedia(event, event.content),

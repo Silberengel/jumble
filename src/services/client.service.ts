@@ -1903,7 +1903,13 @@ class ClientService extends EventTarget {
         publishOpBatchFlushed = true
         publishTargetUrls.forEach((url, idx) => {
           const rs = [...relayStatuses].reverse().find((r) => r.url === url)
-          publishOpBatch.record(idx, url, rs?.success === true, rs?.error)
+          if (!rs) {
+            // Early resolve (first-ACK grace): slow relays may still be in flight — not a failure.
+            if (status === 'early_any_success_grace') return
+            publishOpBatch.record(idx, url, false, 'Timeout: Operation took too long')
+            return
+          }
+          publishOpBatch.record(idx, url, rs.success === true, rs.error)
         })
         publishOpBatch.logEnd(status)
         queueMicrotask(() => {

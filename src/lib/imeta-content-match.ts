@@ -1,5 +1,6 @@
 import { ExtendedKind } from '@/constants'
 import { getImetaInfosFromEvent } from '@/lib/event'
+import { isImageUrlPresentInText } from '@/lib/image-url-identity'
 import {
   blossomSha256FromBlobUrl,
   cleanUrl,
@@ -166,6 +167,23 @@ export function getOrphanedImetaMedia(event: Event, content?: string): TImetaInf
  * `imeta` URLs that duplicate media already in the note body (literal URL or same blob hash).
  * Suppressed from inline rendering; mirror URLs appear in the accordion when it applies.
  */
+/**
+ * True when tag-sourced media (`imeta`, `r`, `image`) duplicates media already in the note body.
+ * Used so inline content rendering and tag blocks do not show the same image twice.
+ */
+export function isTagMediaRedundantWithContent(
+  event: Event,
+  mediaUrl: string,
+  content?: string
+): boolean {
+  const text = content ?? event.content ?? ''
+  const cleaned = cleanUrl(mediaUrl)
+  if (!cleaned) return false
+  if (isImageUrlPresentInText(text, cleaned)) return true
+  if (collectMediaUrlsInContent(text).has(cleaned)) return true
+  return redundantImetaUrlSet(event, text).has(cleaned)
+}
+
 export function redundantImetaUrlSet(event: Event, content?: string): Set<string> {
   const text = content ?? event.content ?? ''
   const contentUrls = collectMediaUrlsInContent(text)

@@ -6,6 +6,7 @@ import {
   hasImageUrlInContent,
   hasMediaUrlInContent,
   isNip71MediaKind,
+  isTagMediaRedundantWithContent,
   mediaBlobIdentityKey,
   redundantImetaUrlSet,
   shouldHideOrphanedImetaInAccordion
@@ -210,5 +211,25 @@ describe('imeta-content-match', () => {
     expect(shouldHideOrphanedImetaInAccordion(ExtendedKind.PICTURE, content)).toBe(true)
     expect(getOrphanedImetaMedia(event)).toHaveLength(0)
     expect(getSuppressedImetaMedia(event)).toHaveLength(0)
+  })
+
+  it('isTagMediaRedundantWithContent when blossom jpg is in content and imeta/r tags', () => {
+    const imageUrl =
+      'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
+    const content = `Added numbers:\n\n${imageUrl}\n\nnostr:naddr1test`
+    const event = fakeEvent({
+      kind: 1,
+      content,
+      tags: [
+        ['r', imageUrl],
+        [
+          'imeta',
+          `url ${imageUrl}`,
+          'm image/jpeg',
+          'x d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728'
+        ]
+      ]
+    })
+    expect(isTagMediaRedundantWithContent(event, imageUrl, content)).toBe(true)
   })
 })

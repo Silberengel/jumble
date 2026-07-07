@@ -6,7 +6,7 @@ import { useMediaForceAutoLoad } from '@/providers/MediaAutoLoadEventContext'
 import { subscribeRevealedMedia, wasMediaUrlRevealed } from '@/lib/revealed-media-session'
 import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 
 /** Cropped hero height for article / link-preview cards (portrait sources are center-cropped). */
 export const ARTICLE_HERO_ASPECT = 'aspect-[2/1] max-h-44 sm:max-h-52'
@@ -36,17 +36,39 @@ function ArticleHeroMedia({
   event,
   imageUrl,
   autoLoadMedia,
-  hideImageIfError
+  hideImageIfError,
+  heroImageFallbacks
 }: {
   event: Event
   imageUrl?: string | null
   autoLoadMedia?: boolean
   hideImageIfError?: boolean
+  /** Tried in order when the primary {@link imageUrl} fails to load. */
+  heroImageFallbacks?: string[]
 }) {
   const forceLoad = useMediaForceAutoLoad()
   const autoLoadFromPolicy = useShouldAutoLoadMedia(event.pubkey, event)
   const autoLoad = forceLoad || (autoLoadMedia ?? autoLoadFromPolicy)
-  const trimmed = imageUrl?.trim()
+  const heroUrls = useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const raw of [imageUrl, ...(heroImageFallbacks ?? [])]) {
+      const u = raw?.trim()
+      if (!u) continue
+      if (seen.has(u)) continue
+      seen.add(u)
+      out.push(u)
+    }
+    return out
+  }, [imageUrl, heroImageFallbacks])
+  const [activeIndex, setActiveIndex] = useState(0)
+  useEffect(() => {
+    setActiveIndex(0)
+  }, [heroUrls.join('\0')])
+  const trimmed = heroUrls[activeIndex]
+  const tryNextHeroUrl = () => {
+    setActiveIndex((i) => (i + 1 < heroUrls.length ? i + 1 : i))
+  }
   const [sessionRevealed, setSessionRevealed] = useState(() =>
     Boolean(trimmed && wasMediaUrlRevealed(trimmed))
   )
@@ -83,6 +105,7 @@ function ArticleHeroMedia({
           className={ARTICLE_HERO_IMAGE_CLASS}
           classNames={{ wrapper: cn(ARTICLE_HERO_IMAGE_WRAPPER_CLASS, 'z-0') }}
           hideIfError={hideImageIfError}
+          onFinalError={tryNextHeroUrl}
           holdUntilClick={false}
         />
         <div className={cn(HERO_GRADIENT, 'z-[1]')} aria-hidden />
@@ -111,6 +134,7 @@ export default function ArticleHeroCard({
   imageUrl,
   autoLoadMedia,
   hideImageIfError,
+  heroImageFallbacks,
   eyebrow,
   title,
   summary,
@@ -124,6 +148,7 @@ export default function ArticleHeroCard({
   imageUrl?: string | null
   autoLoadMedia?: boolean
   hideImageIfError?: boolean
+  heroImageFallbacks?: string[]
   eyebrow?: ReactNode
   title?: ReactNode
   summary?: ReactNode
@@ -147,6 +172,7 @@ export default function ArticleHeroCard({
             imageUrl={imageUrl}
             autoLoadMedia={autoLoadMedia}
             hideImageIfError={hideImageIfError}
+            heroImageFallbacks={heroImageFallbacks}
           />
           {hasOverlayText ? (
             <div className="absolute inset-0 z-20 flex min-h-0 min-w-0 flex-col justify-end p-3 pt-8">

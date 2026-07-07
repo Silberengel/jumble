@@ -49,7 +49,7 @@ import { isTidalOpenUrl } from '@/lib/tidal-url'
 import { isWavlakeOpenUrl } from '@/lib/wavlake-url'
 import { canonicalZapStreamWatchUrl, isZapStreamWatchUrl } from '@/lib/zap-stream-url'
 import { shouldDeferLongVideoAutoload } from '@/lib/long-video-load-policy'
-import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
+import { getSuppressedImetaMedia, isTagMediaRedundantWithContent, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
 import { mediaPosterUrlFromImeta, resolveImetaInfoForUrl } from '@/lib/imeta-display'
 
 const REDIRECT_REGEX = /Read (naddr1[a-z0-9]+) instead\./i
@@ -486,7 +486,8 @@ export default function Content({
         cleaned &&
         isRenderableMediaUrl(cleaned) &&
         !mediaInContent.has(cleaned) &&
-        !suppressedImetaUrls.has(cleaned)
+        !suppressedImetaUrls.has(cleaned) &&
+        !(event && isTagMediaRedundantWithContent(event, cleaned, _content))
       )
     })
     const videosFromTags = extractedMedia.videos.filter((video: TImetaInfo) => {

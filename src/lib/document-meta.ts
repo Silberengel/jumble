@@ -23,6 +23,16 @@ export function ogImageAbsoluteUrlForUrl(url: string): string {
   }
 }
 
+/** Avatar proxy URLs often fail cross-origin in link previews — prefer note cover or site OG. */
+export function isImwaldAvatarProxyUrl(url: string | null | undefined): boolean {
+  if (!url?.trim()) return false
+  try {
+    return new URL(url.trim()).pathname.startsWith('/api/avatar/')
+  } catch {
+    return false
+  }
+}
+
 export function avatarProxyUrl(pubkey: string): string {
   return `${getSiteOrigin()}/api/avatar/${pubkey}`
 }

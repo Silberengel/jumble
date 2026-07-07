@@ -17,4 +17,13 @@ describe('preprocessMarkdownMediaLinks', () => {
     const out = preprocessMarkdownMediaLinks(content)
     expect(out).toContain(`[${url}](${url})`)
   })
+
+  it('leaves a bare blossom image URL on its own line unchanged', () => {
+    const url =
+      'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
+    const content = `Added numbers:\n\n${url}\n\nnostr:naddr1test`
+    const out = preprocessMarkdownMediaLinks(content)
+    expect(out).toContain(url)
+    expect(out).not.toContain(`![](${url})`)
+  })
 })
