@@ -22,7 +22,14 @@ import {
   isImageUrlPresentInText
 } from '@/lib/image-url-identity'
 import { getImetaInfosFromEvent } from '@/lib/event'
-import { getSuppressedImetaMedia, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet } from '@/lib/imeta-content-match'
+import {
+  getSuppressedImetaMedia,
+  isMetadataCoverImageUrl,
+  isStaleTagImageAfterContentImage,
+  isNip23StyleCoverImageKind,
+  shouldHideOrphanedImetaInAccordion,
+  suppressImetaUrlSet
+} from '@/lib/imeta-content-match'
 import type { ImetaDim } from '@/lib/imeta-display'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo, useState, useCallback, useEffect, useRef } from 'react'
@@ -517,9 +524,9 @@ export default function AsciidocArticle({
       }
     })
     
-    // Extract from image tag
+    // Extract from image tag (NIP-23 cover kinds use `image` as hero/metadata only)
     const imageTag = event.tags.find(tag => tag[0] === 'image' && tag[1])
-    if (imageTag?.[1]) {
+    if (imageTag?.[1] && !isNip23StyleCoverImageKind(event.kind)) {
       const cleaned = cleanUrl(imageTag[1])
       if (cleaned && !seenUrls.has(cleaned) && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         seenUrls.add(cleaned)
@@ -644,7 +651,6 @@ export default function AsciidocArticle({
 
   // Filter tag media to only show what's not in content
   const leftoverTagMedia = useMemo(() => {
-    const metadataImageUrl = metadata.image ? cleanUrl(metadata.image) : null
     const parentImageUrlCleaned = parentImageUrl ? cleanUrl(parentImageUrl) : null
     return tagMedia.filter(media => {
       const cleaned = cleanUrl(media.url)
@@ -654,8 +660,9 @@ export default function AsciidocArticle({
       const identifier = getImageUrlIdentity(cleaned)
       if (identifier && mediaUrlsInContent.has(imageIdentitySetKey(identifier))) return false
       if (media.type === 'image' && isImageUrlPresentInText(event.content, media.url)) return false
-      // Skip if this is the metadata image (shown separately)
-      if (metadataImageUrl && cleaned === metadataImageUrl && !effectiveHideImagesAndInfo) return false
+      if (isStaleTagImageAfterContentImage(event, media.url, event.content)) return false
+      // Skip NIP-23 cover image (hero card or metadata image block — never tag-media echo)
+      if (isMetadataCoverImageUrl(event, media.url, metadata.image)) return false
       // Skip if this matches the parent publication's image (to avoid duplicate cover images)
       if (parentImageUrlCleaned && cleaned === parentImageUrlCleaned) return false
       if (media.source === 'imeta' && suppressedImetaUrls.has(cleaned)) return false

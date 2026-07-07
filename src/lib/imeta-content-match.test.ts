@@ -6,6 +6,9 @@ import {
   getSuppressedImetaMedia,
   hasImageUrlInContent,
   hasMediaUrlInContent,
+  isMetadataCoverImageUrl,
+  isNip23StyleCoverImageKind,
+  isStaleTagImageAfterContentImage,
   isNip71MediaKind,
   isTagMediaRedundantWithContent,
   mediaBlobIdentityKey,
@@ -261,6 +264,22 @@ describe('imeta-content-match', () => {
     expect(getSuppressedImetaMedia(event, content)).toHaveLength(0)
   })
 
+  it('isMetadataCoverImageUrl for NIP-23 longform image tag', () => {
+    const coverUrl = 'https://i.nostr.build/AINF6Wqat6GiroyB.png'
+    const event = fakeEvent({
+      kind: 30023,
+      content: 'Article body without cover URL in text.',
+      tags: [
+        ['d', '1783276847716'],
+        ['title', 'Pay to read'],
+        ['image', coverUrl]
+      ]
+    })
+    expect(isNip23StyleCoverImageKind(30023)).toBe(true)
+    expect(isMetadataCoverImageUrl(event, coverUrl, coverUrl)).toBe(true)
+    expect(collectInlineTagMediaImageUrls(event, event.content)).toEqual([])
+  })
+
   it('collectInlineTagMediaImageUrls empty when blossom jpg is only in content', () => {
     const imageUrl =
       'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
@@ -278,6 +297,30 @@ describe('imeta-content-match', () => {
         ]
       ]
     })
+    expect(collectInlineTagMediaImageUrls(event, content)).toEqual([])
+  })
+
+  it('suppresses stale imeta/r image after NIP-41 edit swaps blossom URL in content', () => {
+    const oldImageUrl =
+      'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
+    const newImageUrl =
+      'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/701ff6c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
+    const content = `Added numbers:\n\n${newImageUrl}\n\nnostr:naddr1qqxnzdecxverwd3cxsmnwvfkqy88wumn8ghj7mn0wvhxcmmv9upzq3huhccxt6h34eupz3jeynjgjgek8lel2f4adaea0svyk94a3njdqvzqqqr4guqy3ykw`
+    const event = fakeEvent({
+      kind: 1,
+      content: `Added numbers:\n\n${oldImageUrl}\n\nnostr:naddr1...`,
+      tags: [
+        ['r', oldImageUrl],
+        [
+          'imeta',
+          `url ${oldImageUrl}`,
+          'x d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728',
+          'm image/jpeg'
+        ]
+      ]
+    })
+    expect(isStaleTagImageAfterContentImage(event, oldImageUrl, content)).toBe(true)
+    expect(isStaleTagImageAfterContentImage(event, newImageUrl, content)).toBe(false)
     expect(collectInlineTagMediaImageUrls(event, content)).toEqual([])
   })
 })

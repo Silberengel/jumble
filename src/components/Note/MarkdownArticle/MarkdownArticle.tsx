@@ -39,7 +39,10 @@ import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
 import {
   collectInlineTagMediaImageUrls,
   getSuppressedImetaMedia,
+  isMetadataCoverImageUrl,
+  isStaleTagImageAfterContentImage,
   isTagMediaRedundantWithContent,
+  isNip23StyleCoverImageKind,
   shouldHideOrphanedImetaInAccordion,
   suppressImetaUrlSet,
   collectMediaUrlsInContent
@@ -5677,9 +5680,9 @@ export default function MarkdownArticle({
       }
     })
     
-    // Extract from image tag
+    // Extract from image tag (NIP-23 cover kinds use `image` as hero/metadata only)
     const imageTag = event.tags.find(tag => tag[0] === 'image' && tag[1])
-    if (imageTag?.[1]) {
+    if (imageTag?.[1] && !isNip23StyleCoverImageKind(event.kind)) {
       const cleaned = cleanUrl(imageTag[1])
       if (cleaned && !seenUrls.has(cleaned) && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned))) {
         seenUrls.add(cleaned)
@@ -5687,7 +5690,11 @@ export default function MarkdownArticle({
       }
     }
     
-    return media.filter((entry) => !isTagMediaRedundantWithContent(event, entry.url, event.content))
+    return media.filter(
+      (entry) =>
+        !isTagMediaRedundantWithContent(event, entry.url, event.content) &&
+        !isStaleTagImageAfterContentImage(event, entry.url, event.content)
+    )
   }, [event.id, JSON.stringify(event.tags), event.content])
   
   // Extract YouTube URLs from tags (for display at top)
@@ -6092,7 +6099,6 @@ export default function MarkdownArticle({
   
   // Filter tag media to only show what's not in content
   const leftoverTagMedia = useMemo(() => {
-    const metadataImageUrl = metadata.image ? cleanUrl(metadata.image) : null
     const parentImageUrlCleaned = parentImageUrl ? cleanUrl(parentImageUrl) : null
     return tagMedia.filter((media) => {
       const cleaned = cleanUrl(media.url)
@@ -6107,6 +6113,7 @@ export default function MarkdownArticle({
       }
 
       if (isTagMediaRedundantWithContent(event, media.url, event.content)) return false
+      if (isStaleTagImageAfterContentImage(event, media.url, event.content)) return false
 
       // Check if already in content by cleaned URL
       if (mediaUrlsInContent.has(cleaned)) return false
@@ -6115,8 +6122,8 @@ export default function MarkdownArticle({
       const identifier = getImageUrlIdentity(cleaned)
       if (identifier && mediaUrlsInContent.has(imageIdentitySetKey(identifier))) return false
       
-      // Skip if this is the metadata image (shown separately)
-      if (metadataImageUrl && cleaned === metadataImageUrl && !hideMetadata) return false
+      // Skip NIP-23 cover image (hero card or metadata image block — never tag-media echo)
+      if (isMetadataCoverImageUrl(event, media.url, metadata.image)) return false
       
       // Skip if this matches the parent publication's image (to avoid duplicate cover images)
       if (parentImageUrlCleaned && cleaned === parentImageUrlCleaned) return false

@@ -13,6 +13,34 @@ import {
 } from '@/lib/url'
 import type { TImetaInfo } from '@/types'
 import type { Event } from 'nostr-tools'
+import { kinds } from 'nostr-tools'
+
+/** Kinds whose `image` tag is NIP-23 cover metadata (hero / inline cover), not inline tag media. */
+export function isNip23StyleCoverImageKind(kind: number): boolean {
+  return (
+    kind === kinds.LongFormArticle ||
+    kind === ExtendedKind.WIKI_ARTICLE ||
+    kind === ExtendedKind.PUBLICATION ||
+    kind === ExtendedKind.PUBLICATION_CONTENT ||
+    kind === ExtendedKind.NOSTR_SPECIFICATION
+  )
+}
+
+/** True when `mediaUrl` is the event's NIP-23 cover (`image` tag / parsed metadata image). */
+export function isMetadataCoverImageUrl(
+  event: Event,
+  mediaUrl: string,
+  metadataImageUrl?: string | null
+): boolean {
+  const cleaned = cleanUrl(mediaUrl)
+  if (!cleaned) return false
+  const meta = metadataImageUrl ? cleanUrl(metadataImageUrl) : null
+  if (meta && cleaned === meta) return true
+  if (!isNip23StyleCoverImageKind(event.kind)) return false
+  const imageTag = event.tags.find((t) => t[0] === 'image' && t[1])
+  const tagUrl = imageTag?.[1] ? cleanUrl(imageTag[1]) : null
+  return !!(tagUrl && cleaned === tagUrl)
+}
 
 /** NIP-71 media note kinds (picture / video / short video). */
 export function isNip71MediaKind(kind: number): boolean {
@@ -48,6 +76,39 @@ export function hasImageUrlInContent(content: string): boolean {
 
 export function hasMediaUrlInContent(content: string): boolean {
   return collectMediaUrlsInContent(content).size > 0
+}
+
+/**
+ * After a NIP-41 edit, `content` may reference a new image while kind-1 `imeta` / `r` tags
+ * still describe the pre-edit blob. Suppress those stale tag images when the body already
+ * shows a different inline image (mirrors of the same blob via `x` are still allowed).
+ */
+export function isStaleTagImageAfterContentImage(
+  event: Event,
+  mediaUrl: string,
+  content?: string
+): boolean {
+  const text = content ?? event.content ?? ''
+  if (event.kind !== kinds.ShortTextNote && event.kind !== ExtendedKind.COMMENT) {
+    return false
+  }
+  if (!hasImageUrlInContent(text)) return false
+  if (isImageUrlPresentInText(text, mediaUrl)) return false
+
+  const cleaned = cleanUrl(mediaUrl)
+  if (!cleaned) return false
+
+  const contentBlobKeys = collectContentBlobIdentityKeys(text)
+  for (const info of getImetaInfosFromEvent(event)) {
+    const ic = cleanUrl(info.url)
+    if (!ic || ic !== cleaned) continue
+    const blobKey = mediaBlobIdentityKey(ic, info.x)
+    if (blobKey && contentBlobKeys.has(blobKey)) return false
+  }
+  const blobKey = mediaBlobIdentityKey(cleaned)
+  if (blobKey && contentBlobKeys.has(blobKey)) return false
+
+  return true
 }
 
 function collectContentBlobIdentityKeys(content: string): Set<string> {
@@ -285,6 +346,7 @@ export function collectInlineTagMediaImageUrls(event: Event, content?: string): 
     if (!cleaned || seen.has(cleaned)) return
     if (!isImage(cleaned) && !isBlossomBudBlobUrl(cleaned)) return
     if (isTagMediaRedundantWithContent(event, url, text)) return
+    if (isStaleTagImageAfterContentImage(event, url, text)) return
     if (isImageUrlPresentInText(text, url)) return
     seen.add(cleaned)
     out.push(url)
@@ -298,7 +360,10 @@ export function collectInlineTagMediaImageUrls(event: Event, content?: string): 
 
   for (const tag of event.tags) {
     if (tag[0] === 'r' && tag[1]) consider(tag[1])
-    if (tag[0] === 'image' && tag[1]) consider(tag[1])
+    if (tag[0] === 'image' && tag[1]) {
+      if (isNip23StyleCoverImageKind(event.kind)) continue
+      consider(tag[1])
+    }
   }
 
   return out
