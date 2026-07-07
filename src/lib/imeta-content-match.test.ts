@@ -1,5 +1,6 @@
 import { ExtendedKind } from '@/constants'
 import {
+  collectInlineTagMediaImageUrls,
   collectMediaUrlsInContent,
   getOrphanedImetaMedia,
   getSuppressedImetaMedia,
@@ -231,5 +232,52 @@ describe('imeta-content-match', () => {
       ]
     })
     expect(isTagMediaRedundantWithContent(event, imageUrl, content)).toBe(true)
+  })
+
+  it('Amethyst kind-1: full imeta tag + r tag redundant when blossom jpg is in content', () => {
+    const imageUrl =
+      'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
+    const content = `Added numbers:\n\n${imageUrl}\n\nnostr:naddr1qqxnzdecxverwd3cxsmnwvfkqy88wumn8ghj7mn0wvhxcmmv9upzq3huhccxt6h34eupz3jeynjgjgek8lel2f4adaea0svyk94a3njdqvzqqqr4guqy3ykw`
+    const event = fakeEvent({
+      kind: 1,
+      content,
+      tags: [
+        ['r', imageUrl],
+        [
+          'imeta',
+          `url ${imageUrl}`,
+          'x d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728',
+          'size 154446',
+          'm image/jpeg',
+          'dim 1080x1427',
+          'blurhash _4SFnuM{-;_3~q~q~X?boMs;WBfQt7Rjt7ofofRjRjt7WBofWBt7WBofWBt7s;Rjj[j[t7WBay?bj[t7ayj[RjM{%MWBRjRjRjofj[xut7afR%RjfQs:xus;ofofWBWBM{',
+          'ox d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728'
+        ]
+      ]
+    })
+    expect(collectMediaUrlsInContent(content).has(imageUrl)).toBe(true)
+    expect(isTagMediaRedundantWithContent(event, imageUrl, content)).toBe(true)
+    expect([...redundantImetaUrlSet(event, content)]).toContain(imageUrl)
+    expect(getSuppressedImetaMedia(event, content)).toHaveLength(0)
+  })
+
+  it('collectInlineTagMediaImageUrls empty when blossom jpg is only in content', () => {
+    const imageUrl =
+      'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
+    const content = `Added numbers:\n\n${imageUrl}\n\nnostr:naddr1qqxnzdecxverwd3cxsmnwvfkqy88wumn8ghj7mn0wvhxcmmv9upzq3huhccxt6h34eupz3jeynjgjgek8lel2f4adaea0svyk94a3njdqvzqqqr4guqy3ykw`
+    const event = fakeEvent({
+      kind: 1,
+      content,
+      tags: [
+        ['r', imageUrl],
+        [
+          'imeta',
+          `url ${imageUrl}`,
+          'x d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728',
+          'm image/jpeg'
+        ]
+      ]
+    })
+    expect(collectInlineTagMediaImageUrls(event, content)).toEqual([])
   })
 })

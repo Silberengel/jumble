@@ -47,7 +47,14 @@ const DEFAULT_PUBLISH_RELAYS = [
 ]
 
 /** Default 15 minutes; kind 10166 `frequency` tag uses the same interval in seconds. */
-const INTERVAL_MS = Number(process.env.INTERVAL_MS) || 900000
+function parseOptionalNumberEnv (name, defaultValue) {
+  const raw = process.env[name]
+  if (raw === undefined || raw === '') return defaultValue
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : defaultValue
+}
+
+const INTERVAL_MS = parseOptionalNumberEnv('INTERVAL_MS', 900000)
 
 const MAX_RELAYS_TO_MONITOR = Math.min(
   2000,

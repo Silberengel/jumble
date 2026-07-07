@@ -217,3 +217,35 @@ export function isImageUrlPresentInText(content: string, targetUrl: string): boo
   if (identity && keys.has(imageIdentitySetKey(identity))) return true
   return false
 }
+
+/** Stable key for deduplicating the same image across URL / blob / host variants. */
+export function contentImageRenderKey(url: string): string | null {
+  const cleaned = cleanUrl(url)
+  if (!cleaned) return null
+  const identity = getImageUrlIdentity(cleaned)
+  if (identity) return imageIdentitySetKey(identity)
+  return cleaned
+}
+
+export type ContentImageRenderDeduper = {
+  has: (url: string) => boolean
+  /** Returns true when this URL may be rendered (first claim); false when already claimed. */
+  claim: (url: string) => boolean
+}
+
+export function createContentImageRenderDeduper(): ContentImageRenderDeduper {
+  const seen = new Set<string>()
+  return {
+    has(url: string) {
+      const key = contentImageRenderKey(url)
+      return key != null && seen.has(key)
+    },
+    claim(url: string) {
+      const key = contentImageRenderKey(url)
+      if (!key) return true
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    }
+  }
+}

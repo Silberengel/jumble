@@ -273,3 +273,33 @@ export function mediaBlobIdentityKey(url: string, x?: string | null): string | n
   }
   return null
 }
+
+/** Image URLs from `imeta` / `r` / `image` tags that may render inline (not already in body). */
+export function collectInlineTagMediaImageUrls(event: Event, content?: string): string[] {
+  const text = content ?? event.content ?? ''
+  const seen = new Set<string>()
+  const out: string[] = []
+
+  const consider = (url: string) => {
+    const cleaned = cleanUrl(url)
+    if (!cleaned || seen.has(cleaned)) return
+    if (!isImage(cleaned) && !isBlossomBudBlobUrl(cleaned)) return
+    if (isTagMediaRedundantWithContent(event, url, text)) return
+    if (isImageUrlPresentInText(text, url)) return
+    seen.add(cleaned)
+    out.push(url)
+  }
+
+  for (const info of getImetaInfosFromEvent(event)) {
+    if (info.m?.startsWith('image/') || isImage(info.url) || isBlossomBudBlobUrl(info.url)) {
+      consider(info.url)
+    }
+  }
+
+  for (const tag of event.tags) {
+    if (tag[0] === 'r' && tag[1]) consider(tag[1])
+    if (tag[0] === 'image' && tag[1]) consider(tag[1])
+  }
+
+  return out
+}

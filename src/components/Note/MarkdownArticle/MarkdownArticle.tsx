@@ -31,6 +31,7 @@ import {
 } from '@/lib/url'
 import {
   collectMediaUrlKeysInText,
+  createContentImageRenderDeduper,
   getImageUrlIdentity,
   imageIdentitySetKey
 } from '@/lib/image-url-identity'
@@ -3231,6 +3232,8 @@ function parseMarkdownContentMarked(
     /** Hold images as placeholders until clicked (lightbox). False in detail/full views. */
     lazyMedia?: boolean
     resolveImetaForImageUrl?: (cleaned: string) => TImetaInfo | undefined
+    /** Skip rendering when the same image asset was already shown in this note body. */
+    claimContentImageRender?: (url: string) => boolean
   }
 ): { nodes: React.ReactNode[]; hashtagsInContent: Set<string>; footnotes: Map<string, string>; citations: Array<{ id: string; type: string; citationId: string }> } {
   const {
@@ -3249,7 +3252,8 @@ function parseMarkdownContentMarked(
     containingEvent,
     webPreviewSourceEvent,
     lazyMedia = true,
-    resolveImetaForImageUrl
+    resolveImetaForImageUrl,
+    claimContentImageRender
   } = options
   const ogLinkContainingEvent = webPreviewSourceEvent ?? containingEvent
   const emojiLightbox: TInlineEmojiLightbox = { imageIndexMap, openLightbox }
@@ -3263,6 +3267,9 @@ function parseMarkdownContentMarked(
     })
 
   const renderStandaloneHttpsImageBlock = (cleaned: string, reactKey: string) => {
+    if (claimContentImageRender && !claimContentImageRender(cleaned)) {
+      return null
+    }
     let imageIndex = imageIndexMap.get(cleaned)
     if (imageIndex === undefined && getImageUrlIdentity) {
       const identifier = getImageUrlIdentity(cleaned)
@@ -3582,6 +3589,7 @@ function parseMarkdownContentMarked(
             )
             break
           }
+          if (claimContentImageRender && !claimContentImageRender(cleaned)) break
           // `![](url)` has empty alt — a plain <a>{label}</a> was invisible. Use Image like block paragraphs.
           const baseImeta = imetaInfoForStandaloneImageUrl(cleaned)
           let imageIdx = imageIndexMap.get(cleaned)
@@ -3669,6 +3677,9 @@ function parseMarkdownContentMarked(
     if (recoveredMdImage) {
       const cleaned = cleanUrl(recoveredMdImage.href)
       if (cleaned && (isImage(cleaned) || isBlossomBudBlobUrl(cleaned)) && isSafeMediaUrl(cleaned)) {
+        if (claimContentImageRender && !claimContentImageRender(cleaned)) {
+          return null
+        }
         const baseImeta = imetaInfoForStandaloneImageUrl(cleaned)
         let imageIdx = imageIndexMap.get(cleaned)
         if (imageIdx === undefined && getImageUrlIdentity) {
@@ -4556,6 +4567,9 @@ function parseMarkdownContentMarked(
               {renderInlineTokens(paragraphTokens, `${key}-img-inline-fallback`)}
             </div>
           )
+        }
+        if (claimContentImageRender && !claimContentImageRender(cleaned)) {
+          return null
         }
         const imageIdx = imageIndexMap.get(cleaned)
         return (
@@ -6249,6 +6263,9 @@ export default function MarkdownArticle({
     return map
   }, [event.id, JSON.stringify(event.tags), extractedMedia.all])
 
+  const contentImageDeduper = useMemo(() => createContentImageRenderDeduper(), [event.id])
+  const claimContentImageRender = contentImageDeduper.claim
+
   // Parse markdown content with post-processing for nostr: links and hashtags
   const { nodes: parsedContent, hashtagsInContent } = useMemo(() => {
     const resolveImetaForImageUrl = (cleaned: string): TImetaInfo | undefined => {
@@ -6280,6 +6297,7 @@ export default function MarkdownArticle({
       webPreviewSourceEvent: event,
       lazyMedia,
       resolveImetaForImageUrl,
+      claimContentImageRender,
       suppressStandaloneWebPreviewCleanedUrls:
         webPreviewSuppressCleanedSet.size > 0 ? webPreviewSuppressCleanedSet : undefined
     }
@@ -6309,7 +6327,8 @@ export default function MarkdownArticle({
     fullCalendarInvite,
     lazyMedia,
     webPreviewSuppressCleanedSet,
-    extractedMedia.images
+    extractedMedia.images,
+    claimContentImageRender
   ])
   
   // Filter metadata tags to only show what's not already in content
@@ -6466,10 +6485,16 @@ export default function MarkdownArticle({
                     </div>
                   )}
         
-        {/* Metadata image */}
+        {/* Parsed content — in-place images first; tag/metadata images only if not already shown */}
+        <div className="break-words">
+          {parsedContent}
+        </div>
+
+        {/* Metadata image (only if not already rendered from content) */}
                 {!hideMetadata && metadata.image && (() => {
         const cleanedMetadataImage = cleanUrl(metadata.image)
         const parentImageUrlCleaned = parentImageUrl ? cleanUrl(parentImageUrl) : null
+          if (cleanedMetadataImage && !claimContentImageRender(cleanedMetadataImage)) return null
           // Don't show if already in content (check by URL and by identifier)
           if (cleanedMetadataImage) {
             if (mediaUrlsInContent.has(cleanedMetadataImage)) return null
@@ -6508,6 +6533,7 @@ export default function MarkdownArticle({
               const mediaIndex = imageIndexMap.get(cleaned)
               
               if (media.type === 'image') {
+                if (!cleaned || !claimContentImageRender(cleaned)) return null
                 return (
                   <div key={`tag-media-${cleaned}`} className="my-2 max-w-[400px]">
                     <Image
@@ -6631,11 +6657,6 @@ export default function MarkdownArticle({
           </div>
         )}
       
-        {/* Parsed content */}
-        <div className="break-words">
-          {parsedContent}
-        </div>
-
         {suppressedImetaMedia.length > 0 && (
           <OrphanedImetaMediaSection
             className="mt-4 mb-2"

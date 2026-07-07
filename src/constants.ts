@@ -502,7 +502,6 @@ export const SOCIAL_KIND_BLOCKED_RELAY_URLS = [
   'wss://relay.nsec.app',
   'wss://bucket.coracle.social',
   'wss://relay.wikifreedia.xyz',
-  'wss://relay.gifbuddy.lol',
   'wss://hist.nostr.land',
   'wss://essayist.decentnewsroom.com',
   'wss://nosmero.com/nip78-relay',
