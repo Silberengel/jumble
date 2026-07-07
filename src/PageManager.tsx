@@ -21,7 +21,6 @@ import { extendProfileNetworkDeferral } from '@/lib/profile-batch-coordinator'
 import client from '@/services/client.service'
 import noteStatsService from '@/services/note-stats.service'
 import { navigationEventStore } from '@/services/navigation-event-store'
-import type { Event } from 'nostr-tools'
 import { CurrentRelaysProvider } from '@/providers/CurrentRelaysProvider'
 import { TPageRef } from '@/types'
 import {
@@ -55,7 +54,6 @@ import {
   isProfileDetailPathname
 } from '@/lib/document-meta'
 import { normalizeUrl } from './lib/url'
-import { prefetchThreadContextForNavigation } from '@/lib/thread-context-local'
 import modalManager from './services/modal-manager.service'
 import { decodeRssArticlePathSegment, encodeRssArticlePathSegment } from '@/lib/rss-article'
 import { matchAppRoute } from './routes'
@@ -70,8 +68,6 @@ import { SecondaryPageContext, useSecondaryPage, useSecondaryPageOptional, type 
 
 /** Survives React StrictMode remount so initial URL → secondary stack is not built twice. */
 let historyLocationSeedApplied = false
-/** Dedupes note URL seed when React runs the history effect twice before state commits. */
-let historyNoteStackSeedUrl: string | null = null
 
 /** Lazy-loaded so PageManager does not synchronously import SpellsPage (avoids HMR cycle: SpellsPage → PrimaryPageLayout → PageManager → SpellsPage). */
 const SpellsPageLazy = lazy(() => import('./pages/primary/SpellsPage'))
@@ -292,25 +288,7 @@ export { PrimaryPageContext, usePrimaryPage }
 
 export { useSecondaryPage, useSecondaryPageOptional }
 
-// Helper function to build contextual note URL
-function buildNoteUrl(noteId: string, currentPage: TPrimaryPageName | null): string {
-  // Pages that should preserve context in the URL
-  const contextualPages: TPrimaryPageName[] = [
-    'search',
-    'library',
-    'profile',
-    'feed',
-    'spells',
-    'explore',
-    'calendar'
-  ]
-
-  if (currentPage && contextualPages.includes(currentPage)) {
-    return `/${currentPage}/notes/${noteId}`
-  }
-  
-  return `/notes/${noteId}`
-}
+import { buildNoteUrl } from '@/lib/note-navigation-url'
 
 function buildRssArticleUrl(
   articleUrl: string,
@@ -395,102 +373,7 @@ function spellPropsFromSearch(search: string): { spell: string } | undefined {
   return spell ? { spell } : undefined
 }
 
-// Helper function to extract noteId and context from URL
-function extractValidNoteId(raw: string): string | null {
-  const decoded = (() => {
-    try {
-      return decodeURIComponent(raw).trim()
-    } catch {
-      return raw.trim()
-    }
-  })()
-  const withoutPrefix = decoded.startsWith('nostr:') ? decoded.slice(6) : decoded
-  if (/^[0-9a-f]{64}$/i.test(withoutPrefix)) return withoutPrefix.toLowerCase()
-  const lower = withoutPrefix.toLowerCase()
-  if (
-    lower.startsWith('note1') ||
-    lower.startsWith('nevent1') ||
-    lower.startsWith('naddr1')
-  ) {
-    return withoutPrefix
-  }
-  return null
-}
-
-function parseNoteUrl(url: string): { noteId: string; context?: string } | null {
-  // Match patterns like /discussions/notes/{noteId} or /notes/{noteId}
-  const contextualMatch = url.match(
-    /\/(discussions|search|library|profile|home|feed|spells|explore|rss|calendar)\/notes\/(.+)$/
-  )
-  if (contextualMatch) {
-    const noteId = extractValidNoteId(contextualMatch[2])
-    if (!noteId) return null
-    return { noteId, context: contextualMatch[1] }
-  }
-  
-  // Match standard pattern /notes/{noteId}
-  const standardMatch = url.match(/\/notes\/(.+)$/)
-  if (standardMatch) {
-    const noteId = extractValidNoteId(standardMatch[1])
-    if (!noteId) return null
-    return { noteId }
-  }
-  
-  return null
-}
-
-// Note navigation: full-screen stack on mobile, side panel on desktop.
-export function useSmartNoteNavigation() {
-  const { push: pushSecondaryPage } = useSecondaryPage()
-  const { current: currentPrimaryPage } = usePrimaryPage()
-  
-  const navigateToNote = async (url: string, event?: Event, relatedEvents?: Event[]) => {
-    const parsed = parseNoteUrl(url)
-    if (!parsed) {
-      logger.warn('navigateToNote ignored invalid note URL', { url })
-      return
-    }
-    const { noteId } = parsed
-
-    primeNoteNavigationCache(noteId, event, relatedEvents)
-
-    const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
-    pushSecondaryPage(contextualUrl)
-  }
-  
-  return { navigateToNote }
-}
-
-/** Safe variant for createRoot trees (e.g. AsciidocArticle embedded notes). Returns no-op navigation when outside providers. */
-export function useSmartNoteNavigationOptional() {
-  const pushSecondaryPage = useSecondaryPageOptional()
-  const screenSize = useScreenSizeOptional()
-  const primaryPage = usePrimaryPageOptional()
-
-  if (!pushSecondaryPage || !screenSize || !primaryPage) {
-    return {
-      navigateToNote: (url: string, _event?: Event, _relatedEvents?: Event[]) => {
-        window.location.href = url
-      }
-    }
-  }
-
-  const { push } = pushSecondaryPage
-  const { current: currentPrimaryPage } = primaryPage
-
-  const navigateToNote = async (url: string, event?: Event, relatedEvents?: Event[]) => {
-    const parsed = parseNoteUrl(url)
-    if (!parsed) {
-      logger.warn('navigateToNote (optional) ignored invalid note URL', { url })
-      return
-    }
-    const { noteId } = parsed
-    primeNoteNavigationCache(noteId, event, relatedEvents)
-    const contextualUrl = buildNoteUrl(noteId, currentPrimaryPage)
-    push(contextualUrl)
-  }
-  return { navigateToNote }
-}
+export { useSmartNoteNavigation, useSmartNoteNavigationOptional } from '@/hooks/use-smart-note-navigation'
 
 // Fixed: Relay navigation now uses primary note view on mobile, secondary routing (drawer in single-pane, side panel in double-pane) on desktop
 export function useSmartRelayNavigation() {
@@ -1168,10 +1051,22 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           let primaryForNoteUrl: TPrimaryPageName = currentPrimaryPage
 
           const pushNoteUrlOnStack = (noteUrl: string) => {
-            if (historyNoteStackSeedUrl === noteUrl) return
-            historyNoteStackSeedUrl = noteUrl
             setSecondaryStack((prevStack) => {
-              if (isCurrentPage(prevStack, noteUrl)) return prevStack
+              if (isCurrentPage(prevStack, noteUrl)) {
+                const top = prevStack[prevStack.length - 1]
+                if (top && !top.component) {
+                  const restored = ensureStackItemComponent(top)
+                  if (restored.component) {
+                    window.history.replaceState(
+                      { index: restored.index, url: noteUrl },
+                      '',
+                      noteUrl
+                    )
+                    return [...prevStack.slice(0, -1), restored]
+                  }
+                }
+                return prevStack
+              }
               const { newStack, newItem } = pushNewPageToStack(prevStack, noteUrl, maxStackSize)
               if (newItem) {
                 window.history.replaceState({ index: newItem.index, url: noteUrl }, '', noteUrl)
@@ -1630,6 +1525,25 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
     }
   }, [secondaryStack.length, currentPrimaryPage])
 
+  // Recover when the address bar is a note/profile URL but the stack was cleared (HMR, failed seed, etc.).
+  useLayoutEffect(() => {
+    const recoverSecondaryStackFromUrl = () => {
+      if (secondaryStackRef.current.length > 0) return
+      const locUrl = window.location.pathname + window.location.search + window.location.hash
+      const pathOnly = locUrl.split('?')[0].split('#')[0]
+      if (isPrimaryOnlyPathname(pathOnly)) return
+
+      const synced = syncSecondaryStackWhenPopStateStateIsNull([], locUrl)
+      if (synced.length === 0) return
+      secondaryStackRef.current = synced
+      setSecondaryStack(synced)
+    }
+
+    recoverSecondaryStackFromUrl()
+    window.addEventListener('popstate', recoverSecondaryStackFromUrl)
+    return () => window.removeEventListener('popstate', recoverSecondaryStackFromUrl)
+  }, [])
+
   // Route-level OG / document title for pages that do not set their own (NotePage, ProfilePage handle note/profile).
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -1747,7 +1661,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
           const next = [...secondaryStackRef.current.slice(0, -1), restored]
           secondaryStackRef.current = next
           setSecondaryStack(next)
+          if (!isSmallScreen) {
+            window.history.pushState({ index: restored.index, url }, '', url)
+          }
         }
+      } else if (!isSmallScreen && top) {
+        window.history.pushState({ index: top.index, url }, '', url)
       }
       if (isSmallScreen && top) {
         window.history.pushState({ index: top.index, url }, '', url)
@@ -1823,9 +1742,12 @@ export function PageManager({ maxStackSize = 5 }: { maxStackSize?: number }) {
       if (newItem) {
         window.history.pushState({ index: newItem.index, url }, '', url)
       } else {
-        logger.error('PageManager', 'Failed to create component for URL - component will not be displayed', { url, path: url.split('?')[0].split('#')[0] })
+        logger.error('PageManager', 'Failed to create component for URL - component will not be displayed', {
+          url,
+          path: url.split('?')[0].split('#')[0]
+        })
       }
-      return newStack
+      return newItem ? newStack : prevStack
     })
   }
 
@@ -2216,37 +2138,6 @@ function ensureStackItemComponent(item: TStackItem): TStackItem {
   return { ...item, component, ref }
 }
 
-function primeNoteNavigationCache(
-  noteId: string,
-  event?: Event,
-  relatedEvents?: Event[]
-): void {
-  navigationEventStore.clear()
-  if (event) {
-    navigationEventStore.setEvent(event, noteId)
-    client.addEventToCache(event)
-    void prefetchThreadContextForNavigation(event).then((prefetched) => {
-      for (const ev of prefetched) {
-        client.addEventToCache(ev)
-        navigationEventStore.setEvent(ev)
-      }
-    })
-  }
-  if (relatedEvents?.length) {
-    for (const ev of relatedEvents) {
-      if (ev && ev !== event) {
-        client.addEventToCache(ev)
-        navigationEventStore.setEvent(ev)
-      }
-    }
-  }
-  if (event) {
-    void client.prefetchEmbeddedEventsForParents(
-      [event, ...(relatedEvents ?? []).filter((ev) => ev && ev !== event)]
-    )
-  }
-}
-
 function isCurrentPage(stack: TStackItem[], url: string) {
   const currentPage = stack[stack.length - 1]
   if (!currentPage) return false
@@ -2332,6 +2223,12 @@ function syncSecondaryStackWhenPopStateStateIsNull(pre: TStackItem[], locUrl: st
 
   const top = pre[pre.length - 1]
   if (top && secondaryPanelUrlsMatch(top.url, locUrl)) {
+    if (!top.component) {
+      const restored = ensureStackItemComponent(top)
+      if (restored.component) {
+        return [...pre.slice(0, -1), restored]
+      }
+    }
     return pre
   }
 

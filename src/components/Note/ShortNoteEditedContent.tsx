@@ -30,15 +30,13 @@ export default function ShortNoteEditedContent({
   const [view, setView] = useState<ShortNoteEditedViewMode>('rendered')
 
   return (
-    <div
-      className={cn('space-y-2', className)}
-      onClick={(e) => e.stopPropagation()}
-      onPointerDown={(e) => e.stopPropagation()}
-    >
+    <div className={cn('space-y-2', className)}>
       <div
         className="flex flex-wrap items-center gap-1.5"
         role="group"
         aria-label={t('Edited note display')}
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
       >
         <Button
           type="button"

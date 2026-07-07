@@ -36,7 +36,14 @@ import {
   imageIdentitySetKey
 } from '@/lib/image-url-identity'
 import { getHttpUrlFromITags, getImetaInfosFromEvent } from '@/lib/event'
-import { getSuppressedImetaMedia, isTagMediaRedundantWithContent, shouldHideOrphanedImetaInAccordion, suppressImetaUrlSet, collectMediaUrlsInContent } from '@/lib/imeta-content-match'
+import {
+  collectInlineTagMediaImageUrls,
+  getSuppressedImetaMedia,
+  isTagMediaRedundantWithContent,
+  shouldHideOrphanedImetaInAccordion,
+  suppressImetaUrlSet,
+  collectMediaUrlsInContent
+} from '@/lib/imeta-content-match'
 import { buildImetaDimMap, type ImetaDim } from '@/lib/imeta-display'
 import { canonicalizeRssArticleUrl } from '@/lib/rss-article'
 import { URI_LINK_CLASS } from '@/lib/link-styles'
@@ -4190,6 +4197,12 @@ function parseMarkdownContentMarked(
             </p>
           )
         }
+        if (
+          (isImage(soleHref) || isBlossomBudBlobUrl(soleHref)) &&
+          isSafeMediaUrl(soleHref)
+        ) {
+          return renderStandaloneHttpsImageOrBlossomBlob(soleHref, `${key}-sole-img-link`)
+        }
         return (
           <HttpUrlOpenGraphOrLink
             key={`${key}-sole-link-webpreview`}
@@ -6063,6 +6076,19 @@ export default function MarkdownArticle({
     () => suppressImetaUrlSet(event, event.content, hideOrphanedImetaInAccordion),
     [event, hideOrphanedImetaInAccordion]
   )
+
+  /** Tag-sourced images that are not already represented in the note body (imeta / r / image tags). */
+  const inlineTagOnlyImageUrlKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const url of collectInlineTagMediaImageUrls(event, event.content)) {
+      const cleaned = cleanUrl(url)
+      if (!cleaned) continue
+      keys.add(cleaned)
+      const identity = getImageUrlIdentity(cleaned)
+      if (identity) keys.add(imageIdentitySetKey(identity))
+    }
+    return keys
+  }, [event])
   
   // Filter tag media to only show what's not in content
   const leftoverTagMedia = useMemo(() => {
@@ -6071,6 +6097,14 @@ export default function MarkdownArticle({
     return tagMedia.filter((media) => {
       const cleaned = cleanUrl(media.url)
       if (!cleaned) return false
+
+      if (media.type === 'image') {
+        const identity = getImageUrlIdentity(cleaned)
+        const allowedByTagOnlySet =
+          inlineTagOnlyImageUrlKeys.has(cleaned) ||
+          (identity != null && inlineTagOnlyImageUrlKeys.has(imageIdentitySetKey(identity)))
+        if (!allowedByTagOnlySet) return false
+      }
 
       if (isTagMediaRedundantWithContent(event, media.url, event.content)) return false
 
@@ -6089,13 +6123,21 @@ export default function MarkdownArticle({
       if (suppressedImetaUrls.has(cleaned)) return false
       return true
     })
-  }, [tagMedia, mediaUrlsInContent, metadata.image, hideMetadata, parentImageUrl, suppressedImetaUrls, event])
+  }, [
+    tagMedia,
+    mediaUrlsInContent,
+    metadata.image,
+    hideMetadata,
+    parentImageUrl,
+    suppressedImetaUrls,
+    event,
+    inlineTagOnlyImageUrlKeys
+  ])
 
   const suppressedImetaMedia = useMemo(
     () => getSuppressedImetaMedia(event, event.content),
     [event, hideOrphanedImetaInAccordion]
   )
-  const inlineLeftoverTagMedia = leftoverTagMedia
   
   // Filter tag YouTube URLs to only show what's not in content
   const leftoverTagYouTubeUrls = useMemo(() => {
@@ -6263,11 +6305,9 @@ export default function MarkdownArticle({
     return map
   }, [event.id, JSON.stringify(event.tags), extractedMedia.all])
 
-  const contentImageDeduper = useMemo(() => createContentImageRenderDeduper(), [event.id])
-  const claimContentImageRender = contentImageDeduper.claim
-
   // Parse markdown content with post-processing for nostr: links and hashtags
-  const { nodes: parsedContent, hashtagsInContent } = useMemo(() => {
+  const { nodes: parsedContent, hashtagsInContent, contentImageDeduper } = useMemo(() => {
+    const parseImageDeduper = createContentImageRenderDeduper()
     const resolveImetaForImageUrl = (cleaned: string): TImetaInfo | undefined => {
       for (const img of extractedMedia.images) {
         const ic = cleanUrl(img.url)
@@ -6297,7 +6337,7 @@ export default function MarkdownArticle({
       webPreviewSourceEvent: event,
       lazyMedia,
       resolveImetaForImageUrl,
-      claimContentImageRender,
+      claimContentImageRender: parseImageDeduper.claim,
       suppressStandaloneWebPreviewCleanedUrls:
         webPreviewSuppressCleanedSet.size > 0 ? webPreviewSuppressCleanedSet : undefined
     }
@@ -6309,7 +6349,11 @@ export default function MarkdownArticle({
       result = parseMarkdownContentLegacy(preprocessedContent, parseOptions)
     }
     // Return nodes and hashtags (footnotes are already included in nodes)
-    return { nodes: result.nodes, hashtagsInContent: result.hashtagsInContent }
+    return {
+      nodes: result.nodes,
+      hashtagsInContent: result.hashtagsInContent,
+      contentImageDeduper: parseImageDeduper
+    }
   }, [
     preprocessedContent,
     event,
@@ -6327,9 +6371,20 @@ export default function MarkdownArticle({
     fullCalendarInvite,
     lazyMedia,
     webPreviewSuppressCleanedSet,
-    extractedMedia.images,
-    claimContentImageRender
+    extractedMedia.images
   ])
+
+  const visibleInlineLeftoverTagMedia = useMemo(() => {
+    return leftoverTagMedia.filter((media) => {
+      if (media.type !== 'image') return true
+      const cleaned = cleanUrl(media.url)
+      if (!cleaned) return false
+      if (contentImageDeduper.has(cleaned)) return false
+      const identity = getImageUrlIdentity(cleaned)
+      if (identity && contentImageDeduper.has(imageIdentitySetKey(identity))) return false
+      return true
+    })
+  }, [leftoverTagMedia, contentImageDeduper])
   
   // Filter metadata tags to only show what's not already in content
   const leftoverMetadataTags = useMemo(() => {
@@ -6494,7 +6549,7 @@ export default function MarkdownArticle({
                 {!hideMetadata && metadata.image && (() => {
         const cleanedMetadataImage = cleanUrl(metadata.image)
         const parentImageUrlCleaned = parentImageUrl ? cleanUrl(parentImageUrl) : null
-          if (cleanedMetadataImage && !claimContentImageRender(cleanedMetadataImage)) return null
+          if (cleanedMetadataImage && contentImageDeduper.has(cleanedMetadataImage)) return null
           // Don't show if already in content (check by URL and by identifier)
           if (cleanedMetadataImage) {
             if (mediaUrlsInContent.has(cleanedMetadataImage)) return null
@@ -6526,14 +6581,14 @@ export default function MarkdownArticle({
       })()}
         
         {/* Media from tags (only if not in content) */}
-        {inlineLeftoverTagMedia.length > 0 && (
+        {visibleInlineLeftoverTagMedia.length > 0 && (
           <div className="space-y-4 mb-6">
-            {inlineLeftoverTagMedia.map((media) => {
+            {visibleInlineLeftoverTagMedia.map((media) => {
               const cleaned = cleanUrl(media.url)
               const mediaIndex = imageIndexMap.get(cleaned)
               
               if (media.type === 'image') {
-                if (!cleaned || !claimContentImageRender(cleaned)) return null
+                if (!cleaned || contentImageDeduper.has(cleaned)) return null
                 return (
                   <div key={`tag-media-${cleaned}`} className="my-2 max-w-[400px]">
                     <Image

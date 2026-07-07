@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   collectMediaUrlKeysInText,
+  createContentImageRenderDeduper,
   getImageUrlIdentity,
   imageIdentitySetKey,
   isImageUrlPresentInText
@@ -36,5 +37,27 @@ describe('isImageUrlPresentInText', () => {
     expect(keys.has(imageIdentitySetKey('cfa9ce52-8e34-4958-a247-1eabdd47212b_1224x816.jpeg'))).toBe(
       true
     )
+  })
+})
+
+describe('createContentImageRenderDeduper', () => {
+  const blossomJpg =
+    'https://npub1gm7tuvr9atc6u7q3gevjfeyfyvmrlul4y67k7u7hcxztz67ceexs078rf6.blossom.band/d84ac5c76f7a4036605fea59cdab8ac0064c343beef88ae218dca2f85bdae728.jpg'
+
+  it('claim allows first render; has reflects claimed URLs', () => {
+    const deduper = createContentImageRenderDeduper()
+    expect(deduper.claim(blossomJpg)).toBe(true)
+    expect(deduper.has(blossomJpg)).toBe(true)
+    expect(deduper.claim(blossomJpg)).toBe(false)
+  })
+
+  it('fresh deduper per parse allows re-render after prior parse claimed the URL', () => {
+    const firstParse = createContentImageRenderDeduper()
+    expect(firstParse.claim(blossomJpg)).toBe(true)
+
+    const secondParse = createContentImageRenderDeduper()
+    expect(secondParse.claim(blossomJpg)).toBe(true)
+    expect(firstParse.has(blossomJpg)).toBe(true)
+    expect(secondParse.has(blossomJpg)).toBe(true)
   })
 })

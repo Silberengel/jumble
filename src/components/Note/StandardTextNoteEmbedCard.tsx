@@ -7,7 +7,7 @@ import NormalContentPreview from '@/components/ContentPreview/NormalContentPrevi
 import UserAvatar from '@/components/UserAvatar'
 import Username from '@/components/Username'
 import { Button } from '@/components/ui/button'
-import { useSmartNoteNavigationOptional } from '@/PageManager'
+import { useSmartNoteNavigationOptional } from '@/hooks/use-smart-note-navigation'
 import { getNoteBech32Id, isReplaceableEvent } from '@/lib/event'
 import { getCachedThreadContextEvents } from '@/lib/navigation-related-events'
 import { toNote } from '@/lib/link'

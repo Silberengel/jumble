@@ -60,7 +60,11 @@ function SR(C: LazyExoticComponent<ComponentType<any>>): ReactElement {
   )
 }
 
-const notePageElement = <NotePageRoute />
+/** Fresh element per match — reusing one module-level element breaks cloneElement after Vite HMR. */
+function notePageRouteElement(): ReactElement {
+  return <NotePageRoute />
+}
+
 const noteListPageElement = SR(NoteListPageLazy)
 const rssArticlePageElement = SR(RssArticlePageLazy)
 const composerPageElement = SR(ComposerPageRouteLazy)
@@ -83,17 +87,17 @@ const ROUTES = [
   { path: '/compose/reply/:id', element: composerPageElement },
   { path: '/compose/options', element: composerPageElement },
   { path: '/notes', element: noteListPageElement },
-  { path: '/notes/:id', element: notePageElement },
-  { path: '/discussions/notes/:id', element: notePageElement },
-  { path: '/search/notes/:id', element: notePageElement },
-  { path: '/library/notes/:id', element: notePageElement },
-  { path: '/profile/notes/:id', element: notePageElement },
-  { path: '/explore/notes/:id', element: notePageElement },
-  { path: '/home/notes/:id', element: notePageElement },
-  { path: '/feed/notes/:id', element: notePageElement },
-  { path: '/spells/notes/:id', element: notePageElement },
-  { path: '/rss/notes/:id', element: notePageElement },
-  { path: '/calendar/notes/:id', element: notePageElement },
+  { path: '/notes/:id', element: notePageRouteElement() },
+  { path: '/discussions/notes/:id', element: notePageRouteElement() },
+  { path: '/search/notes/:id', element: notePageRouteElement() },
+  { path: '/library/notes/:id', element: notePageRouteElement() },
+  { path: '/profile/notes/:id', element: notePageRouteElement() },
+  { path: '/explore/notes/:id', element: notePageRouteElement() },
+  { path: '/home/notes/:id', element: notePageRouteElement() },
+  { path: '/feed/notes/:id', element: notePageRouteElement() },
+  { path: '/spells/notes/:id', element: notePageRouteElement() },
+  { path: '/rss/notes/:id', element: notePageRouteElement() },
+  { path: '/calendar/notes/:id', element: notePageRouteElement() },
   { path: '/calendar/day/:ymd', element: SR(CalendarDayEventsPageLazy) },
   { path: '/rss-item/:articleKey', element: rssArticlePageElement },
   { path: '/rss/rss-item/:articleKey', element: rssArticlePageElement },
@@ -154,11 +158,11 @@ export function matchAppRoute(pathname: string): TMatchedAppRoute | null {
 
   const ctxNote = contextualNotePathRe.exec(path)
   if (ctxNote) {
-    return { element: notePageElement, params: { id: ctxNote[2]! } }
+    return { element: notePageRouteElement(), params: { id: ctxNote[2]! } }
   }
   const stdNote = standardNotePathRe.exec(path)
   if (stdNote) {
-    return { element: notePageElement, params: { id: stdNote[1]! } }
+    return { element: notePageRouteElement(), params: { id: stdNote[1]! } }
   }
 
   const ctxRss = contextualRssItemPathRe.exec(path)
