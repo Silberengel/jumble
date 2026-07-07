@@ -141,9 +141,13 @@ export function RepostEventContent({ event, className }: { event: import('nostr-
   return <NotificationEventCard className={className} event={event} />
 }
 
-/** Shared markdown / asciidoc / nip84 / edit path for text-like kinds. */
+/** Whether inline media should wait for tap (inverse of auto-load). */
+function lazyMediaForCtx(ctx: RenderCtx): boolean {
+  return !(ctx.autoLoadMedia || ctx.showFull)
+}
+
 export function renderMarkdownContent(ctx: RenderCtx, className = 'mt-2') {
-  const { displayEvent, hideMetadata, autoLoadMedia, fullCalendarInvite, deferAuthorAvatar } = ctx
+  const { displayEvent, hideMetadata, hideTitle, autoLoadMedia, fullCalendarInvite, deferAuthorAvatar } = ctx
 
   if (
     ctx.surface === 'embed' &&
@@ -232,7 +236,7 @@ export function renderMarkdownContent(ctx: RenderCtx, className = 'mt-2') {
         displayEvent={displayEvent}
         className={className}
         hideMetadata={hideMetadata}
-        lazyMedia={!autoLoadMedia}
+        lazyMedia={lazyMediaForCtx(ctx)}
         fullCalendarInvite={fullCalendarInvite}
       />
     )
@@ -247,7 +251,8 @@ export function renderMarkdownContent(ctx: RenderCtx, className = 'mt-2') {
           : displayEvent
       }
       hideMetadata={hideMetadata}
-      lazyMedia={!autoLoadMedia}
+      hideTitle={hideTitle}
+      lazyMedia={lazyMediaForCtx(ctx)}
       fullCalendarInvite={fullCalendarInvite}
       duplicateWebPreviewCleanedUrlHints={ctx.duplicateWebPreviewCleanedUrlHints}
     />

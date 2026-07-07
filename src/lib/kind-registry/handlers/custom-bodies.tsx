@@ -38,6 +38,7 @@ import LearningResourceCard from '@/components/Note/LearningResourceCard'
 import ApplicationHandlerInfo from '@/components/ApplicationHandlerInfo'
 import ApplicationHandlerRecommendation from '@/components/ApplicationHandlerRecommendation'
 import { EmbeddedNote } from '@/components/Embedded/EmbeddedNote'
+import { cn } from '@/lib/utils'
 import {
   bodyClass,
   HttpUrlOpenGraphOrLink,
@@ -160,7 +161,12 @@ export const renderPublicationBodies = {
 
 export function renderLongFormBodies(ctx: RenderCtx) {
   if (ctx.showFull) {
-    return renderMarkdownContent({ ...ctx, hideMetadata: true }, bodyClass(ctx))
+    return (
+      <div className={cn(bodyClass(ctx), 'space-y-4')}>
+        <LongFormCard event={ctx.displayEvent} interactive={false} className="mt-0" autoLoadMedia />
+        {renderMarkdownContent({ ...ctx, hideMetadata: true, hideTitle: true }, 'mt-0')}
+      </div>
+    )
   }
   return <LongFormCard className={bodyClass(ctx)} event={ctx.displayEvent} />
 }

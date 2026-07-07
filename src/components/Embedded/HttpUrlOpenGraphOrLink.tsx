@@ -1,6 +1,5 @@
 import WebPreview from '@/components/WebPreview'
 import { useFetchWebMetadata } from '@/hooks/useFetchWebMetadata'
-import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { hasUsableOpenGraphMetadata } from '@/lib/open-graph-preview'
 import { cleanUrl, isLikelyWebPageUrl } from '@/lib/url'
 import { cn } from '@/lib/utils'
@@ -30,8 +29,8 @@ export function HttpUrlOpenGraphOrLink({
   ogCardOnly?: boolean
 }) {
   const cleaned = cleanUrl(url) || url
-  const autoLoadMedia = useShouldAutoLoadMedia(containingEvent?.pubkey, containingEvent)
-  const fetchEnabled = autoLoadMedia && isLikelyWebPageUrl(cleaned)
+  /** OG metadata is lightweight; do not gate on tap-to-load media policy (that applies to images in the card). */
+  const fetchEnabled = isLikelyWebPageUrl(cleaned)
   const { title, description, image, ogLoading } = useFetchWebMetadata(cleaned, { fetchEnabled })
   const hasOg = hasUsableOpenGraphMetadata({ title, description, image })
 

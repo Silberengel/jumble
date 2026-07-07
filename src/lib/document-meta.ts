@@ -14,6 +14,15 @@ export function defaultOgImageAbsoluteUrl(): string {
   return `${getSiteOrigin()}/og-image.png`
 }
 
+/** Site OG hero for a given page URL (uses that URL's origin, not the current tab). */
+export function ogImageAbsoluteUrlForUrl(url: string): string {
+  try {
+    return `${new URL(url).origin}/og-image.png`
+  } catch {
+    return defaultOgImageAbsoluteUrl()
+  }
+}
+
 export function avatarProxyUrl(pubkey: string): string {
   return `${getSiteOrigin()}/api/avatar/${pubkey}`
 }

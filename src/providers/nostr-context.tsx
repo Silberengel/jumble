@@ -68,6 +68,8 @@ export type TNostrContext = {
   signEvent: (draftEvent: TDraftEvent) => Promise<VerifiedEvent>
   nip04Encrypt: (pubkey: string, plainText: string) => Promise<string>
   nip04Decrypt: (pubkey: string, cipherText: string) => Promise<string>
+  nip44Encrypt: (pubkey: string, plainText: string) => Promise<string>
+  nip44Decrypt: (pubkey: string, cipherText: string) => Promise<string>
   startLogin: () => void
   checkLogin: <T>(cb?: () => T | Promise<T>) => Promise<T | void>
   updateRelayListEvent: (relayListEvent: Event) => Promise<void>

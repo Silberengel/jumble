@@ -2403,6 +2403,34 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const nip44Encrypt = async (pubkey: string, plainText: string) => {
+    if (isAnonAccount(account)) {
+      return createEphemeralSigner().nip44Encrypt(pubkey, plainText)
+    }
+    if (!signer) return ''
+    try {
+      return (await signer.nip44Encrypt(pubkey, plainText)) ?? ''
+    } catch {
+      return ''
+    }
+  }
+
+  const nip44Decrypt = async (pubkey: string, cipherText: string) => {
+    if (isAnonAccount(account)) {
+      try {
+        return (await createEphemeralSigner().nip44Decrypt(pubkey, cipherText)) ?? ''
+      } catch {
+        return ''
+      }
+    }
+    if (!signer) return ''
+    try {
+      return (await signer.nip44Decrypt(pubkey, cipherText)) ?? ''
+    } catch {
+      return ''
+    }
+  }
+
   const checkLogin = async <T,>(cb?: () => T | Promise<T>): Promise<T | void> => {
     if (account?.signerType === 'npub') {
       if (cb) {
@@ -2638,6 +2666,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   const signHttpAuthStable = useEventCallback(signHttpAuth)
   const nip04EncryptStable = useEventCallback(nip04Encrypt)
   const nip04DecryptStable = useEventCallback(nip04Decrypt)
+  const nip44EncryptStable = useEventCallback(nip44Encrypt)
+  const nip44DecryptStable = useEventCallback(nip44Decrypt)
   const checkLoginStable = useEventCallback(checkLogin)
   const signEventStable = useEventCallback(signEvent)
   const updateRelayListEventStable = useEventCallback(updateRelayListEvent)
@@ -2696,6 +2726,8 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
       signHttpAuth: signHttpAuthStable,
       nip04Encrypt: nip04EncryptStable,
       nip04Decrypt: nip04DecryptStable,
+      nip44Encrypt: nip44EncryptStable,
+      nip44Decrypt: nip44DecryptStable,
       startLogin,
       checkLogin: checkLoginStable,
       signEvent: signEventStable,

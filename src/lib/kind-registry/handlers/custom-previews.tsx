@@ -69,33 +69,33 @@ export function renderWebBookmarkPreview(ctx: RenderCtx) {
 
 export const renderWikiPreviews = {
   article(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} />
+    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
   },
   mergeRequest(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} />
+    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
   },
   mergeAcceptance(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} />
+    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
   },
   redirect(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} />
+    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
   },
   nostrSpec(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} />
+    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
   }
 }
 
 export const renderPublicationPreviews = {
   publication(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} />
+    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
   },
   content(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} />
+    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
   }
 }
 
 export function renderLongFormPreview(ctx: RenderCtx) {
-  return <LongFormCard event={ctx.displayEvent} interactive={false} />
+  return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
 }
 
 export function renderLiveEventPreview(ctx: RenderCtx) {

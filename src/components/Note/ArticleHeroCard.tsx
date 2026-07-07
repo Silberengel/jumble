@@ -2,9 +2,11 @@ import ContentImage from '@/components/Image'
 import UserAvatar from '@/components/UserAvatar'
 import { ExtendedKind } from '@/constants'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
+import { useMediaForceAutoLoad } from '@/providers/MediaAutoLoadEventContext'
+import { subscribeRevealedMedia, wasMediaUrlRevealed } from '@/lib/revealed-media-session'
 import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 /** Cropped hero height for article / link-preview cards (portrait sources are center-cropped). */
 export const ARTICLE_HERO_ASPECT = 'aspect-[2/1] max-h-44 sm:max-h-52'
@@ -41,21 +43,49 @@ function ArticleHeroMedia({
   autoLoadMedia?: boolean
   hideImageIfError?: boolean
 }) {
+  const forceLoad = useMediaForceAutoLoad()
   const autoLoadFromPolicy = useShouldAutoLoadMedia(event.pubkey, event)
-  const autoLoad = autoLoadMedia ?? autoLoadFromPolicy
+  const autoLoad = forceLoad || (autoLoadMedia ?? autoLoadFromPolicy)
   const trimmed = imageUrl?.trim()
+  const [sessionRevealed, setSessionRevealed] = useState(() =>
+    Boolean(trimmed && wasMediaUrlRevealed(trimmed))
+  )
+
+  useEffect(() => {
+    if (!trimmed) {
+      setSessionRevealed(false)
+      return
+    }
+    const sync = () => {
+      if (wasMediaUrlRevealed(trimmed)) setSessionRevealed(true)
+    }
+    sync()
+    return subscribeRevealedMedia(sync)
+  }, [trimmed])
+
+  const showImage = forceLoad || autoLoad || sessionRevealed
 
   if (trimmed) {
+    if (!showImage) {
+      return (
+        <>
+          <div className="absolute inset-0 z-0 bg-muted" aria-hidden />
+          <div className={cn(HERO_GRADIENT, 'z-[1]')} aria-hidden />
+        </>
+      )
+    }
+
     return (
       <>
+        <div className="absolute inset-0 z-0 bg-muted" aria-hidden />
         <ContentImage
           image={{ url: trimmed, pubkey: event.pubkey, dim: ARTICLE_HERO_COVER_DIM }}
           className={ARTICLE_HERO_IMAGE_CLASS}
-          classNames={{ wrapper: ARTICLE_HERO_IMAGE_WRAPPER_CLASS }}
+          classNames={{ wrapper: cn(ARTICLE_HERO_IMAGE_WRAPPER_CLASS, 'z-0') }}
           hideIfError={hideImageIfError}
-          holdUntilClick={!autoLoad}
+          holdUntilClick={false}
         />
-        <div className={HERO_GRADIENT} aria-hidden />
+        <div className={cn(HERO_GRADIENT, 'z-[1]')} aria-hidden />
       </>
     )
   }
@@ -119,7 +149,7 @@ export default function ArticleHeroCard({
             hideImageIfError={hideImageIfError}
           />
           {hasOverlayText ? (
-            <div className="absolute inset-0 z-[1] flex min-h-0 min-w-0 flex-col justify-end p-3 pt-8">
+            <div className="absolute inset-0 z-20 flex min-h-0 min-w-0 flex-col justify-end p-3 pt-8">
               {eyebrow ? <div className="mb-1">{eyebrow}</div> : null}
               {title ? (
                 <div className="line-clamp-2 break-words text-lg font-semibold text-white sm:text-xl">

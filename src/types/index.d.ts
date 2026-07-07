@@ -155,6 +155,10 @@ export type TNip07 = {
     encrypt?: (pubkey: string, plainText: string) => Promise<string>
     decrypt?: (pubkey: string, cipherText: string) => Promise<string>
   }
+  nip44?: {
+    encrypt?: (pubkey: string, plainText: string) => Promise<string>
+    decrypt?: (pubkey: string, cipherText: string) => Promise<string>
+  }
   getRelays?: () => Promise<{ [url: string]: { read: boolean; write: boolean } }>
 }
 
@@ -163,6 +167,8 @@ export interface ISigner {
   signEvent: (draftEvent: TDraftEvent) => Promise<VerifiedEvent>
   nip04Encrypt: (pubkey: string, plainText: string) => Promise<string>
   nip04Decrypt: (pubkey: string, cipherText: string) => Promise<string>
+  nip44Encrypt: (pubkey: string, plainText: string) => Promise<string>
+  nip44Decrypt: (pubkey: string, cipherText: string) => Promise<string>
 }
 
 export type TSignerType =

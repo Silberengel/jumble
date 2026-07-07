@@ -20,6 +20,8 @@ export type RenderCtx = {
   showFull: boolean
   embedded?: boolean
   hideMetadata?: boolean
+  /** Suppress NIP-23 title headings when a parent (e.g. hero card) already shows the title. */
+  hideTitle?: boolean
   autoLoadMedia: boolean
   fullCalendarInvite?: { event: Event; naddr: string }
   nip84HighlightEvents?: Event[]

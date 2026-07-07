@@ -22,6 +22,7 @@ import {
   useNotificationReactionDisplay
 } from '@/hooks/useNotificationReactionDisplay'
 import client from '@/services/client.service'
+import { MediaForceAutoLoadProvider, useMediaForceAutoLoad } from '@/providers/MediaAutoLoadEventContext'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { useContentPolicyOptional } from '@/providers/ContentPolicyProvider'
 import { useMuteListOptional } from '@/contexts/mute-list-context'
@@ -119,7 +120,10 @@ export default function Note({
   const parentFetchRelayHints = useMemo(() => relayHintsFromEventTags(event), [event])
   const contentPolicy = useContentPolicyOptional()
   const defaultShowNsfw = contentPolicy?.defaultShowNsfw ?? true
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
+  const forceLoadFromAncestor = useMediaForceAutoLoad()
+  const autoLoadMediaFromPolicy = useShouldAutoLoadMedia(event.pubkey, event)
+  const autoLoadMedia = autoLoadMediaFromPolicy || showFull || forceLoadFromAncestor
+  const forceMediaForSubtree = !!showFull || forceLoadFromAncestor
   const [showNsfw, setShowNsfw] = useState(false)
   const muteList = useMuteListOptional()
   const mutePubkeySet = muteList?.mutePubkeySet ?? new Set<string>()
@@ -435,10 +439,10 @@ export default function Note({
         <IValue event={event} className="mt-2" />
         {isHighlightableKind && !embedded ? (
           <SelectionHighlightTrigger event={displayEvent} openHighlight={openHighlight}>
-            {content}
+            <MediaForceAutoLoadProvider force={forceMediaForSubtree}>{content}</MediaForceAutoLoadProvider>
           </SelectionHighlightTrigger>
         ) : (
-          content
+          <MediaForceAutoLoadProvider force={forceMediaForSubtree}>{content}</MediaForceAutoLoadProvider>
         )}
       </div>
       {postEditorMounted ? (

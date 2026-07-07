@@ -5,14 +5,18 @@ import { useFetchProfile } from '@/hooks/useFetchProfile'
 import { ExtendedKind } from '@/constants'
 import { getLongFormArticleMetadataFromEvent, dTagToTitleCase } from '@/lib/event-metadata'
 import { cn } from '@/lib/utils'
-import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { Skeleton } from '@/components/ui/skeleton'
 import { ExternalLink } from 'lucide-react'
 import { nip19, type Event } from 'nostr-tools'
-import { useMemo, useEffect, useState } from 'react'
+import { useMemo, useEffect, useState, useCallback } from 'react'
 import Image from '../Image'
 import Username from '../Username'
-import { resolveImwaldRouteSocialCopy } from '@/lib/document-meta'
+import {
+  getSiteOrigin,
+  ogImageAbsoluteUrlForUrl,
+  resolveImwaldRouteSocialCopy
+} from '@/lib/document-meta'
+import { parseSameOriginAppNostrUrl } from '@/lib/nostr-from-http-url'
 import { hasUsableOpenGraphMetadata } from '@/lib/open-graph-preview'
 import { cleanUrl, isSafeMediaUrl } from '@/lib/url'
 import { tagNameEquals } from '@/lib/tag'
@@ -50,36 +54,45 @@ function OpenGraphHeroCard({
   image?: string | null
   className?: string
 }) {
-  const hasImage = Boolean(image && isSafeMediaUrl(image))
-  const onImage = hasImage
+  const hasImageUrl = Boolean(image && isSafeMediaUrl(image))
+  const [heroImageOk, setHeroImageOk] = useState(true)
+  const onHeroImageError = useCallback(() => setHeroImageOk(false), [])
+  useEffect(() => {
+    setHeroImageOk(true)
+  }, [image])
+  const showHeroImage = hasImageUrl && heroImageOk
+  const onImage = showHeroImage
 
   return (
     <div
       className={cn(
         WEB_PREVIEW_CARD,
         'relative w-full border rounded-lg overflow-hidden max-w-full',
-        hasImage ? ARTICLE_HERO_ASPECT : 'bg-card',
+        showHeroImage ? ARTICLE_HERO_ASPECT : 'bg-card',
         className
       )}
       onClick={(e) => e.stopPropagation()}
     >
-      {hasImage && (
+      {showHeroImage && (
         <>
+          <div className="absolute inset-0 z-0 bg-muted" aria-hidden />
           <Image
             image={{ url: image!, dim: ARTICLE_HERO_COVER_DIM }}
             className={ARTICLE_HERO_IMAGE_CLASS}
-            classNames={{ wrapper: ARTICLE_HERO_IMAGE_WRAPPER_CLASS }}
+            classNames={{ wrapper: cn(ARTICLE_HERO_IMAGE_WRAPPER_CLASS, 'z-0') }}
             hideIfError
+            holdUntilClick={false}
+            onFinalError={onHeroImageError}
           />
           <div
-            className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/15"
+            className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-t from-black/90 via-black/50 to-black/15"
             aria-hidden
           />
         </>
       )}
       <div
         className={cn(
-          'relative z-[1] flex min-h-0 min-w-0 flex-col justify-end p-3',
+          'relative z-20 flex min-h-0 min-w-0 flex-col justify-end p-3',
           onImage && 'absolute inset-0'
         )}
       >
@@ -221,29 +234,29 @@ function getTitleWithFallbacks(event: Event | null, eventMetadata: { title?: str
 export default function WebPreview({
   url,
   className,
-  authorPubkey,
-  sourceEvent,
+  authorPubkey: _authorPubkey,
+  sourceEvent: _sourceEvent,
   prefetchedOpenGraph
 }: {
   url: string
   className?: string
+  /** Reserved for per-author media policy on OG hero images. */
   authorPubkey?: string | null
-  /** Note being rendered; content-warning tags block OG/image autoload. */
+  /** Note being rendered; content-warning tags may apply to embedded media. */
   sourceEvent?: Event | null
   /** Skip OG fetch/loading when caller already resolved metadata (e.g. {@link HttpUrlOpenGraphOrLink}). */
   prefetchedOpenGraph?: { title?: string; description?: string; image?: string }
 }) {
-  const autoLoadMedia = useShouldAutoLoadMedia(authorPubkey, sourceEvent)
-
   const cleanedUrl = useMemo(() => cleanUrl(url), [url])
-  /** Link cards and URLs in highlights stay visible on cellular; OG fetch is gated by the same policy as heavy media. */
+  /** OG metadata fetch is independent of tap-to-load media policy (title/description cards always resolve). */
+  const prefetchedHasOg = hasUsableOpenGraphMetadata(prefetchedOpenGraph ?? {})
   const fetchedMetadata = useFetchWebMetadata(cleanedUrl, {
-    fetchEnabled: autoLoadMedia && !prefetchedOpenGraph
+    fetchEnabled: !prefetchedHasOg
   })
   const title = prefetchedOpenGraph?.title ?? fetchedMetadata.title
   const description = prefetchedOpenGraph?.description ?? fetchedMetadata.description
   const image = prefetchedOpenGraph?.image ?? fetchedMetadata.image
-  const ogLoading = prefetchedOpenGraph ? false : fetchedMetadata.ogLoading
+  const ogLoading = prefetchedHasOg ? false : fetchedMetadata.ogLoading
 
   const hostname = useMemo(() => {
     try {
@@ -254,6 +267,16 @@ export default function WebPreview({
   }, [cleanedUrl])
 
   const isInternalAppLink = useMemo(() => hostname === 'jumble.imwald.eu', [hostname])
+
+  /** In-app note/profile routes (e.g. /search/notes/:hex) — fetch Nostr target instead of generic route OG. */
+  const internalAppNostrExtract = useMemo(() => {
+    if (!isInternalAppLink) return null
+    return parseSameOriginAppNostrUrl(cleanedUrl, getSiteOrigin())
+  }, [isInternalAppLink, cleanedUrl])
+  const internalEventPointerId =
+    internalAppNostrExtract?.kind === 'event' ? internalAppNostrExtract.id : null
+  const internalProfilePointerId =
+    internalAppNostrExtract?.kind === 'profile' ? internalAppNostrExtract.id : null
 
   // Extract replaceable event info (d-tag and pubkey) from URL patterns
   // This is separate from nostrIdentifier to allow fetching without kind
@@ -486,13 +509,27 @@ export default function WebPreview({
   
   const nostrType = nostrDetails?.type || null
 
-  // Fetch profile for npub/nprofile
-  const profileId = nostrType === 'npub' || nostrType === 'nprofile' ? (nostrIdentifier || undefined) : undefined
+  const isEventPreviewUrl =
+    nostrType === 'naddr' ||
+    nostrType === 'nevent' ||
+    nostrType === 'note' ||
+    Boolean(internalEventPointerId)
+  const isProfilePreviewUrl =
+    nostrType === 'npub' || nostrType === 'nprofile' || Boolean(internalProfilePointerId)
+
+  // Fetch profile for npub/nprofile (including /users/:id on jumble.imwald.eu)
+  const profileId =
+    nostrType === 'npub' || nostrType === 'nprofile'
+      ? nostrIdentifier || undefined
+      : internalProfilePointerId || undefined
   const { profile: fetchedProfile, isFetching: isFetchingProfile } = useFetchProfile(profileId)
 
-  // Fetch event for naddr/nevent/note
+  // Fetch event for naddr/nevent/note (including /search/notes/:hex on jumble.imwald.eu)
   // If we already fetched a replaceable event, use that; otherwise fetch by identifier
-  const eventId = (nostrType === 'naddr' || nostrType === 'nevent' || nostrType === 'note') ? (nostrIdentifier || undefined) : undefined
+  const eventId =
+    nostrType === 'naddr' || nostrType === 'nevent' || nostrType === 'note'
+      ? nostrIdentifier || undefined
+      : internalEventPointerId || undefined
   const { event: fetchedEventById, isFetching: isFetchingEvent } = useFetchEvent(eventId)
   const fetchedEvent = fetchedReplaceableEvent || fetchedEventById
   const isFetchingEventFinal = isFetchingReplaceableEvent || isFetchingEvent
@@ -523,6 +560,7 @@ export default function WebPreview({
     const matchingImeta = imetaInfos.find(info => cleanUrl(info.url) === cleanedEventImage)
     eventImageThumbnail = matchingImeta?.thumb || eventImage
   }
+  const internalSiteOgImage = isInternalAppLink ? ogImageAbsoluteUrlForUrl(cleanedUrl) : null
   // Prefer the page's own Open Graph / meta when the fetch returns anything useful.
   const hasOpengraphData = !isInternalAppLink && hasUsableOpenGraphMetadata({ title, description, image })
 
@@ -552,14 +590,14 @@ export default function WebPreview({
   // Nostr-enhanced cards only when the target page did not provide usable preview metadata.
   if (!hasOpengraphData) {
     // Enhanced card for event URLs (always show if nostr identifier detected, even while loading)
-    if (nostrType === 'naddr' || nostrType === 'nevent' || nostrType === 'note') {
+    if (isEventPreviewUrl) {
       const eventTypeName = fetchedEvent ? getEventTypeName(fetchedEvent.kind) : null
       const eventSummary = eventMetadata?.summary || description
 
       // Fallback to OG image from website if event doesn't have an image
       // The OG image is already converted to absolute URL by useFetchWebMetadata
       // Prioritize: event image tag > OG image from URL metadata (not favicon)
-      const displayImage = eventImageThumbnail || image
+      const displayImage = eventImageThumbnail || image || internalSiteOgImage
       
       // Truncate original URL to 150 characters
       const truncatedUrl = url.length > 150 ? url.substring(0, 150) + '...' : url
@@ -648,6 +686,7 @@ export default function WebPreview({
           <ArticleHeroCard
             className={cn(WEB_PREVIEW_CARD, 'max-w-full', className)}
             event={fetchedEvent}
+            autoLoadMedia
             imageUrl={displayImage && isSafeMediaUrl(displayImage) ? displayImage : undefined}
             title={
               eventTitle ? (
@@ -691,7 +730,7 @@ export default function WebPreview({
     }
 
     // Enhanced card for profile URLs (loading state)
-    if (nostrType === 'npub' || nostrType === 'nprofile') {
+    if (isProfilePreviewUrl) {
       // Truncate original URL to 150 characters
       const truncatedUrl = url.length > 150 ? url.substring(0, 150) + '...' : url
       
@@ -771,47 +810,17 @@ export default function WebPreview({
         }
       })()
 
-    if (imwaldPreview) {
+    if (imwaldPreview && !isEventPreviewUrl && !isProfilePreviewUrl) {
       return (
-        <div
-          className={cn(
-            WEB_PREVIEW_CARD,
-            'p-3 flex w-full border border-border rounded-lg overflow-hidden gap-3 bg-card bg-gradient-to-r from-primary/[0.07] to-transparent dark:from-primary/15 max-w-full',
-            className
-          )}
-        >
-          <div className="flex-1 min-w-0 overflow-hidden">
-            <div className="flex items-start gap-2 mb-1">
-              <div className="flex-1 min-w-0">
-                <div className="web-preview-title font-display font-semibold text-brand-wordmark truncate">
-                  {imwaldPreview.ogTitle}
-                </div>
-                <div className="web-preview-muted text-muted-foreground line-clamp-3 mt-0.5">
-                  {imwaldPreview.description}
-                </div>
-              </div>
-              <a
-                href={cleanedUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="flex-shrink-0"
-              >
-                <ExternalLink className="w-3 h-3 text-primary" />
-              </a>
-            </div>
-            <hr className="mt-4 mb-2 border-t border-border" />
-            <a
-              href={cleanedUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={(e) => e.stopPropagation()}
-              className="web-preview-muted text-muted-foreground break-all line-clamp-2 block hover:text-foreground hover:underline underline-offset-2 transition-colors"
-            >
-              {cleanedUrl}
-            </a>
-          </div>
-        </div>
+        <OpenGraphHeroCard
+          cleanedUrl={cleanedUrl}
+          url={url}
+          hostname={hostname}
+          title={imwaldPreview.ogTitle}
+          description={imwaldPreview.description}
+          image={ogImageAbsoluteUrlForUrl(cleanedUrl)}
+          className={className}
+        />
       )
     }
 

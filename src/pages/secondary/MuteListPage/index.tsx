@@ -76,7 +76,7 @@ const MuteListPage = forwardRef(({ index, hideTitlebar = false }: { index?: numb
       derivedMutePubkeys: derivedPubkeys,
       indexedDbDecryptedPrivateTags,
       note:
-        'Private mutes live in kind 10000 `content` (NIP-04). Decrypt failures in the console usually mean wrong key, read-only session, or bad/corrupt ciphertext — not necessarily a bad public tag list.'
+        'Private mutes live in kind 10000 `content` (NIP-44, legacy NIP-04). Decrypt failures in the console usually mean wrong key, read-only session, or bad/corrupt ciphertext — not necessarily a bad public tag list.'
     })
     setJsonOpen(true)
   }, [getMutePubkeys, muteListEvent])

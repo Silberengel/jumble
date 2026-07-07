@@ -360,7 +360,11 @@ export default function Image({
   }
 
   const hasHoverTip = Boolean(imgTitle)
-  const showTapToRevealChrome = !showErrorState && !revealed && effectiveHoldUntilClick
+  const urlRevealedInSession = Boolean(url?.trim() && wasMediaUrlRevealed(url))
+  const showTapToRevealChrome =
+    !showErrorState && !revealed && !urlRevealedInSession && effectiveHoldUntilClick
+  const showPreviewInSkeleton =
+    previewUrl && (effectiveHoldUntilClick && !revealed ? false : !revealed || isLoading)
   const tapToRevealLabel = t('Click to load image')
   const showLightboxCursor = Boolean(onClick) && (revealed || !effectiveHoldUntilClick)
 
@@ -391,7 +395,7 @@ export default function Image({
                 !revealed || isLoading ? 'opacity-100' : 'opacity-0'
               )}
             />
-          ) : previewUrl && (!revealed || isLoading) ? (
+          ) : previewUrl && showPreviewInSkeleton ? (
             <img
               src={previewUrl}
               alt=""

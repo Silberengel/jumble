@@ -6,7 +6,7 @@ import { isLikelyWebPageUrl } from '@/lib/url'
 
 export function useFetchWebMetadata(
   url: string,
-  options?: { /** When false, skip OG fetch (e.g. cellular + “Wi‑Fi only” media policy); caller still renders a link card. */ fetchEnabled?: boolean }
+  options?: { /** When false, skip OG fetch (caller already has metadata or URL is not a web page). */ fetchEnabled?: boolean }
 ) {
   const fetchEnabled = options?.fetchEnabled !== false
   const [metadata, setMetadata] = useState<TWebMetadata>({})

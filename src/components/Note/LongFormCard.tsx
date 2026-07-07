@@ -3,6 +3,7 @@ import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { useSecondaryPageOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
+import { useMediaForceAutoLoad } from '@/providers/MediaAutoLoadEventContext'
 import { cn } from '@/lib/utils'
 import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
@@ -17,18 +18,23 @@ export default function LongFormCard({
   event,
   className,
   /** When false (e.g. parent-reply preview strip), card is non-interactive like the old one-line preview. */
-  interactive = true
+  interactive = true,
+  autoLoadMedia: autoLoadMediaProp
 }: {
   event: Event
   className?: string
   interactive?: boolean
+  /** Override feed policy (e.g. ContentPreview sets true). */
+  autoLoadMedia?: boolean
 }) {
   const { t } = useTranslation()
   const secondaryPage = useSecondaryPageOptional()
   const push = secondaryPage?.push ?? ((url: string) => {
     window.location.href = url
   })
-  const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
+  const forceLoad = useMediaForceAutoLoad()
+  const autoLoadFromPolicy = useShouldAutoLoadMedia(event.pubkey, event)
+  const autoLoadMedia = forceLoad || (autoLoadMediaProp ?? autoLoadFromPolicy)
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
   const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()

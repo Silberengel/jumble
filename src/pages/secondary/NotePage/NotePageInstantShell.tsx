@@ -1,4 +1,5 @@
 import ContentPreview from '@/components/ContentPreview'
+import { MediaForceAutoLoadProvider } from '@/providers/MediaAutoLoadEventContext'
 import UserAvatar from '@/components/UserAvatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
@@ -115,12 +116,14 @@ export default function NotePageInstantShell({
         )}
         {(rootEventForStrip || parentEventForStrip) && <Separator className="my-3" />}
         <div className="select-text">
-          <div className="flex items-start gap-2">
-            <UserAvatar userId={event.pubkey} size="normal" className="shrink-0" deferRemoteAvatar={false} />
-            <div className="min-w-0 flex-1">
-              <ContentPreview event={event} className="text-base text-foreground whitespace-pre-wrap break-words" />
+          <MediaForceAutoLoadProvider force>
+            <div className="flex items-start gap-2">
+              <UserAvatar userId={event.pubkey} size="normal" className="shrink-0" deferRemoteAvatar={false} />
+              <div className="min-w-0 flex-1">
+                <ContentPreview event={event} className="text-base text-foreground whitespace-pre-wrap break-words" />
+              </div>
             </div>
-          </div>
+          </MediaForceAutoLoadProvider>
         </div>
       </div>
     </SecondaryPageLayout>
