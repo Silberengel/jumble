@@ -688,6 +688,16 @@ export type PublicationAuthor = {
   role?: string
 }
 
+export type PublicationIdentifier = {
+  /** Raw `i` tag value, e.g. `isbn:0879801220` or `openlibrary:OL45883W`. */
+  value: string
+  scheme: 'openlibrary' | 'isbn' | 'wikidata' | 'other'
+  /** Scheme-specific id (without prefix). */
+  id: string
+  label: string
+  url?: string
+}
+
 export type PublicationSectionRef = {
   coordinate: string
   label?: string
@@ -704,14 +714,70 @@ export type PublicationIndexMetadata = {
   version?: string
   releaseDate?: string
   language?: string
+  identifiers: PublicationIdentifier[]
   sectionCount: number
   sections: PublicationSectionRef[]
+}
+
+/** Resolve a NIP-73 / Open Library style `i` tag value to an external URL. */
+export function resolveExternalIdentifierUrl(value: string): string | undefined {
+  const trimmed = value.trim()
+  const colon = trimmed.indexOf(':')
+  if (colon <= 0) return undefined
+  const scheme = trimmed.slice(0, colon).toLowerCase()
+  const id = trimmed.slice(colon + 1).trim()
+  if (!id) return undefined
+
+  switch (scheme) {
+    case 'openlibrary':
+      return id.startsWith('OL')
+        ? `https://openlibrary.org/works/${id}`
+        : `https://openlibrary.org/${id}`
+    case 'isbn':
+      return `https://openlibrary.org/isbn/${id.replace(/[^0-9Xx]/g, '')}`
+    case 'wikidata':
+      return `https://www.wikidata.org/wiki/${id}`
+    default:
+      return undefined
+  }
+}
+
+function parsePublicationIdentifier(raw: string): PublicationIdentifier | null {
+  const value = raw.trim()
+  if (!value) return null
+  const colon = value.indexOf(':')
+  const schemeRaw = colon > 0 ? value.slice(0, colon).toLowerCase() : 'other'
+  const id = colon > 0 ? value.slice(colon + 1).trim() : value
+  if (!id) return null
+
+  const scheme =
+    schemeRaw === 'openlibrary' || schemeRaw === 'isbn' || schemeRaw === 'wikidata'
+      ? schemeRaw
+      : 'other'
+
+  const label =
+    scheme === 'openlibrary'
+      ? 'Open Library'
+      : scheme === 'isbn'
+        ? `ISBN ${id}`
+        : scheme === 'wikidata'
+          ? 'Wikidata'
+          : value
+
+  return {
+    value,
+    scheme,
+    id,
+    label,
+    url: resolveExternalIdentifierUrl(value)
+  }
 }
 
 /** NKBIP-01 kind 30040 index metadata from tags (content is always empty). */
 export function getPublicationIndexMetadataFromEvent(event: Event): PublicationIndexMetadata {
   const base = getLongFormArticleMetadataFromEvent(event)
   const authors: PublicationAuthor[] = []
+  const identifiers: PublicationIdentifier[] = []
   let source: string | undefined
   let type: string | undefined
   let version: string | undefined
@@ -733,8 +799,11 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
       type = value
     } else if (name === 'version') {
       version = value
-    } else if (name === 'release_date') {
-      releaseDate = value
+    } else if (name === 'release_date' || name === 'published_on') {
+      if (!releaseDate) releaseDate = value
+    } else if (name === 'i') {
+      const parsed = parsePublicationIdentifier(value)
+      if (parsed) identifiers.push(parsed)
     } else if (name === 'l' && !language) {
       language = value
     } else if (name === 'a') {
@@ -784,6 +853,7 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
     version,
     releaseDate,
     language,
+    identifiers,
     sectionCount: sections.length,
     sections
   }

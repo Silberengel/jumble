@@ -48,9 +48,47 @@ describe('getPublicationIndexMetadataFromEvent', () => {
     expect(meta.type).toBe('book')
     expect(meta.version).toBe('1.0')
     expect(meta.summary).toBe('A classic Sanskrit play.')
+    expect(meta.identifiers).toEqual([])
     expect(meta.sectionCount).toBe(2)
     expect(meta.sections[0].label).toBe('Chapter One')
     expect(meta.sections[1].label).toBeUndefined()
+  })
+
+  it('parses i-tag identifiers into linkable chips', () => {
+    const event = indexEvent([
+      ['d', 'opa-OL45883W'],
+      ['title', 'Jane Eyre'],
+      ['i', 'openlibrary:OL45883W'],
+      ['i', 'isbn:0141441143'],
+      ['i', 'wikidata:Q188371'],
+      ['published_on', '1847'],
+      ['a', `30041:${PK}:about`]
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.releaseDate).toBe('1847')
+    expect(meta.identifiers).toEqual([
+      {
+        value: 'openlibrary:OL45883W',
+        scheme: 'openlibrary',
+        id: 'OL45883W',
+        label: 'Open Library',
+        url: 'https://openlibrary.org/works/OL45883W'
+      },
+      {
+        value: 'isbn:0141441143',
+        scheme: 'isbn',
+        id: '0141441143',
+        label: 'ISBN 0141441143',
+        url: 'https://openlibrary.org/isbn/0141441143'
+      },
+      {
+        value: 'wikidata:Q188371',
+        scheme: 'wikidata',
+        id: 'Q188371',
+        label: 'Wikidata',
+        url: 'https://www.wikidata.org/wiki/Q188371'
+      }
+    ])
   })
 
   it('falls back to d-tag title casing', () => {

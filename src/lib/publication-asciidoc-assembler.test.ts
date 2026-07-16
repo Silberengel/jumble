@@ -75,6 +75,55 @@ describe('assemblePublicationAsciidoc', () => {
     expect(assembled.content).toContain('== Introduction')
     expect(assembled.content).toContain('Hello world.')
   })
+
+  it('embeds identifier metadata in title page and document attributes', () => {
+    const coord = `30041:${PK}:about`
+    const root: Event = {
+      id: 'b'.repeat(64),
+      kind: ExtendedKind.PUBLICATION,
+      pubkey: PK,
+      created_at: 100,
+      content: '',
+      tags: [
+        ['d', 'opa-OL45883W'],
+        ['title', 'Jane Eyre'],
+        ['author', 'Charlotte Brontë', 'author'],
+        ['source', 'https://openlibrary.org/works/OL45883W'],
+        ['i', 'openlibrary:OL45883W'],
+        ['i', 'isbn:0141441143'],
+        ['i', 'wikidata:Q188371'],
+        ['t', 'fiction'],
+        ['l', 'en'],
+        ['published_on', '1847'],
+        ['a', coord]
+      ],
+      sig: 'c'.repeat(128)
+    }
+    const about = sectionEvent('about', 'About', 'About this book.')
+    const fetched = new Map<string, Event>([
+      [root.id, root],
+      [`30040:${PK}:opa-OL45883W`, root],
+      [coord, about],
+      [about.id, about]
+    ])
+    const byAddress = new Map<string, Event>([
+      [`30040:${PK}:opa-OL45883W`, root],
+      [coord, about]
+    ])
+
+    const assembled = assemblePublicationAsciidoc(root, fetched, byAddress)
+
+    expect(assembled.content).toContain(':isbn: 0141441143')
+    expect(assembled.content).toContain(':identifier: urn:isbn:0141441143')
+    expect(assembled.content).toContain(':openlibrary: OL45883W')
+    expect(assembled.content).toContain(':wikidata: Q188371')
+    expect(assembled.content).toContain(':keywords: fiction')
+    expect(assembled.content).toContain(':lang: en')
+    expect(assembled.content).toContain('Open Library:')
+    expect(assembled.content).toContain('ISBN:')
+    expect(assembled.content).toContain('Wikidata:')
+    expect(assembled.content).toContain('https://openlibrary.org/works/OL45883W')
+  })
 })
 
 describe('orderedPublicationRefsFromIndex', () => {

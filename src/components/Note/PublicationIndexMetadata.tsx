@@ -186,7 +186,7 @@ export default function PublicationIndexMetadata({
         </div>
       ) : null}
 
-      {metadata.source || tagsComponent || isFull ? (
+      {metadata.source || metadata.identifiers.length > 0 || tagsComponent || isFull ? (
         <div className="flex min-w-0 flex-col gap-2">
           {metadata.source ? (
             <a
@@ -202,6 +202,31 @@ export default function PublicationIndexMetadata({
               <ExternalLink className="size-3.5 shrink-0" aria-hidden />
               <span className="truncate">{sourceHostname(metadata.source)}</span>
             </a>
+          ) : null}
+
+          {metadata.identifiers.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap gap-1.5">
+              {metadata.identifiers.map((identifier) =>
+                identifier.url ? (
+                  <a
+                    key={identifier.value}
+                    href={identifier.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={cn(
+                      'inline-flex max-w-full items-center gap-1 rounded-full bg-muted px-2.5 py-0.5 text-xs text-primary hover:bg-accent',
+                      isFull ? '' : ''
+                    )}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <ExternalLink className="size-3 shrink-0" aria-hidden />
+                    <span className="truncate">{identifier.label}</span>
+                  </a>
+                ) : (
+                  <MetaChip key={identifier.value}>{identifier.label}</MetaChip>
+                )
+              )}
+            </div>
           ) : null}
 
           {tagsComponent}

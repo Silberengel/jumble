@@ -69,6 +69,17 @@ function titlePageRows(metadata: PublicationIndexMetadata): TitlePageRow[] {
   }
   const source = metadata.source?.trim()
   if (source) rows.push({ label: 'Source', value: source, href: source })
+  for (const identifier of metadata.identifiers) {
+    if (identifier.scheme === 'openlibrary') {
+      rows.push({ label: 'Open Library', value: identifier.id, href: identifier.url })
+    } else if (identifier.scheme === 'isbn') {
+      rows.push({ label: 'ISBN', value: identifier.id, href: identifier.url })
+    } else if (identifier.scheme === 'wikidata') {
+      rows.push({ label: 'Wikidata', value: identifier.id, href: identifier.url })
+    } else {
+      rows.push({ label: 'Identifier', value: identifier.value, href: identifier.url })
+    }
+  }
   if (metadata.tags.length > 0) rows.push({ label: 'Keywords', value: metadata.tags.join(', ') })
   return rows
 }
@@ -303,6 +314,29 @@ export function assemblePublicationAsciidoc(
   const language = sanitizeLanguageCode(metadata.language)
   if (language) {
     header.push(`:lang: ${escapeInline(language)}`)
+  }
+  if (metadata.tags.length > 0) {
+    // Feeds dc:subject / PDF keywords via AsciiDoctor backends.
+    header.push(`:keywords: ${escapeInline(metadata.tags.join(', '))}`)
+  }
+  const isbn = metadata.identifiers.find((id) => id.scheme === 'isbn')
+  if (isbn) {
+    header.push(`:isbn: ${escapeInline(isbn.id)}`)
+    header.push(`:identifier: urn:isbn:${escapeInline(isbn.id)}`)
+  } else {
+    const openlibrary = metadata.identifiers.find((id) => id.scheme === 'openlibrary')
+    if (openlibrary) {
+      header.push(`:identifier: openlibrary:${escapeInline(openlibrary.id)}`)
+    } else if (metadata.identifiers[0]) {
+      header.push(`:identifier: ${escapeInline(metadata.identifiers[0].value)}`)
+    }
+  }
+  for (const identifier of metadata.identifiers) {
+    if (identifier.scheme === 'openlibrary') {
+      header.push(`:openlibrary: ${escapeInline(identifier.id)}`)
+    } else if (identifier.scheme === 'wikidata') {
+      header.push(`:wikidata: ${escapeInline(identifier.id)}`)
+    }
   }
   if (image) {
     // Sets the real cover (EPUB cover-image / library thumbnail; PDF cover page). The image-macro
