@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription } from '@/components/ui/drawer'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
-import { Dispatch, useCallback } from 'react'
+import { Dispatch, useCallback, useRef } from 'react'
 import AccountManager from '../AccountManager'
 
 export default function LoginDialog({
@@ -15,6 +15,8 @@ export default function LoginDialog({
   blockClose?: boolean
 }) {
   const { isSmallScreen } = useScreenSize()
+  const setOpenRef = useRef(setOpen)
+  setOpenRef.current = setOpen
 
   const handleOpenChange = useCallback(
     (next: boolean) => {
@@ -23,6 +25,10 @@ export default function LoginDialog({
     },
     [blockClose, setOpen]
   )
+
+  const close = useCallback(() => {
+    setOpenRef.current(false)
+  }, [])
 
   if (isSmallScreen) {
     return (
@@ -33,7 +39,7 @@ export default function LoginDialog({
             <DrawerDescription>Manage your Nostr account and settings</DrawerDescription>
           </DrawerHeader>
           <div className="flex flex-col p-4 gap-4 overflow-auto">
-            <AccountManager close={() => setOpen(false)} />
+            <AccountManager close={close} />
           </div>
         </DrawerContent>
       </Drawer>
@@ -47,7 +53,7 @@ export default function LoginDialog({
           <DialogTitle>Account Manager</DialogTitle>
           <DialogDescription>Manage your Nostr account and settings</DialogDescription>
         </DialogHeader>
-        <AccountManager close={() => setOpen(false)} />
+        <AccountManager close={close} />
       </DialogContent>
     </Dialog>
   )

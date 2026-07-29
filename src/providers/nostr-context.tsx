@@ -57,7 +57,11 @@ export type TNostrContext = {
   ncryptsecLogin: (ncryptsec: string) => Promise<string>
   nip07Login: () => Promise<string | null>
   bunkerLogin: (bunker: string) => Promise<string>
-  nostrConnectionLogin: (clientSecretKey: Uint8Array, connectionString: string) => Promise<string>
+  nostrConnectionLogin: (
+    clientSecretKey: Uint8Array,
+    connectionString: string,
+    abortSignal?: AbortSignal
+  ) => Promise<string>
   npubLogin(npub: string): Promise<string>
   removeAccount: (account: TAccountPointer) => void
   /** Remove locally stored nsec/ncryptsec; account becomes read-only npub until remote login. */

@@ -1,4 +1,5 @@
 import { ISigner, TDraftEvent } from '@/types'
+import { openBunkerAuthUrl } from '@/lib/bunker-auth-url'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
 import { generateSecretKey } from 'nostr-tools'
 import { BunkerSigner as NBunkerSigner, parseBunkerInput } from 'nostr-tools/nip46'
@@ -17,10 +18,15 @@ export class BunkerSigner implements ISigner {
     if (!bunkerPointer) {
       throw new Error('Invalid bunker')
     }
+    if (isInitialConnection && !bunkerPointer.secret) {
+      throw new Error(
+        'This bunker URI has no secret. In Amber, create a bunker connection and paste the full bunker:// link (including &secret=…).'
+      )
+    }
 
     this.signer = NBunkerSigner.fromBunker(this.clientSecretKey, bunkerPointer, {
       onauth: (url) => {
-        window.open(url, '_blank')
+        openBunkerAuthUrl(url)
       }
     })
     if (isInitialConnection) {

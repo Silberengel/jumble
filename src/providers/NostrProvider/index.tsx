@@ -100,6 +100,7 @@ import {
   isAnonSessionPersisted,
   setAnonSessionPersisted
 } from '@/lib/anon-session'
+import { friendlyBunkerLoginError } from '@/lib/bunker-auth-url'
 import { flushSync } from 'react-dom'
 import { toast } from 'sonner'
 import { BunkerSigner } from './bunker.signer'
@@ -1592,24 +1593,32 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
   }
 
   const bunkerLogin = async (bunker: string) => {
-    const bunkerSigner = new BunkerSigner()
-    const pubkey = await bunkerSigner.login(bunker)
-    if (!pubkey) {
-      throw new Error('Invalid bunker')
+    try {
+      const bunkerSigner = new BunkerSigner()
+      const pubkey = await bunkerSigner.login(bunker)
+      if (!pubkey) {
+        throw new Error('Invalid bunker')
+      }
+      const bunkerUrl = new URL(bunker)
+      bunkerUrl.searchParams.delete('secret')
+      return login(bunkerSigner, {
+        pubkey,
+        signerType: 'bunker',
+        bunker: bunkerUrl.toString(),
+        bunkerClientSecretKey: bunkerSigner.getClientSecretKey()
+      })
+    } catch (err) {
+      throw new Error(friendlyBunkerLoginError(err instanceof Error ? err.message : String(err)))
     }
-    const bunkerUrl = new URL(bunker)
-    bunkerUrl.searchParams.delete('secret')
-    return login(bunkerSigner, {
-      pubkey,
-      signerType: 'bunker',
-      bunker: bunkerUrl.toString(),
-      bunkerClientSecretKey: bunkerSigner.getClientSecretKey()
-    })
   }
 
-  const nostrConnectionLogin = async (clientSecretKey: Uint8Array, connectionString: string) => {
+  const nostrConnectionLogin = async (
+    clientSecretKey: Uint8Array,
+    connectionString: string,
+    abortSignal?: AbortSignal
+  ) => {
     const bunkerSigner = new NostrConnectionSigner(clientSecretKey, connectionString)
-    const loginResult = await bunkerSigner.login()
+    const loginResult = await bunkerSigner.login(abortSignal)
     if (!loginResult.pubkey) {
       throw new Error('Invalid bunker')
     }

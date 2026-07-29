@@ -19,15 +19,19 @@ type TAccountManagerPage = 'nsec' | 'bunker' | 'npub' | null
 
 export default function AccountManager({ close }: { close?: () => void }) {
   const [page, setPage] = useState<TAccountManagerPage>(null)
+  const handleLoginSuccess = useCallback(() => {
+    close?.()
+  }, [close])
+  const handleBack = useCallback(() => setPage(null), [])
 
   return (
     <>
       {page === 'nsec' ? (
-        <PrivateKeyLogin back={() => setPage(null)} onLoginSuccess={() => close?.()} />
+        <PrivateKeyLogin back={handleBack} onLoginSuccess={handleLoginSuccess} />
       ) : page === 'bunker' ? (
-        <NostrConnectLogin back={() => setPage(null)} onLoginSuccess={() => close?.()} />
+        <NostrConnectLogin back={handleBack} onLoginSuccess={handleLoginSuccess} />
       ) : page === 'npub' ? (
-        <NpubLogin back={() => setPage(null)} onLoginSuccess={() => close?.()} />
+        <NpubLogin back={handleBack} onLoginSuccess={handleLoginSuccess} />
       ) : (
         <AccountManagerNav setPage={setPage} close={close} />
       )}

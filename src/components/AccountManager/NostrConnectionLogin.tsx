@@ -2,16 +2,17 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Input } from '@/components/ui/input'
 import { DEFAULT_NOSTRCONNECT_RELAY } from '@/constants'
-import { cn } from '@/lib/utils'
+import { friendlyBunkerLoginError } from '@/lib/bunker-auth-url'
+import logger from '@/lib/logger'
+import { cn, isAndroid } from '@/lib/utils'
 import { useNostr } from '@/providers/NostrProvider'
-import { Check, Copy, ScanQrCode } from 'lucide-react'
+import { Check, Copy, ExternalLink, ScanQrCode } from 'lucide-react'
 import { generateSecretKey, getPublicKey } from 'nostr-tools'
 import { createNostrConnectURI, NostrConnectParams } from 'nostr-tools/nip46'
 import QrScanner from 'qr-scanner'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import QrCode from '../QrCode'
-import logger from '@/lib/logger'
 
 export default function NostrConnectLogin({
   back,
@@ -27,12 +28,15 @@ export default function NostrConnectLogin({
   const [copied, setCopied] = useState(false)
   const [errMsg, setErrMsg] = useState<string | null>(null)
   const [nostrConnectionErrMsg, setNostrConnectionErrMsg] = useState<string | null>(null)
+  const [waitingForAmber, setWaitingForAmber] = useState(true)
   const qrContainerRef = useRef<HTMLDivElement>(null)
   const [qrCodeSize, setQrCodeSize] = useState(100)
   const [isScanning, setIsScanning] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const qrScannerRef = useRef<QrScanner | null>(null)
   const qrScannerCheckTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const onLoginSuccessRef = useRef(onLoginSuccess)
+  onLoginSuccessRef.current = onLoginSuccess
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setBunkerInput(e.target.value)
@@ -45,8 +49,10 @@ export default function NostrConnectLogin({
 
     setPending(true)
     bunkerLogin(_bunker)
-      .then(() => onLoginSuccess())
-      .catch((err) => setErrMsg(err.message || 'Login failed'))
+      .then(() => onLoginSuccessRef.current())
+      .catch((err) =>
+        setErrMsg(friendlyBunkerLoginError(err instanceof Error ? err.message : String(err)))
+      )
       .finally(() => setPending(false))
   }
 
@@ -84,25 +90,42 @@ export default function NostrConnectLogin({
     }
 
     return () => {
-      if (qrContainerRef.current) {
-        resizeObserver.unobserve(qrContainerRef.current)
-      }
       resizeObserver.disconnect()
     }
   }, [])
 
+  // Listen for Amber / signer ack. Abort on unmount or when leaving this screen so
+  // parent re-renders (unstable close callbacks) cannot restart a half-open session.
   useEffect(() => {
     if (!loginDetails.privKey || !loginDetails.connectionString) return
+    const abort = new AbortController()
     setNostrConnectionErrMsg(null)
-    nostrConnectionLogin(loginDetails.privKey, loginDetails.connectionString)
-      .then(() => onLoginSuccess())
+    setWaitingForAmber(true)
+    nostrConnectionLogin(loginDetails.privKey, loginDetails.connectionString, abort.signal)
+      .then(() => {
+        if (abort.signal.aborted) return
+        setWaitingForAmber(false)
+        onLoginSuccessRef.current()
+      })
       .catch((err) => {
+        if (abort.signal.aborted) return
+        setWaitingForAmber(false)
         logger.error('NostrConnectionLogin error', { error: err })
         setNostrConnectionErrMsg(
-          err.message ? `${err.message}. Please reload.` : 'Connection failed. Please reload.'
+          err.message
+            ? `${friendlyBunkerLoginError(err.message)}. ${t('Please reload.')}`
+            : t('Connection failed. Please reload.')
         )
       })
-  }, [loginDetails, nostrConnectionLogin, onLoginSuccess])
+    return () => {
+      abort.abort()
+    }
+  }, [loginDetails, nostrConnectionLogin, t])
+
+  const openInAmber = () => {
+    // Match imwald-android: open nostrconnect:// directly so Amber can approve.
+    window.location.href = loginDetails.connectionString
+  }
 
   const copyConnectionString = async () => {
     if (!loginDetails.connectionString) return
@@ -186,12 +209,28 @@ export default function NostrConnectLogin({
     }
   }, [])
 
+  // On Android, open Amber once after the listener is live (imwald-android pattern).
+  const didAutoOpenAmberRef = useRef(false)
+  useEffect(() => {
+    if (!isAndroid() || didAutoOpenAmberRef.current) return
+    didAutoOpenAmberRef.current = true
+    const timer = window.setTimeout(() => {
+      window.location.href = loginDetails.connectionString
+    }, 400)
+    return () => window.clearTimeout(timer)
+  }, [loginDetails.connectionString])
+
   return (
     <div className="relative flex flex-col gap-4">
       <div ref={qrContainerRef} className="flex flex-col items-center w-full space-y-3 mb-3">
         <a href={loginDetails.connectionString} aria-label="Open with Nostr signer app">
           <QrCode size={qrCodeSize} value={loginDetails.connectionString} />
         </a>
+        {waitingForAmber && !nostrConnectionErrMsg && (
+          <div className="text-xs text-muted-foreground text-center pt-1">
+            {t('Waiting for Amber / signer…')}
+          </div>
+        )}
         {nostrConnectionErrMsg && (
           <div className="text-xs text-destructive text-center pt-1">{nostrConnectionErrMsg}</div>
         )}
@@ -212,6 +251,11 @@ export default function NostrConnectLogin({
           <div className="flex-shrink-0">{copied ? <Check size={14} /> : <Copy size={14} />}</div>
         </div>
       </div>
+
+      <Button type="button" variant="secondary" className="w-full" onClick={openInAmber}>
+        <ExternalLink className="mr-2 size-4" aria-hidden />
+        {t('Open Amber')}
+      </Button>
 
       <div className="flex items-center w-full my-4">
         <div className="flex-grow border-t border-border/40"></div>
@@ -239,7 +283,12 @@ export default function NostrConnectLogin({
             </Button>
           </div>
           <Button onClick={() => handleLogin()} disabled={pending}>
-            {pending && <Skeleton className="mr-2 inline-block size-4 shrink-0 rounded-full align-middle" aria-hidden />}
+            {pending && (
+              <Skeleton
+                className="mr-2 inline-block size-4 shrink-0 rounded-full align-middle"
+                aria-hidden
+              />
+            )}
             {t('Login')}
           </Button>
         </div>

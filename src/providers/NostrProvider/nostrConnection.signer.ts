@@ -1,4 +1,5 @@
 import { ISigner, TDraftEvent } from '@/types'
+import { openBunkerAuthUrl } from '@/lib/bunker-auth-url'
 import { bytesToHex } from '@noble/hashes/utils'
 import { BunkerSigner as NBunkerSigner, toBunkerURL } from 'nostr-tools/nip46'
 
@@ -14,7 +15,7 @@ export class NostrConnectionSigner implements ISigner {
     this.connectionString = connectionString
   }
 
-  async login() {
+  async login(abortSignal?: AbortSignal) {
     if (this.pubkey) {
       return {
         bunkerString: this.bunkerString,
@@ -22,11 +23,18 @@ export class NostrConnectionSigner implements ISigner {
       }
     }
 
-    this.signer = await NBunkerSigner.fromURI(this.clientSecretKey, this.connectionString, {
-      onauth: (url) => {
-        window.open(url, '_blank')
-      }
-    })
+    this.signer = await NBunkerSigner.fromURI(
+      this.clientSecretKey,
+      this.connectionString,
+      {
+        // Amber often never answers switch_relays; skip like imwald-android.
+        skipSwitchRelays: true,
+        onauth: (url) => {
+          openBunkerAuthUrl(url)
+        }
+      },
+      abortSignal ?? 300_000
+    )
     this.bunkerString = toBunkerURL(this.signer.bp)
     this.pubkey = await this.signer.getPublicKey()
     return {

@@ -1164,7 +1164,8 @@ export const DEFAULT_NIP_96_SERVICE = 'https://nostr.build'
 export const DEFAULT_NOSTRCONNECT_RELAY = [
   'wss://relay.nsec.app/',
   'wss://bucket.coracle.social/',
-  'wss://thecitadel.nostr1.com/'
+  'wss://thecitadel.nostr1.com/',
+  'wss://pipe.imwald.eu'
 ]
 
 export const POLL_TYPE = {
