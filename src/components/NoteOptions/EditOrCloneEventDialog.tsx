@@ -144,16 +144,22 @@ export type EditOrCloneEventDialogProps =
       open: boolean
       onOpenChange: (open: boolean) => void
       mode: 'create'
+      /** Called after a successful publish (including partial relay success that closes the dialog). */
+      onPublished?: () => void
+      title?: string
     }
   | {
       open: boolean
       onOpenChange: (open: boolean) => void
       mode: TEditOrCloneMode
       sourceEvent: Event
+      /** Called after a successful publish (including partial relay success that closes the dialog). */
+      onPublished?: () => void
+      title?: string
     }
 
 export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProps) {
-  const { open, onOpenChange, mode } = props
+  const { open, onOpenChange, mode, onPublished, title: titleProp } = props
   const isCreate = mode === 'create'
   const sourceEvent = !isCreate ? props.sourceEvent : null
   const isShortNoteAuthorEdit =
@@ -486,6 +492,7 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
             isShortNoteAuthorEdit ? t('Edit published') : t('Post published')
           )
         }
+        onPublished?.()
         onOpenChange(false)
       } catch (e) {
         if (e instanceof AggregateError && (e as any).relayStatuses) {
@@ -505,7 +512,10 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
               duration: 6000
             }
           )
-          if (successCount > 0) onOpenChange(false)
+          if (successCount > 0) {
+            onPublished?.()
+            onOpenChange(false)
+          }
         } else {
           logger.error('Edit/clone publish failed', { error: e })
           showPublishingError(e instanceof Error ? e : String(e))
@@ -516,13 +526,15 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     })
   }
 
-  const title = isCreate
-    ? t('Create custom event')
-    : isShortNoteAuthorEdit
-      ? t('Edit note')
-      : mode === 'edit'
-        ? t('Edit this event')
-        : t('Fork this event')
+  const title =
+    titleProp ??
+    (isCreate
+      ? t('Create custom event')
+      : isShortNoteAuthorEdit
+        ? t('Edit note')
+        : mode === 'edit'
+          ? t('Edit this event')
+          : t('Fork this event'))
 
   const insertComposerText = useCallback(
     (txt: string) => {

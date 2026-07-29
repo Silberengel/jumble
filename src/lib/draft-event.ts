@@ -1597,6 +1597,7 @@ async function enrichCommentThreadRootFromContext(
 
 function extractHashtags(content: string) {
   const hashtags: string[] = []
+  const seen = new Set<string>()
   // Match hashtags including hyphens, underscores, and unicode characters
   // But stop at whitespace or common punctuation
   const matches = content.match(/#[\p{L}\p{N}\p{M}_-]+/gu)
@@ -1604,13 +1605,26 @@ function extractHashtags(content: string) {
     const hashtag = m.slice(1)
     // Use shared normalization function (without space replacement for content hashtags)
     const normalized = normalizeHashtag(hashtag, false)
-    
+
     // Only add if not empty (normalizeHashtag already filters out pure numbers)
-    if (normalized) {
+    if (normalized && !seen.has(normalized)) {
+      seen.add(normalized)
       hashtags.push(normalized)
     }
   })
   return hashtags
+}
+
+/** Append `t` tags for values not already present (case-normalized). */
+function appendUniqueTTags(tags: string[][], values: string[]) {
+  const existing = new Set(
+    tags.filter((tag) => tag[0] === 't' && tag[1]).map((tag) => tag[1]!.toLowerCase())
+  )
+  for (const value of values) {
+    if (!value || existing.has(value.toLowerCase())) continue
+    existing.add(value.toLowerCase())
+    tags.push(buildTTag(value))
+  }
 }
 
 function extractImagesFromContent(content: string) {
@@ -2313,13 +2327,12 @@ export async function createLongFormArticleDraftEvent(
     tags.push(['published_at', options.publishedAt.toString()])
   }
   tags.push(...emojiTags)
-  tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
-  // Add topics as t-tags directly
+  appendUniqueTTags(tags, hashtags)
   if (options.topics && options.topics.length > 0) {
     const normalizedTopics = options.topics
-      .map(topic => normalizeTopic(topic.trim()))
-      .filter(topic => topic.length > 0)
-    tags.push(...normalizedTopics.map((topic) => buildTTag(topic)))
+      .map((topic) => normalizeTopic(topic.trim()))
+      .filter((topic) => topic.length > 0)
+    appendUniqueTTags(tags, normalizedTopics)
   }
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
@@ -2390,13 +2403,12 @@ export async function createWikiArticleDraftEvent(
     tags.push(['e', options.forkSource.eventId, options.forkSource.relayHint ?? '', 'fork'])
   }
   tags.push(...emojiTags)
-  tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
-  // Add topics as t-tags directly
+  appendUniqueTTags(tags, hashtags)
   if (options.topics && options.topics.length > 0) {
     const normalizedTopics = options.topics
-      .map(topic => normalizeTopic(topic.trim()))
-      .filter(topic => topic.length > 0)
-    tags.push(...normalizedTopics.map((topic) => buildTTag(topic)))
+      .map((topic) => normalizeTopic(topic.trim()))
+      .filter((topic) => topic.length > 0)
+    appendUniqueTTags(tags, normalizedTopics)
   }
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
@@ -2595,13 +2607,12 @@ export async function createNostrSpecificationDraftEvent(
     }
   }
   tags.push(...emojiTags)
-  tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
-  // Add topics as t-tags directly
+  appendUniqueTTags(tags, hashtags)
   if (options.topics && options.topics.length > 0) {
     const normalizedTopics = options.topics
-      .map(topic => normalizeTopic(topic.trim()))
-      .filter(topic => topic.length > 0)
-    tags.push(...normalizedTopics.map((topic) => buildTTag(topic)))
+      .map((topic) => normalizeTopic(topic.trim()))
+      .filter((topic) => topic.length > 0)
+    appendUniqueTTags(tags, normalizedTopics)
   }
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   
@@ -2650,13 +2661,12 @@ export async function createPublicationContentDraftEvent(
     tags.push(['image', options.image])
   }
   tags.push(...emojiTags)
-  tags.push(...hashtags.map((hashtag) => buildTTag(hashtag)))
-  // Add topics as t-tags directly
+  appendUniqueTTags(tags, hashtags)
   if (options.topics && options.topics.length > 0) {
     const normalizedTopics = options.topics
-      .map(topic => normalizeTopic(topic.trim()))
-      .filter(topic => topic.length > 0)
-    tags.push(...normalizedTopics.map((topic) => buildTTag(topic)))
+      .map((topic) => normalizeTopic(topic.trim()))
+      .filter((topic) => topic.length > 0)
+    appendUniqueTTags(tags, normalizedTopics)
   }
   tags.push(...mentions.map((pubkey) => buildPTag(pubkey)))
   

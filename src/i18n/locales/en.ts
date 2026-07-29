@@ -1974,6 +1974,10 @@ export default {
     "Your unsaved draft will be lost.": "Your unsaved draft will be lost.",
     "Keep editing": "Keep editing",
     Discard: "Discard",
+    "Too many topic tags": "Too many topic tags",
+    "Some clients limit the visibility of events that have more than 5-10 t-tags. Do you want to publish, anyway, or would you like to edit your event?":
+      "Some clients limit the visibility of events that have more than 5-10 t-tags. Do you want to publish, anyway, or would you like to edit your event?",
+    "Edit Event": "Edit Event",
     "RSS article": "RSS article",
     "Suggested topics": "Suggested topics",
     "Synthetic event (no author)": "Synthetic event (no author)",

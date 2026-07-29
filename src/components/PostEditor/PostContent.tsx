@@ -109,13 +109,23 @@ import { TDraftEvent } from '@/types'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Switch } from '@/components/ui/switch'
 import { DISCUSSION_TOPICS } from '@/pages/primary/DiscussionsPage/discussionTopics'
-import { getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
+import { createFakeEvent, getReplaceableCoordinateFromEvent, isReplaceableEvent } from '@/lib/event'
 import { Event, kinds } from 'nostr-tools'
 import { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { showPublishingFeedback, showSimplePublishSuccess, showPublishingError } from '@/lib/publishing-feedback'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '@/components/ui/alert-dialog'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { extractMentions } from './Mentions'
 import PollEditor from './PollEditor'
@@ -390,6 +400,11 @@ export default function PostContent({
   const isComposerEditTab = composerEditorTab === 'edit'
   const mediaUploaderBtnRef = useRef<HTMLButtonElement>(null)
   const [posting, setPosting] = useState(false)
+  const [tooManyTTagsWarningOpen, setTooManyTTagsWarningOpen] = useState(false)
+  const allowExcessTTagsRef = useRef(false)
+  const pendingTooManyTagsDraftRef = useRef<TDraftEvent | null>(null)
+  const [handEditSourceEvent, setHandEditSourceEvent] = useState<Event | null>(null)
+  const [handEditEventOpen, setHandEditEventOpen] = useState(false)
   const [uploadProgresses, setUploadProgresses] = useState<
     { file: File; progress: number; cancel: () => void; phase: 'compressing' | 'uploading' }[]
   >([])
@@ -1880,6 +1895,15 @@ export default function PostContent({
           tagCount: draftEvent.tags?.length ?? 0
         })
 
+        const tTagCount = (draftEvent.tags ?? []).filter((tag: string[]) => tag[0] === 't').length
+        if (tTagCount > 5 && !allowExcessTTagsRef.current) {
+          pendingTooManyTagsDraftRef.current = draftEvent
+          setTooManyTTagsWarningOpen(true)
+          return
+        }
+        allowExcessTTagsRef.current = false
+        pendingTooManyTagsDraftRef.current = null
+
         const publishSuccessMessage = parentEvent
           ? t('Reply published')
           : isDiscussionThread && !parentEvent
@@ -2061,6 +2085,31 @@ export default function PostContent({
 
   const postRef = useRef(post)
   postRef.current = post
+
+  const handleEditEventFromTooManyTags = useCallback(() => {
+    const draft = pendingTooManyTagsDraftRef.current
+    // Close Advanced Lab so it cannot override / re-merge tags on the next publish.
+    pendingLabOpenRef.current = null
+    if (advancedLabHostRef.current?.advancedLabOpenRef.current) {
+      advancedLabHostRef.current.handleLabOpenChange(false, () => setShowMoreOptions(false))
+    }
+    postEditorCache.clearAdvancedLabDraft(advancedLabPersistenceKey)
+    setTooManyTTagsWarningOpen(false)
+
+    if (!draft) return
+
+    // Open hand tag editor with the exact draft tags (no re-extraction from content/topics).
+    setHandEditSourceEvent(
+      createFakeEvent({
+        kind: draft.kind,
+        content: draft.content,
+        tags: (draft.tags ?? []).map((row) => [...row]),
+        pubkey: pubkey ?? '',
+        created_at: draft.created_at
+      })
+    )
+    setHandEditEventOpen(true)
+  }, [advancedLabPersistenceKey, pubkey])
 
   useEffect(() => {
     if (!onPublishRequestRef) return
@@ -4816,6 +4865,52 @@ export default function PostContent({
         onOpenChange={setCreateCustomEventOpen}
         mode="create"
       />
+      {handEditSourceEvent ? (
+        <EditOrCloneEventDialog
+          open={handEditEventOpen}
+          onOpenChange={(open) => {
+            setHandEditEventOpen(open)
+            if (!open) {
+              setHandEditSourceEvent(null)
+              pendingTooManyTagsDraftRef.current = null
+            }
+          }}
+          mode="clone"
+          sourceEvent={handEditSourceEvent}
+          title={t('Edit this event')}
+          onPublished={() => {
+            discardPublishedDraft()
+            onPublishSuccess?.()
+            close()
+          }}
+        />
+      ) : null}
+      <AlertDialog open={tooManyTTagsWarningOpen} onOpenChange={setTooManyTTagsWarningOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('Too many topic tags')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t(
+                'Some clients limit the visibility of events that have more than 5-10 t-tags. Do you want to publish, anyway, or would you like to edit your event?'
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleEditEventFromTooManyTags}>
+              {t('Edit Event')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                allowExcessTTagsRef.current = true
+                setTooManyTTagsWarningOpen(false)
+                void post()
+              }}
+            >
+              {t('Publish')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </NeventPickerProvider>
     </div>
   )

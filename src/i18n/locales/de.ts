@@ -1975,6 +1975,10 @@ export default {
     "Your unsaved draft will be lost.": "Ihr unerretteter Entwurf wird verloren gehen.",
     "Keep editing": "Bearbeiten",
     Discard: "Rückwurf",
+    "Too many topic tags": "Zu viele Themen-Tags",
+    "Some clients limit the visibility of events that have more than 5-10 t-tags. Do you want to publish, anyway, or would you like to edit your event?":
+      "Einige Clients schränken die Sichtbarkeit von Events mit mehr als 5–10 t-Tags ein. Möchten Sie trotzdem veröffentlichen, oder möchten Sie Ihr Event bearbeiten?",
+    "Edit Event": "Event bearbeiten",
     "RSS article": "RSS-Artikel",
     "Suggested topics": "Vorgeschlagene Themen",
     "Synthetic event (no author)": "Synthetische Veranstaltung (kein Autor)",
