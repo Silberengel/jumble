@@ -581,7 +581,12 @@ export default function EditOrCloneEventDialog(props: EditOrCloneEventDialogProp
     <NeventPickerProvider>
     <>
     <Dialog open={open} onOpenChange={handleDialogOpenChange}>
-      <DialogContent className="max-h-[90vh] w-[95vw] max-w-3xl flex flex-col gap-0 p-0 overflow-hidden">
+      {/* Above PostEditor (z-[201]) and the too-many-tags alert (z-[250]) when nested. */}
+      <DialogContent
+        className="z-[280] max-h-[90vh] w-[95vw] max-w-3xl flex flex-col gap-0 p-0 overflow-hidden"
+        overlayClassName="z-[275]"
+        composerNestedShell
+      >
         <DialogHeader className="shrink-0 px-6 pt-6 pb-2 pr-14">
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription className="sr-only">

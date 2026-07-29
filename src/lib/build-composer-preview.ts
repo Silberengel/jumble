@@ -1,6 +1,8 @@
 import { ExtendedKind, POLL_TYPE } from '@/constants'
 import {
+  appendUniqueTTags,
   buildClientTag,
+  extractHashtags,
   stripImwaldAttributionTags,
   transformCustomEmojisInContent
 } from '@/lib/draft-event'
@@ -140,8 +142,10 @@ export function buildComposerPreviewBaseTags(
     webBookmarkData,
     extraPreviewTags
   } = input
-  const { emojiTags, highlightTags, pollTags } = processed
+  const { emojiTags, highlightTags, pollTags, content: processedContent } = processed
   const tags = [...emojiTags, ...highlightTags, ...pollTags]
+  // Match publish drafts: content `#hashtags` become `t` tags.
+  appendUniqueTTags(tags, extractHashtags(processedContent))
 
   if (mediaImetaTags && mediaImetaTags.length > 0) {
     tags.push(...mediaImetaTags)
@@ -169,7 +173,7 @@ export function buildComposerPreviewBaseTags(
       const normalizedTopics = articleMetadata.topics
         .map((topic) => normalizeTopic(topic.trim()))
         .filter((topic) => topic.length > 0)
-      tags.push(...normalizedTopics.map((topic) => ['t', topic]))
+      appendUniqueTTags(tags, normalizedTopics)
     }
   }
 
@@ -177,7 +181,7 @@ export function buildComposerPreviewBaseTags(
     if (musicTrackMetadata.dTag) tags.push(['d', musicTrackMetadata.dTag])
     if (musicTrackMetadata.title) tags.push(['title', musicTrackMetadata.title])
     if (musicTrackMetadata.audioUrl) tags.push(['url', musicTrackMetadata.audioUrl])
-    tags.push(['t', 'music'])
+    appendUniqueTTags(tags, ['music'])
     if (musicTrackMetadata.artist) tags.push(['artist', musicTrackMetadata.artist])
     if (musicTrackMetadata.imageUrl) tags.push(['image', musicTrackMetadata.imageUrl])
     if (musicTrackMetadata.album) tags.push(['album', musicTrackMetadata.album])
@@ -187,10 +191,10 @@ export function buildComposerPreviewBaseTags(
     if (musicTrackMetadata.format) tags.push(['format', musicTrackMetadata.format])
     if (musicTrackMetadata.language) tags.push(['language', musicTrackMetadata.language])
     if (musicTrackMetadata.genres?.length) {
-      for (const g of musicTrackMetadata.genres) {
-        const topic = normalizeTopic(g.trim())
-        if (topic && topic !== 'music') tags.push(['t', topic])
-      }
+      const genres = musicTrackMetadata.genres
+        .map((g) => normalizeTopic(g.trim()))
+        .filter((topic) => topic.length > 0 && topic !== 'music')
+      appendUniqueTTags(tags, genres)
     }
   }
 

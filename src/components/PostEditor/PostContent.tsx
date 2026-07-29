@@ -4886,7 +4886,8 @@ export default function PostContent({
         />
       ) : null}
       <AlertDialog open={tooManyTTagsWarningOpen} onOpenChange={setTooManyTTagsWarningOpen}>
-        <AlertDialogContent>
+        {/* Above PostEditor dialog (z-[200]/z-[201]) so the warning is visible and clickable. */}
+        <AlertDialogContent className="z-[250]" overlayClassName="z-[249]">
           <AlertDialogHeader>
             <AlertDialogTitle>{t('Too many topic tags')}</AlertDialogTitle>
             <AlertDialogDescription>

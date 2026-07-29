@@ -1595,7 +1595,8 @@ async function enrichCommentThreadRootFromContext(
   }
 }
 
-function extractHashtags(content: string) {
+/** Extract unique normalized hashtags from note/article content (`#tag` → `tag`). */
+export function extractHashtags(content: string) {
   const hashtags: string[] = []
   const seen = new Set<string>()
   // Match hashtags including hyphens, underscores, and unicode characters
@@ -1616,7 +1617,7 @@ function extractHashtags(content: string) {
 }
 
 /** Append `t` tags for values not already present (case-normalized). */
-function appendUniqueTTags(tags: string[][], values: string[]) {
+export function appendUniqueTTags(tags: string[][], values: string[]) {
   const existing = new Set(
     tags.filter((tag) => tag[0] === 't' && tag[1]).map((tag) => tag[1]!.toLowerCase())
   )
