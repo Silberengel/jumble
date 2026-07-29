@@ -84,6 +84,33 @@ function truncateLinkText(text: string, maxLength: number = 200): string {
   return text.substring(0, maxLength) + '...'
 }
 
+/** AsciiDoc list item (`* item` / `. item`, including nested). */
+function isAsciidocListLine(line: string): boolean {
+  return /^[\*\.]+ .+/.test(line)
+}
+
+/**
+ * AsciiDoc requires a blank line before a list; Wikipedia dab leads often omit it
+ * ("may refer to:" then "* [[Link]]"), which collapses into the prior paragraph.
+ */
+function ensureBlankLineBeforeAsciidocLists(text: string): string {
+  const lines = text.split('\n')
+  const out: string[] = []
+  for (const line of lines) {
+    const prev = out.length > 0 ? out[out.length - 1] : undefined
+    if (
+      prev !== undefined &&
+      prev.trim() !== '' &&
+      !isAsciidocListLine(prev) &&
+      isAsciidocListLine(line)
+    ) {
+      out.push('')
+    }
+    out.push(line)
+  }
+  return out.join('\n')
+}
+
 function inlineCodePlaceholder(index: number): string {
   return `@@JUMBLE_INLINE_CODE_${index}@@`
 }
@@ -411,6 +438,10 @@ export default function AsciidocArticle({
     // Normalize excessive newlines (reduce 3+ to 2)
     content = content.replace(/\n\s*\n\s*\n+/g, '\n\n')
 
+    // AsciiDoc needs a blank line before lists; wiki dab leads often omit it
+    // ("may refer to:\n* item"), which collapses lists into the prior paragraph.
+    content = ensureBlankLineBeforeAsciidocLists(content)
+
     const nativeAsciidoc = looksLikeNativeAsciidoc(content)
     const { text: shielded, blocks: verbatimBlocks } = protectAsciiDocVerbatimRegions(content)
     let work = shielded
@@ -431,17 +462,18 @@ export default function AsciidocArticle({
     })
     
     // Then protect regular wikilinks by converting them to passthrough format
-    // This prevents AsciiDoc from processing them and prevents URLs inside from being processed
+    // This prevents AsciiDoc from processing them and prevents URLs inside from being processed.
+    // Use START/END markers (like citations) so spaced titles survive HTML round-trip —
+    // a bare `WIKILINK:Perry High School` cannot be re-parsed if we stop at whitespace.
     work = work.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
       // Skip citations - they're already processed above
       if (linkContent.startsWith('citation::')) {
         return match
       }
-      if (shouldLeaveDoubleBracketForAsciidoctor(content, offset, match.length, linkContent)) {
+      if (shouldLeaveDoubleBracketForAsciidoctor(work, offset, match.length, linkContent)) {
         return match
       }
-      // Convert to AsciiDoc passthrough format so it's preserved
-      return `+++WIKILINK:${linkContent}+++`
+      return `+++WIKILINK_MARKER:${linkContent}:WIKILINK_END+++`
     })
     
     // Convert markdown syntax to AsciiDoc only when the body is not already AsciiDoc
@@ -894,11 +926,17 @@ export default function AsciidocArticle({
           return `<div data-latex-block="${escaped}" class="latex-block-placeholder my-4"></div>`
         })
         
-        // Handle wikilinks - convert passthrough markers to placeholders
-        // AsciiDoc passthrough +++WIKILINK:link|display+++ outputs just WIKILINK:link|display in HTML
-        // Match WIKILINK: followed by any characters (including |) until end of text or HTML tag
+        // Handle wikilinks - convert passthrough markers to placeholders.
+        // Prefer delimited form (spaces/pipes safe). Also accept legacy `WIKILINK:slug`
+        // markers from older content that used unspaced targets only.
+        htmlString = htmlString.replace(
+          /WIKILINK_MARKER:([\s\S]*?):WIKILINK_END/g,
+          (_match, linkContent) => {
+            const escaped = linkContent.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+            return `<span data-wikilink="${escaped}" class="wikilink-placeholder"></span>`
+          }
+        )
         htmlString = htmlString.replace(/WIKILINK:([^<>\s]+)/g, (_match, linkContent) => {
-          // Escape special characters for HTML attributes
           const escaped = linkContent.replace(/"/g, '&quot;').replace(/'/g, '&#39;')
           return `<span data-wikilink="${escaped}" class="wikilink-placeholder"></span>`
         })

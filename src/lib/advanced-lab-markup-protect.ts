@@ -727,12 +727,20 @@ function collectWikiDoubleBracketRanges(text: string, merged: [number, number][]
   return ranges
 }
 
-/** `wikilink:dtag[label]` (post-processed wiki). */
+/**
+ * Wiki passthrough markers: delimited `WIKILINK_MARKER:…:WIKILINK_END`
+ * (spaces/pipes safe) and legacy `WIKILINK:slug` / `WIKILINK:slug[label]`.
+ */
 function collectWikilinkMarkerRanges(text: string, merged: [number, number][]): [number, number][] {
   const ranges: [number, number][] = []
-  const re = /\bWIKILINK:([^\s[\n]+)(?:\[[^\]]*\])?/g
+  const delimited = /WIKILINK_MARKER:[\s\S]*?:WIKILINK_END/g
   let m: RegExpExecArray | null
-  while ((m = re.exec(text))) {
+  while ((m = delimited.exec(text))) {
+    const s = m.index
+    if (!posInMerged(s, merged)) ranges.push([s, s + m[0].length])
+  }
+  const legacy = /\bWIKILINK:([^\s[\n]+)(?:\[[^\]]*\])?/g
+  while ((m = legacy.exec(text))) {
     const s = m.index
     if (!posInMerged(s, merged)) ranges.push([s, s + m[0].length])
   }

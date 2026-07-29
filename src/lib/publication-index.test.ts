@@ -52,6 +52,23 @@ describe('publication-index', () => {
     expect(filterValidIndexEvents([withContent, noTitle])).toHaveLength(0)
   })
 
+  it('filterValidIndexEvents accepts catalog cards with no section refs', () => {
+    const catalogOnly = finalizeEvent(
+      {
+        kind: ExtendedKind.PUBLICATION,
+        created_at: 100,
+        content: '',
+        tags: [
+          ['d', 'opa-ol1w-stub'],
+          ['title', 'Catalog Stub'],
+          ['summary', 'A short blurb for the card.']
+        ]
+      },
+      sk
+    )
+    expect(filterValidIndexEvents([catalogOnly])).toHaveLength(1)
+  })
+
   it('getTopLevelIndexEvents excludes nested 30040 children', () => {
     const childAddr = `30040:${PK}:part-1`
     const root = indexEvent('book', [childAddr, `30041:${PK}:intro`])

@@ -691,7 +691,7 @@ export type PublicationAuthor = {
 export type PublicationIdentifier = {
   /** Raw `i` tag value, e.g. `isbn:0879801220` or `openlibrary:OL45883W`. */
   value: string
-  scheme: 'openlibrary' | 'isbn' | 'wikidata' | 'other'
+  scheme: 'openlibrary' | 'isbn' | 'wikidata' | 'overdrive' | 'other'
   /** Scheme-specific id (without prefix). */
   id: string
   label: string
@@ -737,6 +737,8 @@ export function resolveExternalIdentifierUrl(value: string): string | undefined 
       return `https://openlibrary.org/isbn/${id.replace(/[^0-9Xx]/g, '')}`
     case 'wikidata':
       return `https://www.wikidata.org/wiki/${id}`
+    case 'overdrive':
+      return `https://share.libbyapp.com/title/${encodeURIComponent(id)}`
     default:
       return undefined
   }
@@ -751,7 +753,10 @@ function parsePublicationIdentifier(raw: string): PublicationIdentifier | null {
   if (!id) return null
 
   const scheme =
-    schemeRaw === 'openlibrary' || schemeRaw === 'isbn' || schemeRaw === 'wikidata'
+    schemeRaw === 'openlibrary' ||
+    schemeRaw === 'isbn' ||
+    schemeRaw === 'wikidata' ||
+    schemeRaw === 'overdrive'
       ? schemeRaw
       : 'other'
 
@@ -762,7 +767,9 @@ function parsePublicationIdentifier(raw: string): PublicationIdentifier | null {
         ? `ISBN ${id}`
         : scheme === 'wikidata'
           ? 'Wikidata'
-          : value
+          : scheme === 'overdrive'
+            ? 'Borrow in Libby'
+            : value
 
   return {
     value,
@@ -802,8 +809,14 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
     } else if (name === 'release_date' || name === 'published_on') {
       if (!releaseDate) releaseDate = value
     } else if (name === 'i') {
+      const hint = tag[2]?.trim()
       const parsed = parsePublicationIdentifier(value)
-      if (parsed) identifiers.push(parsed)
+      if (parsed) {
+        if (hint && /^https?:\/\//i.test(hint)) {
+          parsed.url = hint
+        }
+        identifiers.push(parsed)
+      }
     } else if (name === 'l' && !language) {
       language = value
     } else if (name === 'a') {

@@ -61,6 +61,11 @@ describe('getPublicationIndexMetadataFromEvent', () => {
       ['i', 'openlibrary:OL45883W'],
       ['i', 'isbn:0141441143'],
       ['i', 'wikidata:Q188371'],
+      [
+        'i',
+        'overdrive:550e8400-e29b-41d4-a716-446655440000',
+        'https://share.libbyapp.com/title/550e8400-e29b-41d4-a716-446655440000'
+      ],
       ['published_on', '1847'],
       ['a', `30041:${PK}:about`]
     ])
@@ -87,6 +92,13 @@ describe('getPublicationIndexMetadataFromEvent', () => {
         id: 'Q188371',
         label: 'Wikidata',
         url: 'https://www.wikidata.org/wiki/Q188371'
+      },
+      {
+        value: 'overdrive:550e8400-e29b-41d4-a716-446655440000',
+        scheme: 'overdrive',
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        label: 'Borrow in Libby',
+        url: 'https://share.libbyapp.com/title/550e8400-e29b-41d4-a716-446655440000'
       }
     ])
   })

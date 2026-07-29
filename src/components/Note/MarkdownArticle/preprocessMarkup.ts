@@ -124,7 +124,7 @@ export function preprocessMarkdownMediaLinks(content: string): string {
  * - Videos: https://example.com/video.mp4 -> video::https://example.com/video.mp4[]
  * - Audio: https://example.com/audio.mp3 -> audio::https://example.com/audio.mp3[]
  * - Hyperlinks: https://example.com/page -> https://example.com/page[link text]
- * - Wikilinks: [[link]] or [[link|display]] -> +++WIKILINK:link|display+++ (passthrough for post-processing)
+ * - Wikilinks: [[link]] or [[link|display]] -> +++WIKILINK_MARKER:link|display:WIKILINK_END+++ (passthrough for post-processing)
  */
 export function preprocessAsciidocMediaLinks(content: string): string {
   let processed = content
@@ -133,7 +133,7 @@ export function preprocessAsciidocMediaLinks(content: string): string {
   // to prevent AsciiDoc from converting them to regular links. We skip wikilink processing here.
   
   // Skip any remaining wikilinks (they should already be processed, but safety check)
-  if (!processed.includes('WIKILINK:')) {
+  if (!processed.includes('WIKILINK_MARKER:') && !processed.includes('WIKILINK:')) {
     // Fallback: protect regular wikilinks if they weren't processed yet
     processed = processed.replace(/\[\[([^\]]+)\]\]/g, (match, linkContent, offset) => {
       if (linkContent.startsWith('citation::')) {
@@ -142,7 +142,7 @@ export function preprocessAsciidocMediaLinks(content: string): string {
       if (shouldLeaveDoubleBracketForAsciidoctor(processed, offset, match.length, linkContent)) {
         return match
       }
-      return `+++WIKILINK:${linkContent}+++`
+      return `+++WIKILINK_MARKER:${linkContent}:WIKILINK_END+++`
     })
   }
   
@@ -151,7 +151,11 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     const urlEnd = index + url.length
     const beforeUrl = content.substring(Math.max(0, index - 100), index)
     const afterUrl = content.substring(urlEnd, Math.min(content.length, urlEnd + 100))
-    if (beforeUrl.includes('WIKILINK:') || afterUrl.includes('+++')) {
+    if (
+      beforeUrl.includes('WIKILINK_MARKER:') ||
+      beforeUrl.includes('WIKILINK:') ||
+      afterUrl.includes('+++')
+    ) {
       return false
     }
     return true

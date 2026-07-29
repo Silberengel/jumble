@@ -156,6 +156,12 @@ describe('getMarkupProtectRanges', () => {
     expect(merged.some(([a, b]) => b - a === wiki.length)).toBe(true)
   })
 
+  it('freezes delimited WIKILINK_MARKER', () => {
+    const wiki = 'WIKILINK_MARKER:Perry High School (Perry, Iowa):WIKILINK_END'
+    const merged = getMarkupProtectRanges(wiki, 'markdown')
+    expect(merged.some(([a, b]) => b - a === wiki.length)).toBe(true)
+  })
+
   it('freezes link: and menu: bracket macros in markdown', () => {
     const t = 'link:https://x.com[Go] menu:File[Quit]'
     const merged = getMarkupProtectRanges(t, 'markdown')
