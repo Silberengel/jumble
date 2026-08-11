@@ -1,6 +1,6 @@
 {
   "name": "imwald",
-  "version": "25.8.2",
+  "version": "25.8.3",
   "description": "Imwald — a user-friendly Nostr client focused on relay feed browsing, publications, and relay discovery",
   "private": true,
   "type": "module",
@@ -73,6 +73,7 @@
     "@radix-ui/react-tabs": "^1.1.2",
     "@scure/base": "^2.0.0",
     "@tailwindcss/typography": "^0.5.16",
+    "@tanstack/react-virtual": "^3.14.9",
     "@tiptap/core": "^2.12.0",
     "@tiptap/extension-document": "^2.12.0",
     "@tiptap/extension-emoji": "^2.26.1",

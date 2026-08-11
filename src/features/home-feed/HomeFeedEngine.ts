@@ -15,8 +15,12 @@ import type { HomeFeedDescriptorBundle } from './buildHomeFeedDescriptor'
 import {
   HOME_FEED_EMPTY_PAGE_THRESHOLD,
   HOME_FEED_EVENT_CAP,
+  HOME_FEED_LIVE_ON_NEW_FLUSH_MS,
+  HOME_FEED_LOADING_SAFETY_MS,
+  HOME_FEED_LOCAL_PRIME_MAX_ROWS_SCANNED,
   HOME_FEED_MAX_LOAD_MORE_PAGES,
   HOME_FEED_PAGE_LIMIT,
+  HOME_FEED_SKIP_ARCHIVE_PRIME_MIN_ROWS,
   STALE_HOME_FEED_MAX_AGE_SEC,
   STALE_HOME_FEED_REFRESH_COOLDOWN_MS
 } from './constants'
@@ -27,6 +31,7 @@ import {
   setSessionFeedSnapshot
 } from '@/services/session-feed-snapshot.service'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import indexedDb from '@/services/indexed-db.service'
 
 function unionKindsFromSubRequests(requests: readonly TFeedSubRequest[]): number[] {
@@ -54,6 +59,8 @@ export type HomeFeedEngineSnapshot = {
   relayOutcomes: RelayOpTerminalRow[]
   error?: string
   generation: number
+  /** True after first events, wave-complete, or loading safety timeout. */
+  emptyUiReady: boolean
 }
 
 export type HomeFeedEngineClient = {
@@ -68,6 +75,7 @@ export type HomeFeedEngineClient = {
       relayAuthoritativeTimeline?: boolean
       feedScopeKey?: string
       mergeFeedWave?: boolean
+      connectionSlotPriority?: boolean
     }
   ) => Promise<{ closer: () => void; timelineKey: string }>
   fetchEvents: (
@@ -117,6 +125,7 @@ export class HomeFeedEngine {
   private timelineKey?: string
   private relayOutcomes: RelayOpTerminalRow[] = []
   private error?: string
+  private emptyUiReady = false
   private publicFallbackAttempted = false
   private staleRefreshAt = 0
   private staleCheckDone = false
@@ -125,8 +134,14 @@ export class HomeFeedEngine {
   private previousSubscriptionKey?: string
   private previousActiveUrlsKey?: string
   private pendingLive: Event[] = []
+  private liveMergeBuffer: Event[] = []
+  private liveFlushTimer: ReturnType<typeof setTimeout> | null = null
+  private loadingSafetyTimer: ReturnType<typeof setTimeout> | null = null
+  private startPaintAt = 0
+  private firstEventTraced = false
+  private liveEmitCount = 0
 
-  constructor(private readonly options: HomeFeedEngineOptions) {}
+  constructor(private options: HomeFeedEngineOptions) {}
 
   getSnapshot(): HomeFeedEngineSnapshot {
     return {
@@ -137,12 +152,22 @@ export class HomeFeedEngine {
       timelineKey: this.timelineKey,
       relayOutcomes: this.relayOutcomes,
       error: this.error,
-      generation: this.generation
+      generation: this.generation,
+      emptyUiReady: this.emptyUiReady
     }
   }
 
   private emit() {
     this.options.onChange(this.getSnapshot())
+  }
+
+  /** Soft-update descriptor without destroying the engine (personal-relay revision, etc.). */
+  updateBundle(bundle: HomeFeedDescriptorBundle, sessionSnapshotKey?: string) {
+    this.options = {
+      ...this.options,
+      bundle,
+      ...(sessionSnapshotKey != null ? { sessionSnapshotKey } : {})
+    }
   }
 
   private mappedSubRequests(): TFeedSubRequest[] {
@@ -173,10 +198,87 @@ export class HomeFeedEngine {
     return urlsKey.startsWith(this.previousActiveUrlsKey) || urlsKey.includes(this.previousActiveUrlsKey)
   }
 
+  private clearLiveFlushTimer() {
+    if (this.liveFlushTimer != null) {
+      clearTimeout(this.liveFlushTimer)
+      this.liveFlushTimer = null
+    }
+  }
+
+  private clearLoadingSafetyTimer() {
+    if (this.loadingSafetyTimer != null) {
+      clearTimeout(this.loadingSafetyTimer)
+      this.loadingSafetyTimer = null
+    }
+  }
+
+  private markFirstEventIfNeeded() {
+    if (this.firstEventTraced || this.rawEvents.length === 0) return
+    this.firstEventTraced = true
+    activityTrace.trace('relay', 'homeFeed.timeToFirstEvent', {
+      ms: Math.round(performance.now() - this.startPaintAt),
+      rows: this.rawEvents.length
+    })
+  }
+
+  private finishInitialLoading() {
+    this.clearLoadingSafetyTimer()
+    this.loading = false
+    this.emptyUiReady = true
+  }
+
+  private flushLiveMerges() {
+    this.clearLiveFlushTimer()
+    if (this.liveMergeBuffer.length === 0) return
+    const batch = this.liveMergeBuffer
+    this.liveMergeBuffer = []
+    this.liveEmitCount += 1
+    this.rawEvents = mergeEventsById(batch, this.rawEvents, HOME_FEED_EVENT_CAP)
+    activityTrace.trace('state', 'homeFeed.liveEmit', {
+      batchSize: batch.length,
+      emitN: this.liveEmitCount,
+      cap: HOME_FEED_EVENT_CAP
+    })
+    this.markFirstEventIfNeeded()
+    this.emit()
+  }
+
+  private scheduleLiveFlush() {
+    if (this.liveFlushTimer != null) return
+    this.liveFlushTimer = setTimeout(() => {
+      this.liveFlushTimer = null
+      this.flushLiveMerges()
+    }, HOME_FEED_LIVE_ON_NEW_FLUSH_MS)
+  }
+
+  private armLoadingSafety(gen: number) {
+    this.clearLoadingSafetyTimer()
+    this.loadingSafetyTimer = setTimeout(() => {
+      this.loadingSafetyTimer = null
+      if (gen !== this.generation) return
+      if (!this.loading && this.emptyUiReady) return
+      activityTrace.trace('relay', 'homeFeed.loadingSafety', {
+        ms: HOME_FEED_LOADING_SAFETY_MS,
+        rows: this.rawEvents.length
+      })
+      this.finishInitialLoading()
+      this.emit()
+    }, HOME_FEED_LOADING_SAFETY_MS)
+  }
+
   async start(refresh = false): Promise<void> {
     this.closeSubscription()
+    this.clearLiveFlushTimer()
+    this.liveMergeBuffer = []
     const gen = ++this.generation
     const { bundle, client, sessionSnapshotKey } = this.options
+    this.startPaintAt = performance.now()
+    this.firstEventTraced = false
+    this.liveEmitCount = 0
+    activityTrace.trace('relay', 'homeFeed.start', {
+      refresh,
+      subscriptionKey: bundle.subscriptionKey
+    })
 
     if (refresh) {
       clearPersistedFeedSince(bundle.sinceScopeKey)
@@ -198,6 +300,8 @@ export class HomeFeedEngine {
       if (session?.length) {
         this.rawEvents = mergeEventsById([], session, HOME_FEED_EVENT_CAP)
         this.loading = true
+        this.emptyUiReady = false
+        this.markFirstEventIfNeeded()
         this.emit()
       } else {
         this.rawEvents = preserve ? this.rawEvents : []
@@ -207,10 +311,12 @@ export class HomeFeedEngine {
     }
 
     this.loading = true
+    this.emptyUiReady = this.rawEvents.length > 0
     this.hasMore = true
     this.error = undefined
     this.relayOutcomes = []
     this.emit()
+    this.armLoadingSafety(gen)
 
     this.previousSubscriptionKey = bundle.subscriptionKey
     this.previousActiveUrlsKey = bundle.activeSubRequests
@@ -225,7 +331,7 @@ export class HomeFeedEngine {
     ).filter((r) => r.urls.length > 0)
 
     if (mapped.length === 0) {
-      this.loading = false
+      this.finishInitialLoading()
       this.hasMore = false
       this.emit()
       return
@@ -244,7 +350,8 @@ export class HomeFeedEngine {
             if (gen !== this.generation) return
             if (events.length === 0) return
             this.rawEvents = mergeEventsById(this.rawEvents, events, HOME_FEED_EVENT_CAP)
-            this.loading = false
+            this.finishInitialLoading()
+            this.markFirstEventIfNeeded()
             this.emit()
           },
           onNew: (evt) => {
@@ -257,17 +364,18 @@ export class HomeFeedEngine {
               }
               return
             }
-            this.rawEvents = mergeEventsById([evt, ...this.rawEvents], [], HOME_FEED_EVENT_CAP)
-            this.emit()
+            this.liveMergeBuffer.push(evt)
+            this.scheduleLiveFlush()
           }
         },
         {
           relayAuthoritativeTimeline: bundle.relaySetFeedOnly,
           feedScopeKey: bundle.subscriptionKey,
+          connectionSlotPriority: true,
           onRelaySubscribeWaveComplete: (rows) => {
             if (gen !== this.generation) return
             this.relayOutcomes = rows
-            this.loading = false
+            this.finishInitialLoading()
             this.persistSession()
             void this.maybePublicReadFallback(gen, mapped)
             this.maybeStaleAutoRefresh(gen)
@@ -283,12 +391,16 @@ export class HomeFeedEngine {
 
       this.closer = result.closer
       this.timelineKey = result.timelineKey
-      this.loading = false
+      // subscribeTimeline resolves when shards are wired — keep loading until first events,
+      // wave-complete, or safety timeout so empty UI does not flash "No posts found".
+      if (this.rawEvents.length > 0) {
+        this.finishInitialLoading()
+      }
       this.emit()
     } catch (e) {
       if (gen !== this.generation) return
       this.error = e instanceof Error ? e.message : String(e)
-      this.loading = false
+      this.finishInitialLoading()
       this.emit()
     }
   }
@@ -300,27 +412,38 @@ export class HomeFeedEngine {
     const { client } = this.options
     const reqs = asTimelineSubRequests(mapped)
     const localCap = Math.min(HOME_FEED_EVENT_CAP, Math.max(HOME_FEED_PAGE_LIMIT * 2, 200))
+    const maxRowsScanned = HOME_FEED_LOCAL_PRIME_MAX_ROWS_SCANNED
+    const sessionAlreadyWarm = this.rawEvents.length >= HOME_FEED_SKIP_ARCHIVE_PRIME_MIN_ROWS
 
     try {
       const localPromise = client.getLocalFeedEvents
         ? client.getLocalFeedEvents(reqs, {
-            maxRowsScanned: 50_000,
+            maxRowsScanned,
             maxMatches: Math.min(localCap * 3, 3000)
           })
         : client.getTimelineDiskSnapshotEvents
           ? client.getTimelineDiskSnapshotEvents(reqs)
           : Promise.resolve([] as Event[])
 
-      const archivePromise = indexedDb
-        .scanEventArchiveByKinds({
-          kinds: unionKindsFromSubRequests(mapped),
-          maxRowsScanned: 50_000,
-          maxMatches: localCap * 2
-        })
-        .catch(() => [] as Event[])
+      const archivePromise = sessionAlreadyWarm
+        ? Promise.resolve([] as Event[])
+        : indexedDb
+            .scanEventArchiveByKinds({
+              kinds: unionKindsFromSubRequests(mapped),
+              maxRowsScanned,
+              maxMatches: localCap * 2
+            })
+            .catch(() => [] as Event[])
 
       const [localRows, archiveRows] = await Promise.all([localPromise, archivePromise])
       if (gen !== this.generation) return
+
+      activityTrace.trace('cache', 'homeFeed.prime', {
+        local: localRows.length,
+        archive: archiveRows.length,
+        skippedArchive: sessionAlreadyWarm,
+        maxRowsScanned
+      })
 
       const merged = mergeEventsById(
         mergeEventsById(this.rawEvents, localRows, HOME_FEED_EVENT_CAP),
@@ -329,6 +452,7 @@ export class HomeFeedEngine {
       )
       if (merged.length !== this.rawEvents.length) {
         this.rawEvents = merged
+        this.markFirstEventIfNeeded()
         this.emit()
       }
     } catch {
@@ -365,6 +489,7 @@ export class HomeFeedEngine {
       if (gen !== this.generation || raw.length === 0) return
       this.rawEvents = mergeEventsById(this.rawEvents, raw, HOME_FEED_EVENT_CAP)
       logger.info('[HomeFeed] Public read fallback merged', { count: raw.length })
+      this.markFirstEventIfNeeded()
       this.emit()
     } catch (e) {
       logger.warn('[HomeFeed] Public read fallback failed', { error: e })
@@ -457,6 +582,9 @@ export class HomeFeedEngine {
 
   destroy() {
     this.closeSubscription()
+    this.clearLiveFlushTimer()
+    this.clearLoadingSafetyTimer()
+    this.liveMergeBuffer = []
     this.persistSession()
     this.generation++
   }
@@ -466,6 +594,7 @@ export class HomeFeedEngine {
   }
 
   flushPendingLive(): void {
+    this.flushLiveMerges()
     if (this.pendingLive.length === 0) return
     this.rawEvents = mergeEventsById(this.pendingLive, this.rawEvents, HOME_FEED_EVENT_CAP)
     this.pendingLive = []

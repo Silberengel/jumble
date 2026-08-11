@@ -59,11 +59,24 @@ export const DEFAULT_FAVORITE_RELAYS = [
 export const MAX_CONCURRENT_RELAY_CONNECTIONS = 12
 
 /**
+ * Headroom kept free for priority timeline connects when non-priority work (note-stats, embeds)
+ * is contending for {@link MAX_CONCURRENT_RELAY_CONNECTIONS}. Non-priority may use reserved slots
+ * only when no priority waiter is queued.
+ */
+export const RESERVED_PRIORITY_RELAY_CONNECTION_SLOTS = 3
+
+/**
  * Max concurrent live REQ subscriptions on a single relay. Some relays enforce ≤10 SUBs; stay under
  * the advertised cap to avoid "too many subscriptions" NOTICEs when other clients or shards overlap.
  * Use 7 so overlapping timeline waves / auth resubscribe still stay below 10.
  */
 export const MAX_CONCURRENT_SUBS_PER_RELAY = 7
+
+/**
+ * When a query has more filters than {@link RELAY_REQ_MAX_FILTERS_PER_MESSAGE}, run this many
+ * slice `query()` calls in parallel instead of awaiting them strictly sequentially.
+ */
+export const RELAY_REQ_FILTER_SLICE_CONCURRENCY = 3
 
 /**
  * How many timeline shards may open relay subscriptions at once. Each shard sends one REQ per relay

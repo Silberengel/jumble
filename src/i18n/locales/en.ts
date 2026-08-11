@@ -1633,6 +1633,8 @@ export default {
     "No logs match the current filters": "No logs match the current filters",
     "No logs to download": "No logs to download",
     "No posts found": "No posts found",
+    "Waiting on relays…": "Waiting on relays…",
+    "Some relays are slow or cooling down…": "Some relays are slow or cooling down…",
     "No service workers or caches found for this app": "No service workers or caches found for this app",
     "No users found": "No users found",
     "Note pinned": "Note pinned",

@@ -8,8 +8,10 @@ import {
   MAX_CONCURRENT_SUBS_PER_RELAY,
   PROFILE_RELAY_URLS,
   RELAY_FILTER_MAX_KINDS_PER_OBJECT,
+  RELAY_REQ_FILTER_SLICE_CONCURRENCY,
   RELAY_REQ_MAX_FILTERS_PER_MESSAGE,
   RELAY_POOL_CONNECTION_TIMEOUT_MS,
+  RESERVED_PRIORITY_RELAY_CONNECTION_SLOTS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
 import { applyCapitalLetterTagRelayFallback } from '@/lib/relay-fetch-relay-stack'
@@ -258,6 +260,11 @@ export interface QueryOptions {
   backgroundInterruptImmune?: boolean
   /** Relay URLs from event tag hints — honor them even when not on the viewer's personal relay lists. */
   eventTagRelayHints?: boolean
+  /**
+   * Jump the global connection-slot wait queue (timeline / profile). Leave false for note-stats,
+   * embeds, and other secondary REQs so they do not starve feed connects.
+   */
+  connectionSlotPriority?: boolean
 }
 
 export interface SubscribeCallbacks {
@@ -327,9 +334,24 @@ export class QueryService {
     this.backgroundInterruptController = new AbortController()
   }
 
+  private hasPriorityConnectionWaiters(): boolean {
+    return this.globalRelayConnectionWaitQueue.some((e) => e.priority)
+  }
+
+  private canTakeGlobalRelayConnectionSlot(priority: boolean): boolean {
+    const inUse = this.globalRelayConnectionSlotsInUse
+    const max = MAX_CONCURRENT_RELAY_CONNECTIONS
+    if (priority) return inUse < max
+    const reserved = Math.min(RESERVED_PRIORITY_RELAY_CONNECTION_SLOTS, Math.max(0, max - 1))
+    if (inUse < max - reserved) return true
+    // Use reserved headroom only when nothing priority is waiting.
+    return inUse < max && !this.hasPriorityConnectionWaiters()
+  }
+
   async acquireGlobalRelayConnectionSlot(opts?: { priority?: boolean }): Promise<void> {
     const priority = opts?.priority === true
-    if (this.globalRelayConnectionSlotsInUse < MAX_CONCURRENT_RELAY_CONNECTIONS) {
+    const waitStart = performance.now()
+    if (this.canTakeGlobalRelayConnectionSlot(priority)) {
       this.globalRelayConnectionSlotsInUse++
       return
     }
@@ -341,24 +363,36 @@ export class QueryService {
         this.globalRelayConnectionWaitQueue.push(entry)
       }
     })
+    const waitedMs = Math.round(performance.now() - waitStart)
+    if (waitedMs >= 5) {
+      activityTrace.trace('relay', 'connectionSlot.wait', {
+        ms: waitedMs,
+        priority,
+        inUse: this.globalRelayConnectionSlotsInUse,
+        queue: this.globalRelayConnectionWaitQueue.length
+      })
+    }
   }
 
   releaseGlobalRelayConnectionSlot(): void {
     this.globalRelayConnectionSlotsInUse = Math.max(0, this.globalRelayConnectionSlotsInUse - 1)
     const pickNext = (): (() => void) | undefined => {
       const priIdx = this.globalRelayConnectionWaitQueue.findIndex((e) => e.priority)
-      if (priIdx >= 0) {
+      if (priIdx >= 0 && this.canTakeGlobalRelayConnectionSlot(true)) {
         const [entry] = this.globalRelayConnectionWaitQueue.splice(priIdx, 1)
+        this.globalRelayConnectionSlotsInUse++
         return entry!.resolve
       }
-      const entry = this.globalRelayConnectionWaitQueue.shift()
-      return entry?.resolve
+      const nonPriIdx = this.globalRelayConnectionWaitQueue.findIndex((e) => !e.priority)
+      if (nonPriIdx >= 0 && this.canTakeGlobalRelayConnectionSlot(false)) {
+        const [entry] = this.globalRelayConnectionWaitQueue.splice(nonPriIdx, 1)
+        this.globalRelayConnectionSlotsInUse++
+        return entry!.resolve
+      }
+      return undefined
     }
     const next = pickNext()
-    if (next) {
-      this.globalRelayConnectionSlotsInUse++
-      next()
-    }
+    if (next) next()
   }
 
   constructor(pool: SimplePool, relaySession?: QueryServiceRelaySessionOptions) {
@@ -487,17 +521,31 @@ export class QueryService {
     const maxFilters = RELAY_REQ_MAX_FILTERS_PER_MESSAGE
     if (sanitizedFilters.length > maxFilters) {
       try {
+        const slices: Filter[][] = []
+        for (let i = 0; i < sanitizedFilters.length; i += maxFilters) {
+          slices.push(sanitizedFilters.slice(i, i + maxFilters))
+        }
+        const concurrency = Math.max(1, RELAY_REQ_FILTER_SLICE_CONCURRENCY)
         const merged: NEvent[] = []
         const seen = new Set<string>()
-        for (let i = 0; i < sanitizedFilters.length; i += maxFilters) {
-          const slice = sanitizedFilters.slice(i, i + maxFilters)
-          const part = await this.query(urls, slice, onevent, options)
-          for (const e of part) {
-            if (seen.has(e.id)) continue
-            seen.add(e.id)
-            merged.push(e)
+        for (let i = 0; i < slices.length; i += concurrency) {
+          const batch = slices.slice(i, i + concurrency)
+          const parts = await Promise.all(
+            batch.map((slice) => this.query(urls, slice, onevent, options))
+          )
+          for (const part of parts) {
+            for (const e of part) {
+              if (seen.has(e.id)) continue
+              seen.add(e.id)
+              merged.push(e)
+            }
           }
         }
+        activityTrace.trace('relay', 'query.filterSlices', {
+          sliceCount: slices.length,
+          concurrency,
+          merged: merged.length
+        })
         return merged
       } finally {
         endRelayScope()
@@ -829,7 +877,13 @@ export class QueryService {
           }
         }
       },
-        { source: options?.relayOpSource ?? 'QueryService.query', logLevel: 'debug', quiet: true, onBatchEnd: (rows) => emitReqEnd(rows, resolvedSnapshot) }
+        {
+          source: options?.relayOpSource ?? 'QueryService.query',
+          logLevel: 'debug',
+          quiet: true,
+          onBatchEnd: (rows) => emitReqEnd(rows, resolvedSnapshot),
+          connectionSlotPriority: options?.connectionSlotPriority === true
+        }
       )
 
       const sub = {
@@ -890,6 +944,7 @@ export class QueryService {
       /** When true (default on batches), suppress `[RelayOp] batch_begin` / `batch_end`. */
       quiet?: boolean
       onBatchEnd?: (rows: RelayOpTerminalRow[]) => void
+      connectionSlotPriority?: boolean
     }
   ): { close: () => void } {
     const filters = sanitizeFiltersBeforeReq(filter)
@@ -1027,6 +1082,7 @@ export class QueryService {
     const { subs, allOpened } = openGroupedRelaySubscriptionsWithNip42({
       groupedRequests,
       eoseTimeoutMs: relaySubscriptionEoseTimeoutMs,
+      connectionSlotPriority: relayOpMeta?.connectionSlotPriority === true,
       slots: {
         acquireGlobal: (opts) => this.acquireGlobalRelayConnectionSlot(opts),
         releaseGlobal: () => this.releaseGlobalRelayConnectionSlot(),

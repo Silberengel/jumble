@@ -1,6 +1,7 @@
 import NoteCard, { NoteCardLoadingSkeleton } from '@/components/NoteCard'
 import FeedFilterToolbarRow, { feedFilterRowChromeClass } from '@/components/FeedFilterToolbarRow'
 import type { TNoteListRef } from '@/components/NoteList'
+import { VirtualizedEventList } from '@/components/VirtualizedEventList'
 import { Button } from '@/components/ui/button'
 import { useFeedProfileBatchFromEvents } from '@/hooks/useFeedProfileBatchFromEvents'
 import { uniqueRelayUrlsFromSubRequests } from '@/lib/feed-relay-urls'
@@ -15,9 +16,14 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
-  useRef
+  useRef,
+  useState
 } from 'react'
 import { useTranslation } from 'react-i18next'
+import {
+  HOME_FEED_VIRTUAL_ESTIMATE_SIZE_PX,
+  HOME_FEED_VIRTUAL_OVERSCAN
+} from './constants'
 import { useHomeFeed } from './useHomeFeed'
 
 const LOAD_MORE_ROOT_MARGIN_BOTTOM_PX = 800
@@ -47,7 +53,7 @@ const HomeFeed = forwardRef<
   const filterMutedNotes = true
   const feedRootRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const scrollRootRef = useRef<HTMLElement | Window | null>(null)
+  const [scrollElement, setScrollElement] = useState<HTMLElement | Window | null>(null)
 
   const {
     bundle,
@@ -57,6 +63,8 @@ const HomeFeed = forwardRef<
     hasMore,
     pendingNewCount,
     listMode,
+    relayOutcomes,
+    emptyUiReady,
     loadMore,
     refresh,
     flushPendingNew,
@@ -70,7 +78,7 @@ const HomeFeed = forwardRef<
     ref,
     () => ({
       scrollToTop: (behavior?: ScrollBehavior) => {
-        const root = scrollRootRef.current ?? getNearestScrollableAncestor(feedRootRef.current)
+        const root = scrollElement ?? getNearestScrollableAncestor(feedRootRef.current)
         if (root && root !== window) {
           ;(root as HTMLElement).scrollTo({ top: 0, behavior: behavior ?? 'smooth' })
         } else {
@@ -80,7 +88,7 @@ const HomeFeed = forwardRef<
       },
       refresh
     }),
-    [refresh, flushPendingNew]
+    [refresh, flushPendingNew, scrollElement]
   )
 
   const showKindsKey = useMemo(() => JSON.stringify(showKinds), [showKinds])
@@ -98,13 +106,13 @@ const HomeFeed = forwardRef<
   }, [bundle, homeFeedRelaySource, relayUrls, replyRelayUrls])
 
   const handleShowKindsChange = useCallback((_newShowKinds: number[]) => {
-    const root = scrollRootRef.current ?? getNearestScrollableAncestor(feedRootRef.current)
+    const root = scrollElement ?? getNearestScrollableAncestor(feedRootRef.current)
     if (root && root !== window) {
       ;(root as HTMLElement).scrollTo({ top: 0, behavior: 'smooth' })
     } else {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
-  }, [])
+  }, [scrollElement])
 
   const filterToolbarRow = useMemo(
     () => (
@@ -132,7 +140,7 @@ const HomeFeed = forwardRef<
     const anchor = feedRootRef.current
     if (!anchor) return
     const root = getNearestScrollableAncestor(anchor) ?? window
-    scrollRootRef.current = root
+    setScrollElement(root)
 
     const onScroll = () => {
       const top =
@@ -172,6 +180,40 @@ const HomeFeed = forwardRef<
       ? bundle?.seenOnAllowlistOp
       : bundle?.seenOnAllowlistReplies
 
+  const relayStatusHint = useMemo(() => {
+    if (!emptyUiReady || visibleEvents.length > 0 || loading) return null
+    if (relayOutcomes.length === 0) return null
+    const authOrCooldown = relayOutcomes.filter((r) => {
+      const d = (r.detail ?? '').toLowerCase()
+      return (
+        r.outcome === 'timeout' ||
+        r.outcome === 'closed' ||
+        d.includes('auth') ||
+        d.includes('rate') ||
+        d.includes('cooldown')
+      )
+    })
+    if (authOrCooldown.length === 0) return null
+    if (authOrCooldown.length >= relayOutcomes.length) {
+      return t('Waiting on relays…')
+    }
+    return t('Some relays are slow or cooling down…')
+  }, [emptyUiReady, visibleEvents.length, loading, relayOutcomes, t])
+
+  const renderEvent = useCallback(
+    (event: (typeof visibleEvents)[number]) => (
+      <NoteCard
+        className="w-full"
+        event={event}
+        filterMutedNotes={filterMutedNotes}
+        deferAuthorAvatar
+        hideEngagementChrome
+        seenOnAllowlist={seenOnAllowlist}
+      />
+    ),
+    [filterMutedNotes, seenOnAllowlist]
+  )
+
   if (!bundle) {
     return (
       <div className="min-h-[20vh] space-y-2 px-1 py-4" role="status" aria-busy="true">
@@ -181,6 +223,9 @@ const HomeFeed = forwardRef<
       </div>
     )
   }
+
+  const showEmpty =
+    visibleEvents.length === 0 && !loading && emptyUiReady
 
   return (
     <FeedProfileProvider value={feedProfileContextValue}>
@@ -193,23 +238,33 @@ const HomeFeed = forwardRef<
         </div>
       ) : null}
 
-      {visibleEvents.length === 0 && !loading ? (
+      {showEmpty ? (
         <div className="px-2 py-8 text-center text-sm text-muted-foreground">
-          {t('No posts found')}
+          {relayStatusHint ?? t('No posts found')}
         </div>
       ) : null}
 
-      {visibleEvents.map((event) => (
-        <NoteCard
-          key={event.id}
-          className="w-full"
-          event={event}
-          filterMutedNotes={filterMutedNotes}
-          deferAuthorAvatar
-          hideEngagementChrome
-          seenOnAllowlist={seenOnAllowlist}
+      {visibleEvents.length > 0 && scrollElement ? (
+        <VirtualizedEventList
+          events={visibleEvents}
+          estimateSize={HOME_FEED_VIRTUAL_ESTIMATE_SIZE_PX}
+          overscan={HOME_FEED_VIRTUAL_OVERSCAN}
+          scrollElement={scrollElement}
+          renderEvent={renderEvent}
         />
-      ))}
+      ) : visibleEvents.length > 0 ? (
+        visibleEvents.map((event) => (
+          <NoteCard
+            key={event.id}
+            className="w-full"
+            event={event}
+            filterMutedNotes={filterMutedNotes}
+            deferAuthorAvatar
+            hideEngagementChrome
+            seenOnAllowlist={seenOnAllowlist}
+          />
+        ))
+      ) : null}
 
       {loading || loadingMore ? (
         <div className="min-h-[20vh] space-y-2 px-1 py-4" role="status" aria-busy="true">

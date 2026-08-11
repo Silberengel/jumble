@@ -8,6 +8,7 @@ import { useFeed } from '@/providers/feed-context'
 import { useMuteList } from '@/contexts/mute-list-context'
 import { useNostr } from '@/providers/NostrProvider'
 import client from '@/services/client.service'
+import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 import type { TNoteListMode } from '@/types'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Event } from 'nostr-tools'
@@ -37,6 +38,8 @@ export type UseHomeFeedResult = {
   listMode: TNoteListMode
   showCount: number
   pendingNewCount: number
+  relayOutcomes: RelayOpTerminalRow[]
+  emptyUiReady: boolean
   loadMore: () => void
   refresh: () => void
   flushPendingNew: () => void
@@ -66,14 +69,15 @@ export function useHomeFeed(): UseHomeFeedResult {
     loadingMore: false,
     hasMore: true,
     relayOutcomes: [],
-    generation: 0
+    generation: 0,
+    emptyUiReady: false
   })
   const [showCount, setShowCount] = useState(HOME_FEED_INITIAL_SHOW_COUNT)
   const [pendingNew, setPendingNew] = useState<Event[]>([])
   const [scrolledFromTop, setScrolledFromTop] = useState(false)
   const engineRef = useRef<HomeFeedEngine | null>(null)
-  const bundleRef = useRef<HomeFeedDescriptorBundle | null>(null)
   const personalRelayKeysRevision = useViewerPersonalRelayKeysRevision()
+  const personalRelayBootRevisionRef = useRef(personalRelayKeysRevision)
   const scrolledFromTopRef = useRef(false)
   const pubkeyRef = useRef(pubkey)
   pubkeyRef.current = pubkey
@@ -189,8 +193,8 @@ export function useHomeFeed(): UseHomeFeedResult {
     return filterVisibleHomeFeedEvents(engineSnap.rawEvents, filterCtx, showCount)
   }, [engineSnap.rawEvents, filterCtx, showCount])
 
+  // Create / destroy engine only when feed identity changes — not on personal-relay revision.
   useEffect(() => {
-    bundleRef.current = bundle
     if (!bundle) {
       engineRef.current?.destroy()
       engineRef.current = null
@@ -200,12 +204,12 @@ export function useHomeFeed(): UseHomeFeedResult {
         loadingMore: false,
         hasMore: false,
         relayOutcomes: [],
-        generation: 0
+        generation: 0,
+        emptyUiReady: true
       })
       return
     }
 
-    engineRef.current?.destroy()
     const engine = new HomeFeedEngine({
       client: client as import('./HomeFeedEngine').HomeFeedEngineClient,
       bundle,
@@ -222,13 +226,32 @@ export function useHomeFeed(): UseHomeFeedResult {
       }
     })
     engineRef.current = engine
+    personalRelayBootRevisionRef.current = personalRelayKeysRevision
     void engine.start(false)
 
     return () => {
       engine.destroy()
       if (engineRef.current === engine) engineRef.current = null
     }
-  }, [bundle?.descriptor.key, bundle?.subscriptionKey, sessionSnapshotKey, personalRelayKeysRevision])
+    // personalRelayKeysRevision intentionally omitted — soft-resubscribe below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- identity-only recreate
+  }, [bundle?.descriptor.key, bundle?.subscriptionKey, sessionSnapshotKey])
+
+  // Keep descriptor fresh when URLs/kinds change inside the same identity key.
+  useEffect(() => {
+    if (!bundle) return
+    engineRef.current?.updateBundle(bundle, sessionSnapshotKey)
+  }, [bundle, sessionSnapshotKey])
+
+  // Personal-relay key sync: soft restart so sanitization picks up new grants without row teardown.
+  useEffect(() => {
+    if (personalRelayBootRevisionRef.current === personalRelayKeysRevision) return
+    personalRelayBootRevisionRef.current = personalRelayKeysRevision
+    const engine = engineRef.current
+    if (!engine || !bundle) return
+    engine.updateBundle(bundle, sessionSnapshotKey)
+    void engine.start(false)
+  }, [personalRelayKeysRevision, bundle, sessionSnapshotKey])
 
   useEffect(() => {
     scrolledFromTopRef.current = scrolledFromTop
@@ -278,6 +301,8 @@ export function useHomeFeed(): UseHomeFeedResult {
     listMode,
     showCount,
     pendingNewCount: pendingNew.length,
+    relayOutcomes: engineSnap.relayOutcomes,
+    emptyUiReady: engineSnap.emptyUiReady,
     loadMore,
     refresh,
     flushPendingNew,

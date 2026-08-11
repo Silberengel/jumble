@@ -1636,6 +1636,8 @@ export default {
     "No logs match the current filters": "Keine Logs stimmen mit den aktuellen Filtern überein",
     "No logs to download": "Keine Logs zum Herunterladen",
     "No posts found": "Keine Posts gefunden",
+    "Waiting on relays…": "Warte auf Relays…",
+    "Some relays are slow or cooling down…": "Einige Relays sind langsam oder abgekühlt…",
     "No service workers or caches found for this app": "Keine Servicemitarbeiter oder Caches für diese App gefunden",
     "No users found": "Keine Nutzer gefunden",
     "Note pinned": "Notizstifte",

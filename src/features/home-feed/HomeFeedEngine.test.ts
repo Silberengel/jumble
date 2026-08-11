@@ -72,6 +72,73 @@ describe('HomeFeedEngine', () => {
 
     expect(engine.getSnapshot().rawEvents.some((e) => e.id === 'e1')).toBe(true)
     expect(engine.getSnapshot().loading).toBe(false)
+    expect(engine.getSnapshot().emptyUiReady).toBe(true)
+  })
+
+  it('coalesces rapid onNew emits into one merge flush', async () => {
+    let onNew: ((evt: Event) => void) | undefined
+    let changeCount = 0
+    const client = {
+      subscribeTimeline: vi.fn(async (_reqs, cbs) => {
+        onNew = cbs.onNew
+        return { closer: vi.fn(), timelineKey: 'tk-1' }
+      }),
+      fetchEvents: vi.fn(async () => []),
+      loadMoreTimeline: vi.fn(async () => [])
+    }
+
+    const engine = new HomeFeedEngine({
+      client,
+      bundle: mockBundle(),
+      sessionSnapshotKey: 'snap',
+      onChange: () => {
+        changeCount += 1
+      }
+    })
+
+    const startPromise = engine.start(false)
+    await vi.waitFor(() => {
+      expect(onNew).toBeDefined()
+    })
+    await startPromise
+    const afterStartChanges = changeCount
+
+    vi.useFakeTimers()
+    onNew?.(evt('live-1'))
+    onNew?.(evt('live-2'))
+    onNew?.(evt('live-3'))
+    expect(engine.getSnapshot().rawEvents.some((e) => e.id === 'live-1')).toBe(false)
+    await vi.advanceTimersByTimeAsync(80)
+    vi.useRealTimers()
+
+    expect(engine.getSnapshot().rawEvents.filter((e) => e.id.startsWith('live-')).length).toBe(3)
+    expect(changeCount - afterStartChanges).toBeGreaterThanOrEqual(1)
+    expect(changeCount - afterStartChanges).toBeLessThanOrEqual(2)
+  })
+
+  it('passes connectionSlotPriority on subscribeTimeline', async () => {
+    const client = {
+      subscribeTimeline: vi.fn(async () => ({
+        closer: vi.fn(),
+        timelineKey: 'tk-1'
+      })),
+      fetchEvents: vi.fn(async () => []),
+      loadMoreTimeline: vi.fn(async () => [])
+    }
+
+    const engine = new HomeFeedEngine({
+      client,
+      bundle: mockBundle(),
+      sessionSnapshotKey: 'snap',
+      onChange: () => {}
+    })
+
+    await engine.start(false)
+    expect(client.subscribeTimeline).toHaveBeenCalledWith(
+      expect.any(Array),
+      expect.any(Object),
+      expect.objectContaining({ connectionSlotPriority: true })
+    )
   })
 
   it('refresh clears persisted since path via skip flag', async () => {

@@ -27,6 +27,7 @@ import {
   isSpellSubRequestsSameFiltersDifferentRelays
 } from '@/lib/spell-feed-request-identity'
 import logger from '@/lib/logger'
+import activityTrace from '@/lib/activity-trace'
 import { useActivityTraceRender } from '@/hooks/useActivityTraceRender'
 import { useViewerPersonalRelayKeysRevision } from '@/hooks/useViewerPersonalRelayKeysRevision'
 import { isMetadataRelaysOnlyPolicyActive } from '@/lib/read-only-relay-personal'
@@ -118,6 +119,7 @@ import {
 } from '@/components/ui/select'
 import NoteCard, { NoteCardLoadingSkeleton } from '../NoteCard'
 import MediaGridItem from '../MediaGridItem'
+import { VirtualizedEventList } from '@/components/VirtualizedEventList'
 import {
   buildFeedSessionSnapshotKey,
   createFeedDescriptor,
@@ -987,6 +989,7 @@ const NoteList = forwardRef(
     const feedRootRef = useRef<HTMLDivElement | null>(null)
     /** Cached scrollport from {@link wireScrollPrefetch} — avoids DOM walks on every live `onNew`. */
     const feedScrollRootRef = useRef<HTMLElement | Window | null>(null)
+    const [feedScrollElement, setFeedScrollElement] = useState<HTMLElement | Window | null>(null)
     const loadMoreInvokerRef = useRef<(() => void) | null>(null)
     const bottomIntersectionObserverRef = useRef<IntersectionObserver | null>(null)
     const topRef = useRef<HTMLDivElement | null>(null)
@@ -1596,6 +1599,10 @@ const NoteList = forwardRef(
 
       if (feedPaintSessionPendingRef.current) {
         feedPaintSessionPendingRef.current = false
+        activityTrace.trace('relay', 'noteList.timeToSessionPaint', {
+          eventCount: events.length,
+          filteredVisibleRows: filteredEvents.length
+        })
         logger.debug('[FeedPaint] Session cache committed (DOM)', {
           feedKey: feedKeyShort,
           snapshotKey: snapshotKeyShort,
@@ -1608,6 +1615,11 @@ const NoteList = forwardRef(
         feedPaintRelayPendingRef.current = false
         const meta = feedPaintRelayMetaRef.current
         feedPaintRelayMetaRef.current = null
+        activityTrace.trace('relay', 'noteList.timeToRelayPaint', {
+          committedEventCount: events.length,
+          filteredVisibleRows: filteredEvents.length,
+          ...meta
+        })
         logger.debug('[FeedPaint] Relay/network results committed (DOM)', {
           feedKey: feedKeyShort,
           snapshotKey: snapshotKeyShort,
@@ -2487,6 +2499,7 @@ const NoteList = forwardRef(
           if (!effectActive) return
           const batch = liveOnNewPendingRef.current.splice(0)
           if (batch.length === 0) return
+          activityTrace.trace('state', 'noteList.liveEmit', { batchSize: batch.length })
 
           const profileBatch: Event[] = []
           const homeBatch: Event[] = []
@@ -3589,7 +3602,7 @@ const NoteList = forwardRef(
             needSort: !areAlgoRelays,
             firstRelayResultGraceMs: FIRST_RELAY_RESULT_GRACE_MS,
             relayAuthoritativeTimeline: relayAuthoritativeFeedOnlyRef.current,
-            connectionSlotPriority: isProfileTimelineFeed,
+            connectionSlotPriority: true,
             feedScopeKey: timelineSubscriptionKey,
             onRelaySubscribeWaveComplete: (rows) => {
               if (!effectActive) return
@@ -4656,6 +4669,7 @@ const NoteList = forwardRef(
         const anchor = feedRootRef.current
         const next = resolveFeedScrollRoot(anchor, null)
         feedScrollRootRef.current = next
+        setFeedScrollElement(next)
         if (scrollPrefetchTarget && scrollPrefetchTarget !== next) {
           scrollPrefetchTarget.removeEventListener('scroll', onScrollPrefetch)
           scrollPrefetchTarget.removeEventListener('scroll', onScrollFlushNewNotesAtTop)
@@ -4713,13 +4727,22 @@ const NoteList = forwardRef(
     ])
 
     // Eager embed prefetch for visible rows (deduped in EventService; ingest also prefetches on add).
+    // Defer until idle so timeline connection slots are not starved on first paint.
     useEffect(() => {
       if (loading) return
       const slice = clientFilteredEvents.slice(0, Math.max(showCount, 40))
       if (slice.length === 0) return
-      client.prefetchEmbeddedEventsForParents(slice, {
-        relayHintsOnly: relayAuthoritativeFeedOnlyRef.current
-      })
+      const run = () => {
+        client.prefetchEmbeddedEventsForParents(slice, {
+          relayHintsOnly: relayAuthoritativeFeedOnlyRef.current
+        })
+      }
+      if (typeof requestIdleCallback === 'function') {
+        const id = requestIdleCallback(run, { timeout: 1200 })
+        return () => cancelIdleCallback(id)
+      }
+      const timer = window.setTimeout(run, 200)
+      return () => window.clearTimeout(timer)
     }, [clientFilteredEvents, showCount, loading])
 
     const showNewEvents = () => {
@@ -5063,6 +5086,27 @@ const NoteList = forwardRef(
               <MediaGridItem key={event.id} event={event} />
             ))}
           </div>
+        ) : feedScrollElement && clientFilteredEvents.length > 0 ? (
+          <VirtualizedEventList
+            events={clientFilteredEvents}
+            estimateSize={220}
+            overscan={6}
+            scrollElement={feedScrollElement}
+            renderEvent={(event) => (
+              <NoteCard
+                className="w-full"
+                event={event}
+                filterMutedNotes={filterMutedNotes}
+                bottomNoteLabel={eventReasonLabelMap.get(event.id)}
+                deferAuthorAvatar
+                hideEngagementChrome
+                seenOnAllowlist={
+                  effectiveSeenOnAllowlist.length > 0 ? effectiveSeenOnAllowlist : undefined
+                }
+                showPaymentAttestationAction={showPaymentAttestationAction}
+              />
+            )}
+          />
         ) : (
           clientFilteredEvents.map((event) => (
             <NoteCard
@@ -5131,7 +5175,14 @@ const NoteList = forwardRef(
             className="mt-6 flex min-h-[35vh] flex-col items-center justify-start gap-4 px-4 text-center text-sm text-muted-foreground"
             role="status"
           >
-            <p>{t('No posts loaded for this feed. Try refreshing.')}</p>
+            <p>
+              {feedSubscribeRelayOutcomes.length > 0 &&
+              feedSubscribeRelayOutcomes.every(
+                (r) => r.outcome === 'timeout' || r.outcome === 'closed'
+              )
+                ? t('Waiting on relays…')
+                : t('No posts loaded for this feed. Try refreshing.')}
+            </p>
             {alexandriaEmptyUrl ? <AlexandriaEventsSearchEmptyCta href={alexandriaEmptyUrl} /> : null}
             <Button
               type="button"
