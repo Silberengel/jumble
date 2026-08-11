@@ -21,7 +21,7 @@ describe('viewer write outboxes', () => {
 
   it('collectWriteOutboxUrlsFromRelayList merges http before ws (no cache layer)', () => {
     expect(collectWriteOutboxUrlsFromRelayList(relayList)).toEqual([
-      'https://http-out.example/',
+      'https://http-out.example',
       'wss://nip65.example/'
     ])
   })
@@ -29,7 +29,7 @@ describe('viewer write outboxes', () => {
   it('collectUserWriteOutboxUrls orders cache before http before ws', () => {
     expect(collectUserWriteOutboxUrls(relayList, ['ws://127.0.0.1:4869'])).toEqual([
       'ws://127.0.0.1:4869/',
-      'https://http-out.example/',
+      'https://http-out.example',
       'wss://nip65.example/'
     ])
   })
@@ -37,7 +37,7 @@ describe('viewer write outboxes', () => {
   it('collectViewerWriteOutboxUrls loads cache from kind 10432', async () => {
     await expect(collectViewerWriteOutboxUrls('ab'.repeat(32), relayList)).resolves.toEqual([
       'ws://localhost:4869/',
-      'https://http-out.example/',
+      'https://http-out.example',
       'wss://nip65.example/'
     ])
   })

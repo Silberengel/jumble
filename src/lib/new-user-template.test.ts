@@ -11,13 +11,13 @@ import {
   newUserProfileSuffix
 } from '@/lib/new-user-template'
 import { newUserTemplatePublishRelays } from '@/lib/new-user-template-broadcast'
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { normalizeRelayUrlByScheme } from '@/lib/url'
 import type { TRelayList } from '@/types'
 
 const TEST_PUBKEY = 'a'.repeat(63) + 'b'
 
 function relayKey(url: string): string {
-  return (normalizeAnyRelayUrl(url) || url).toLowerCase()
+  return (normalizeRelayUrlByScheme(url) || url).toLowerCase()
 }
 
 function expectRelayKeys(actual: string[], expected: string[]) {

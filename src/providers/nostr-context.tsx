@@ -56,7 +56,7 @@ export type TNostrContext = {
   nsecLogin: (nsec: string, password?: string, needSetup?: boolean) => Promise<string>
   ncryptsecLogin: (ncryptsec: string) => Promise<string>
   nip07Login: () => Promise<string | null>
-  bunkerLogin: (bunker: string) => Promise<string>
+  bunkerLogin: (bunker: string, options?: { allowMissingSecret?: boolean }) => Promise<string>
   nostrConnectionLogin: (
     clientSecretKey: Uint8Array,
     connectionString: string,

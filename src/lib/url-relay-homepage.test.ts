@@ -3,7 +3,7 @@ import { deriveRelayHomepageUrl } from './url'
 
 describe('deriveRelayHomepageUrl', () => {
   it('converts wss relay URL to https homepage', () => {
-    expect(deriveRelayHomepageUrl('wss://theforest.nostr1.com/')).toBe('https://theforest.nostr1.com/')
+    expect(deriveRelayHomepageUrl('wss://theforest.nostr1.com/')).toBe('https://theforest.nostr1.com')
   })
 
   it('passes through https URLs', () => {

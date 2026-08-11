@@ -49,16 +49,16 @@ describe('relay URL normalization', () => {
     ]
     const configured = ['https://mercury-relay.imwald.eu/']
     expect(httpIndexRelayBasesInUrlBatch(batch, configured)).toEqual([
-      'https://mercury-relay.imwald.eu/'
+      'https://mercury-relay.imwald.eu'
     ])
     expect(httpIndexRelayBasesInUrlBatch(batch, [])).toEqual([])
   })
 
   it('httpIndexBasesForRelayQuery polls explicit https relays without kind-10243 config', () => {
     const batch = ['https://mercury-relay.imwald.eu/']
-    expect(httpIndexBasesForRelayQuery(batch, [])).toEqual(['https://mercury-relay.imwald.eu/'])
+    expect(httpIndexBasesForRelayQuery(batch, [])).toEqual(['https://mercury-relay.imwald.eu'])
     expect(httpIndexBasesForRelayQuery(batch, ['https://other.example/'])).toEqual([
-      'https://mercury-relay.imwald.eu/'
+      'https://mercury-relay.imwald.eu'
     ])
   })
 

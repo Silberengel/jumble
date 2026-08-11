@@ -123,7 +123,8 @@ describe('read-only-relay-personal', () => {
       'wss://profiles.nostr1.com/'
     ])
     expect(isRelayConnectionAllowedForViewer('wss://profiles.nostr1.com/')).toBe(true)
-    expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(true)
+    // thecitadel was removed from PROFILE_RELAY_URLS; it is no longer always-allowed at connect time.
+    expect(isRelayConnectionAllowedForViewer('wss://thecitadel.nostr1.com/')).toBe(false)
     expect(isRelayConnectionAllowedForViewer('wss://relay.example.com/')).toBe(true)
     expect(isRelayConnectionAllowedForViewer('wss://theforest.nostr1.com/')).toBe(false)
     expect(isRelayConnectionAllowedForViewer('wss://nostr.wirednet.jp/')).toBe(false)

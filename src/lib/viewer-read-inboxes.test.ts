@@ -22,7 +22,7 @@ describe('viewer read inboxes', () => {
 
   it('collectReadInboxUrlsFromRelayList merges http before ws (no cache layer)', () => {
     expect(collectReadInboxUrlsFromRelayList(relayList)).toEqual([
-      'https://http-in.example/',
+      'https://http-in.example',
       'wss://inbox.example/'
     ])
   })
@@ -30,7 +30,7 @@ describe('viewer read inboxes', () => {
   it('collectUserReadInboxUrls orders cache before http before ws', () => {
     expect(collectUserReadInboxUrls(relayList, ['ws://127.0.0.1:4869'])).toEqual([
       'ws://127.0.0.1:4869/',
-      'https://http-in.example/',
+      'https://http-in.example',
       'wss://inbox.example/'
     ])
   })
@@ -41,13 +41,13 @@ describe('viewer read inboxes', () => {
         ...relayList,
         read: ['wss://inbox.example/', 'ws://127.0.0.1:4869/']
       })
-    ).toEqual(['https://http-in.example/', 'wss://inbox.example/'])
+    ).toEqual(['https://http-in.example', 'wss://inbox.example/'])
   })
 
   it('collectViewerReadInboxUrls loads cache from kind 10432', async () => {
     await expect(collectViewerReadInboxUrls('ab'.repeat(32), relayList)).resolves.toEqual([
       'ws://localhost:4869/',
-      'https://http-in.example/',
+      'https://http-in.example',
       'wss://inbox.example/'
     ])
   })

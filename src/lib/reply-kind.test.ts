@@ -18,7 +18,6 @@ describe('eventHasKind1111CompatibleClientTag', () => {
   it('matches all aitherboard2-listed clients case-insensitively', () => {
     for (const name of [
       'aitherboard',
-      'Dark Wisp',
       'jumble',
       'amethyst',
       'imwald',

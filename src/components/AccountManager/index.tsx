@@ -13,9 +13,9 @@ import { toast } from 'sonner'
 import AccountList from '../AccountList'
 import NostrConnectLogin from './NostrConnectionLogin'
 import NpubLogin from './NpubLogin'
-import PrivateKeyLogin from './PrivateKeyLogin'
+import PomegranateLogin from './PomegranateLogin'
 
-type TAccountManagerPage = 'nsec' | 'bunker' | 'npub' | null
+type TAccountManagerPage = 'bunker' | 'pomegranate' | 'npub' | null
 
 export default function AccountManager({ close }: { close?: () => void }) {
   const [page, setPage] = useState<TAccountManagerPage>(null)
@@ -26,10 +26,10 @@ export default function AccountManager({ close }: { close?: () => void }) {
 
   return (
     <>
-      {page === 'nsec' ? (
-        <PrivateKeyLogin back={handleBack} onLoginSuccess={handleLoginSuccess} />
-      ) : page === 'bunker' ? (
+      {page === 'bunker' ? (
         <NostrConnectLogin back={handleBack} onLoginSuccess={handleLoginSuccess} />
+      ) : page === 'pomegranate' ? (
+        <PomegranateLogin back={handleBack} onLoginSuccess={handleLoginSuccess} />
       ) : page === 'npub' ? (
         <NpubLogin back={handleBack} onLoginSuccess={handleLoginSuccess} />
       ) : (
@@ -103,10 +103,10 @@ function AccountManagerNav({
             </Button>
           )}
           <Button variant="secondary" onClick={() => setPage('bunker')} className="w-full">
-            {t('Login with Bunker')}
+            {t('Login with Amber / Bunker')}
           </Button>
-          <Button variant="secondary" onClick={() => setPage('nsec')} className="w-full">
-            {t('Login with Private Key')}
+          <Button variant="secondary" onClick={() => setPage('pomegranate')} className="w-full">
+            {t('Sign in with Pomegranate')}
           </Button>
           <Button variant="secondary" onClick={() => setPage('npub')} className="w-full">
             {t('Login with npub (read-only)')}

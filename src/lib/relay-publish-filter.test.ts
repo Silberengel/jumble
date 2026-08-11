@@ -45,6 +45,17 @@ describe('relay-publish-filter', () => {
     expect(out).toEqual(['wss://relay.damus.io/'])
   })
 
+  it('keeps mercury HTTPS index API publishable while its WS endpoint stays read-only', () => {
+    expect(isReadOnlyRelayUrl('wss://mercury-relay.imwald.eu/relay')).toBe(true)
+    expect(isReadOnlyRelayUrl('https://mercury-relay.imwald.eu/')).toBe(false)
+    const out = filterRelaysForEventPublish(
+      ['https://mercury-relay.imwald.eu/', 'wss://mercury-relay.imwald.eu/relay'],
+      kinds.ShortTextNote
+    )
+    expect(out.some((u) => u.startsWith('https://mercury-relay.imwald.eu'))).toBe(true)
+    expect(out.some((u) => u.startsWith('wss://mercury-relay.imwald.eu'))).toBe(false)
+  })
+
   it('strips profile mirrors from author read hints', () => {
     const out = filterContextAuthorReadRelaysForPublish([
       'wss://profiles.nostrver.se/',

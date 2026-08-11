@@ -16,7 +16,7 @@ describe('public-message-publish-relays', () => {
         originalRelays: [],
         httpOriginalRelays: []
       })
-    ).toEqual(['https://sender-http.example/', 'wss://sender-out.example/'])
+    ).toEqual(['https://sender-http.example', 'wss://sender-out.example/'])
 
     expect(
       collectRecipientInboxUrls({
@@ -27,7 +27,7 @@ describe('public-message-publish-relays', () => {
         originalRelays: [],
         httpOriginalRelays: []
       })
-    ).toEqual(['https://recipient-http-in.example/', 'wss://recipient-in.example/'])
+    ).toEqual(['https://recipient-http-in.example', 'wss://recipient-in.example/'])
   })
 
   it('orders author outbox before recipient inbox', () => {

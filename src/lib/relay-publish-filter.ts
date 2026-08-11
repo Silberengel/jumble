@@ -2,7 +2,7 @@ import {
   AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS,
   READ_ONLY_RELAY_URLS
 } from '@/constants'
-import { normalizeAnyRelayUrl } from '@/lib/url'
+import { isHttpOrHttpsScheme, normalizeAnyRelayUrl } from '@/lib/url'
 
 /**
  * Profile mirrors and indexers that reject notes, reactions, and other social kinds.
@@ -48,10 +48,15 @@ const readOnlyHostSet = new Set(
 
 const profileIndexPublishKindSet = new Set<number>(AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS)
 
-/** True when `url` matches a known entry exactly or shares its hostname (e.g. filter.nostr.wine/npub… paths). */
+/**
+ * True when `url` matches a known entry exactly or shares its hostname (e.g. filter.nostr.wine/npub… paths).
+ * Hostname fallback applies to WebSocket URLs only: a read-only `wss://` entry (e.g. mercury's
+ * `wss://…/relay` endpoint) must not block the host's kind-10243 HTTPS index API, which is a write path.
+ */
 function relayMatchesHostOrExact(url: string, keySet: ReadonlySet<string>, hostSet: ReadonlySet<string>): boolean {
   const key = relayKey(url)
   if (key.length > 0 && keySet.has(key)) return true
+  if (isHttpOrHttpsScheme(url)) return false
   const host = relayHostname(url)
   return host != null && hostSet.has(host)
 }

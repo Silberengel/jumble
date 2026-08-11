@@ -115,10 +115,13 @@ describe('UserAvatar in Embedded Notes', () => {
     expect(computedStyle.visibility).not.toBe('hidden')
     expect(computedStyle.opacity).not.toBe('0')
 
-    // Check that the container has overflow-hidden for rounded corners
-    // Note: In test environment, computed styles may not reflect Tailwind classes
-    // So we check the className instead
-    expect(avatarContainer?.className).toContain('overflow-hidden')
+    // Rounded-corner clipping lives on an inner wrapper (the outer container stays
+    // overflow-visible so the bot badge can render outside the circle).
+    // Note: In test environment, computed styles may not reflect Tailwind classes,
+    // so we check classNames instead.
+    const clippingWrapper = avatarContainer?.querySelector('.overflow-hidden.rounded-full')
+    expect(clippingWrapper).toBeInTheDocument()
+    expect(clippingWrapper?.contains(img!)).toBe(true)
     
     // Simulate image load to remove loading placeholder
     if (img) {

@@ -13,12 +13,19 @@ export class BunkerSigner implements ISigner {
     this.clientSecretKey = clientSecretKey ? hexToBytes(clientSecretKey) : generateSecretKey()
   }
 
-  async login(bunker: string, isInitialConnection = true): Promise<string> {
+  async login(
+    bunker: string,
+    isInitialConnection = true,
+    options?: {
+      /** Pomegranate handler bunkers omit `secret` by design; connect with an empty secret. */
+      allowMissingSecret?: boolean
+    }
+  ): Promise<string> {
     const bunkerPointer = await parseBunkerInput(bunker)
     if (!bunkerPointer) {
       throw new Error('Invalid bunker')
     }
-    if (isInitialConnection && !bunkerPointer.secret) {
+    if (isInitialConnection && !bunkerPointer.secret && !options?.allowMissingSecret) {
       throw new Error(
         'This bunker URI has no secret. In Amber, create a bunker connection and paste the full bunker:// link (including &secret=…).'
       )
