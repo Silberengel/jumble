@@ -14,6 +14,14 @@ import { SimplePool } from 'nostr-tools/pool'
 
 export const POMEGRANATE_DEFAULT_COORDINATOR_URL = 'https://auth.njump.me'
 
+/**
+ * Google OAuth web client id used by {@link POMEGRANATE_DEFAULT_COORDINATOR_URL}
+ * (from its `/login/google` redirect). Used for in-page GIS → `/login/google/android`
+ * (same mint path the central exposes for native clients).
+ */
+export const POMEGRANATE_DEFAULT_GOOGLE_CLIENT_ID =
+  '300561989816-7nv10jo4vdn0d6p9knf12g7rq4fcusnc.apps.googleusercontent.com'
+
 /** Kind of the base64 Nostr event central mints as a login token. */
 export const POMEGRANATE_KIND_CENTRAL_TOKEN = 20443
 
@@ -143,10 +151,17 @@ function popupIsClosed(popup: Window): boolean {
   }
 }
 
+/** Ignore flaky `closed===true` during Google's cross-origin redirects. */
+const POPUP_CLOSED_GRACE_MS = 8_000
+const POPUP_CLOSED_POLLS_REQUIRED = 6
+
 /**
  * Open `{central}/login/google` and await `{ token }` via `postMessage` when `window.opener` survives.
  * Registers the listener **before** `window.open`. After Google COOP, opener is often null and this
  * will time out — callers should offer paste-token as the reliable path.
+ *
+ * Uses a normal tab (no `popup=` features): small popups often flash the Google account chooser
+ * and then report `closed` during redirects, which looked like “nothing happened”.
  */
 export function authenticateWithGooglePopup(
   centralUrl: string,
@@ -160,6 +175,8 @@ export function authenticateWithGooglePopup(
     let popup: Window | null = null
     let closedTimer = 0
     let timeoutTimer = 0
+    let consecutiveClosed = 0
+    const openedAt = Date.now()
 
     const settle = (fn: () => void) => {
       if (settled) return
@@ -204,13 +221,8 @@ export function authenticateWithGooglePopup(
     window.addEventListener('message', onMessage)
     options?.signal?.addEventListener('abort', onAbort)
 
-    // Unique name each attempt — reusing one window can re-hit /callback with a
-    // spent code ("failed to exchange oauth code") or overwrite oauth state.
-    popup = window.open(
-      pomegranateGoogleLoginUrl(centralUrl),
-      `pomegranate-google-login-${Date.now()}`,
-      'popup=yes,width=500,height=640'
-    )
+    // Full tab — not a tiny popup. Keep opener (no `noopener`) so a lucky postMessage can work.
+    popup = window.open(pomegranateGoogleLoginUrl(centralUrl), '_blank')
     if (!popup) {
       settle(() =>
         reject(new Error('Popup blocked — allow popups for this site and try again'))
@@ -219,11 +231,17 @@ export function authenticateWithGooglePopup(
     }
 
     closedTimer = window.setInterval(() => {
-      if (!popupIsClosed(popup!)) return
+      if (Date.now() - openedAt < POPUP_CLOSED_GRACE_MS) return
+      if (!popupIsClosed(popup!)) {
+        consecutiveClosed = 0
+        return
+      }
+      consecutiveClosed += 1
+      if (consecutiveClosed < POPUP_CLOSED_POLLS_REQUIRED) return
       settle(() =>
         reject(
           new Error(
-            'Sign-in window closed without a token. If the page said “Error: No token received.”, Google succeeded — paste the token from that page (see instructions).'
+            'Google window closed without returning a token. If it said “Error: No token received.”, sign-in worked — paste document.body.dataset.token below (do not refresh that page).'
           )
         )
       )
@@ -231,14 +249,9 @@ export function authenticateWithGooglePopup(
 
     timeoutTimer = window.setTimeout(() => {
       settle(() => {
-        try {
-          popup?.close()
-        } catch {
-          /* ignore */
-        }
         reject(
           new Error(
-            'Timed out waiting for Google. The coordinator usually cannot postMessage after Google (browser COOP). Paste the token instead.'
+            'Timed out waiting for Google. The coordinator usually cannot postMessage after Google (browser COOP). Paste the token from the auth tab instead.'
           )
         )
       })

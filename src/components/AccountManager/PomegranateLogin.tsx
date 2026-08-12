@@ -95,6 +95,12 @@ export default function PomegranateLogin({
     }
   }
 
+  const pasteHint = () =>
+    t('pomegranatePasteAfterGoogle', {
+      defaultValue:
+        'A Google tab should open. Finish sign-in there. When it says “Error: No token received.” that usually means success — in THAT tab’s console run: copy(document.body.dataset.token) — paste below. Do not refresh that page.'
+    })
+
   const handleSignIn = () => {
     abortRef.current?.abort()
     const ac = new AbortController()
@@ -103,14 +109,10 @@ export default function PomegranateLogin({
     setManualToken('')
     setAwaitingPaste(true)
     setPending(false)
-    setStatus(
-      t('pomegranatePasteAfterGoogle', {
-        defaultValue:
-          'Finish Google once. On “Error: No token received.” do not refresh — open the console and run: copy(document.body.dataset.token) — then paste below. If you see “failed to exchange oauth code”, close that tab and start Google again once.'
-      })
-    )
+    setStatus(pasteHint())
 
-    // Background: if opener somehow survives, auto-continue without paste.
+    // Opens a normal tab (not a tiny popup). postMessage rarely works after Google COOP;
+    // paste is the reliable path. We still listen in case opener survives.
     void authenticateWithGooglePopup(coordinatorInput, { signal: ac.signal })
       .then((token) => {
         if (abortedRef.current || ac.signal.aborted) return
@@ -119,14 +121,9 @@ export default function PomegranateLogin({
       .catch((err) => {
         if (abortedRef.current || ac.signal.aborted) return
         if (err instanceof PomegranateLoginCancelledError) return
-        // Stay on paste UI — do not clear status; popup/COOP failure is expected.
-        setErrMsg(null)
-        setStatus(
-          t('pomegranatePasteAfterGoogle', {
-            defaultValue:
-              'Finish Google once. On “Error: No token received.” do not refresh — open the console and run: copy(document.body.dataset.token) — then paste below. If you see “failed to exchange oauth code”, close that tab and start Google again once.'
-          })
-        )
+        // Keep paste UI; surface the real reason (blocked / closed / timeout).
+        setErrMsg(err instanceof Error ? err.message : String(err))
+        setStatus(pasteHint())
       })
   }
 
@@ -136,13 +133,8 @@ export default function PomegranateLogin({
     setErrMsg(null)
     setAwaitingPaste(true)
     setPending(false)
-    setStatus(
-      t('pomegranatePasteAfterGoogle', {
-        defaultValue:
-          'Finish Google once. On “Error: No token received.” do not refresh — open the console and run: copy(document.body.dataset.token) — then paste below. If you see “failed to exchange oauth code”, close that tab and start Google again once.'
-      })
-    )
-    window.open(pomegranateGoogleLoginUrl(coordinatorInput), '_blank', 'noopener,noreferrer')
+    setStatus(pasteHint())
+    window.open(pomegranateGoogleLoginUrl(coordinatorInput), '_blank')
   }
 
   const handleCancel = () => {
@@ -196,7 +188,7 @@ export default function PomegranateLogin({
         <p className="text-xs text-muted-foreground">
           {t('pomegranateManualTokenHint', {
             defaultValue:
-              'Google clears window.opener, so the auth page cannot post the token back. Open login once → on “Error: No token received.” the token is still in document.body.dataset.token (copy it; never refresh — refresh causes “failed to exchange oauth code”).'
+              'After Google, auth.njump.me often shows “Error: No token received.” — the token is still there. In that tab’s console: copy(document.body.dataset.token), paste below. Never refresh that page.'
           })}
         </p>
         <Button
