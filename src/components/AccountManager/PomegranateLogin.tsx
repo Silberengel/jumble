@@ -1,10 +1,11 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
+  authenticateWithGooglePopup,
+  decodePomegranateGoogleToken,
   loadStoredPomegranateCoordinatorUrl,
-  massagePomegranateOrigin,
-  normalizePomegranateCoordinatorBase,
   pomegranateGoogleLoginUrl,
   pomegranateLogin,
   PomegranateLoginCancelledError,
@@ -16,9 +17,12 @@ import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 /**
- * Sign in with Pomegranate: Google login at the coordinator (popup), kind-16440 setup
- * discovery, then NIP-46 bunker connect with the central as relay (no secret).
- * Mirrors imwald-android `PomegranateLoginService` / `PomegranateGoogleLoginActivity`.
+ * Sign in with Pomegranate.
+ *
+ * Google’s COOP usually clears `window.opener`, so the coordinator callback cannot
+ * `postMessage` the token back. Flow: open Google once → paste token from the auth page
+ * (even when it shows “Error: No token received.” — `document.body.dataset.token` is still set).
+ * A background popup listener still accepts a lucky postMessage if opener survives.
  */
 export default function PomegranateLogin({
   back,
@@ -31,48 +35,136 @@ export default function PomegranateLogin({
   const { bunkerLogin } = useNostr()
   const [coordinatorInput, setCoordinatorInput] = useState(loadStoredPomegranateCoordinatorUrl)
   const [pending, setPending] = useState(false)
+  const [awaitingPaste, setAwaitingPaste] = useState(false)
   const [status, setStatus] = useState<string | null>(null)
   const [errMsg, setErrMsg] = useState<string | null>(null)
+  const [manualToken, setManualToken] = useState('')
   const abortedRef = useRef(false)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     return () => {
       abortedRef.current = true
+      abortRef.current?.abort()
     }
   }, [])
 
-  const handleSignIn = async () => {
+  const runWithToken = async (rawToken: string) => {
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    abortedRef.current = false
     setPending(true)
     setErrMsg(null)
-    setStatus(t('Waiting for Google sign-in…'))
+    setAwaitingPaste(true)
+    setStatus(t('Loading Pomegranate account…', { defaultValue: 'Loading Pomegranate account…' }))
     try {
       const result = await pomegranateLogin(
         coordinatorInput,
-        authenticateWithGooglePopup,
+        async () => rawToken,
         async (discoveredCentralUrl) =>
           window.confirm(
             t(
               'An existing Pomegranate setup for this Google account was found at {{url}}. Sign in there instead?',
               { url: discoveredCentralUrl }
             )
-          )
+          ),
+        {
+          signal: ac.signal,
+          onProgress: (message) => {
+            if (!abortedRef.current && !ac.signal.aborted) setStatus(message)
+          }
+        }
       )
-      if (abortedRef.current) return
+      if (abortedRef.current || ac.signal.aborted) throw new PomegranateLoginCancelledError()
       setStatus(t('Connecting to signer…'))
-      await bunkerLogin(result.bunkerUrl, { allowMissingSecret: true })
+      await bunkerLogin(result.bunkerUrl, { allowMissingSecret: true, timeoutMs: 25_000 })
       storePomegranateCoordinatorUrl(result.centralUrl)
-      if (!abortedRef.current) onLoginSuccess()
+      if (!abortedRef.current && !ac.signal.aborted) onLoginSuccess()
     } catch (err) {
-      if (abortedRef.current) return
-      if (!(err instanceof PomegranateLoginCancelledError)) {
-        setErrMsg(err instanceof Error ? err.message : String(err))
-      }
+      if (abortedRef.current || ac.signal.aborted) return
+      if (err instanceof PomegranateLoginCancelledError) return
+      setErrMsg(err instanceof Error ? err.message : String(err))
+      setAwaitingPaste(true)
     } finally {
+      if (abortRef.current === ac) abortRef.current = null
       if (!abortedRef.current) {
         setPending(false)
         setStatus(null)
       }
     }
+  }
+
+  const handleSignIn = () => {
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    setErrMsg(null)
+    setManualToken('')
+    setAwaitingPaste(true)
+    setPending(false)
+    setStatus(
+      t('pomegranatePasteAfterGoogle', {
+        defaultValue:
+          'Finish Google once. On “Error: No token received.” do not refresh — open the console and run: copy(document.body.dataset.token) — then paste below. If you see “failed to exchange oauth code”, close that tab and start Google again once.'
+      })
+    )
+
+    // Background: if opener somehow survives, auto-continue without paste.
+    void authenticateWithGooglePopup(coordinatorInput, { signal: ac.signal })
+      .then((token) => {
+        if (abortedRef.current || ac.signal.aborted) return
+        void runWithToken(token)
+      })
+      .catch((err) => {
+        if (abortedRef.current || ac.signal.aborted) return
+        if (err instanceof PomegranateLoginCancelledError) return
+        // Stay on paste UI — do not clear status; popup/COOP failure is expected.
+        setErrMsg(null)
+        setStatus(
+          t('pomegranatePasteAfterGoogle', {
+            defaultValue:
+              'Finish Google once. On “Error: No token received.” do not refresh — open the console and run: copy(document.body.dataset.token) — then paste below. If you see “failed to exchange oauth code”, close that tab and start Google again once.'
+          })
+        )
+      })
+  }
+
+  const handleOpenTabOnly = () => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setErrMsg(null)
+    setAwaitingPaste(true)
+    setPending(false)
+    setStatus(
+      t('pomegranatePasteAfterGoogle', {
+        defaultValue:
+          'Finish Google once. On “Error: No token received.” do not refresh — open the console and run: copy(document.body.dataset.token) — then paste below. If you see “failed to exchange oauth code”, close that tab and start Google again once.'
+      })
+    )
+    window.open(pomegranateGoogleLoginUrl(coordinatorInput), '_blank', 'noopener,noreferrer')
+  }
+
+  const handleCancel = () => {
+    abortedRef.current = true
+    abortRef.current?.abort()
+    abortRef.current = null
+    setPending(false)
+    setAwaitingPaste(false)
+    setStatus(null)
+    setErrMsg(null)
+  }
+
+  const handleManualContinue = () => {
+    const raw = manualToken.trim()
+    if (!raw) return
+    try {
+      decodePomegranateGoogleToken(raw)
+    } catch (err) {
+      setErrMsg(err instanceof Error ? err.message : String(err))
+      return
+    }
+    void runWithToken(raw)
   }
 
   return (
@@ -86,14 +178,57 @@ export default function PomegranateLogin({
         )}
       </p>
 
-      <Button onClick={() => void handleSignIn()} disabled={pending} className="w-full">
+      <Button onClick={handleSignIn} disabled={pending} className="w-full">
         {pending ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
         {t('Sign in with Google')}
       </Button>
+      {(pending || awaitingPaste) && (
+        <Button variant="outline" onClick={handleCancel} className="w-full">
+          {t('Cancel')}
+        </Button>
+      )}
       {status && !errMsg && (
         <div className="text-xs text-muted-foreground text-center">{status}</div>
       )}
       {errMsg && <div className="text-xs text-destructive text-center">{errMsg}</div>}
+
+      <div className="grid gap-2 rounded-md border border-border p-3">
+        <p className="text-xs text-muted-foreground">
+          {t('pomegranateManualTokenHint', {
+            defaultValue:
+              'Google clears window.opener, so the auth page cannot post the token back. Open login once → on “Error: No token received.” the token is still in document.body.dataset.token (copy it; never refresh — refresh causes “failed to exchange oauth code”).'
+          })}
+        </p>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={handleOpenTabOnly}
+          disabled={pending}
+          className="w-full"
+        >
+          {t('Open Google login tab', { defaultValue: 'Open Google login in new tab' })}
+        </Button>
+        <Label htmlFor="pomegranate-manual-token">
+          {t('Paste sign-in token', { defaultValue: 'Paste sign-in token' })}
+        </Label>
+        <Textarea
+          id="pomegranate-manual-token"
+          value={manualToken}
+          onChange={(e) => setManualToken(e.target.value)}
+          placeholder="base64…"
+          className="min-h-[4.5rem] font-mono text-xs"
+          disabled={pending}
+        />
+        <Button
+          variant="secondary"
+          onClick={handleManualContinue}
+          disabled={pending || !manualToken.trim()}
+          className="w-full"
+        >
+          {pending ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : null}
+          {t('Continue with token', { defaultValue: 'Continue with token' })}
+        </Button>
+      </div>
 
       <div className="grid gap-2">
         <Label htmlFor="pomegranate-coordinator-input">{t('Coordinator URL')}</Label>
@@ -109,68 +244,9 @@ export default function PomegranateLogin({
         </p>
       </div>
 
-      <Button variant="secondary" onClick={back} className="w-full">
+      <Button variant="secondary" onClick={back} className="w-full" disabled={pending}>
         {t('Back')}
       </Button>
     </div>
   )
-}
-
-/**
- * Open `{central}/login/google` in a popup and await the central token. The coordinator's
- * callback page posts `{ token }` to `window.opener` (same contract the Android WebView shims).
- */
-function authenticateWithGooglePopup(centralUrl: string): Promise<string> {
-  const centralOrigin = normalizePomegranateCoordinatorBase(centralUrl)
-  return new Promise<string>((resolve, reject) => {
-    const popup = window.open(
-      pomegranateGoogleLoginUrl(centralUrl),
-      'pomegranate-google-login',
-      'popup=yes,width=500,height=640'
-    )
-    if (!popup) {
-      reject(new Error('Popup blocked — allow popups for this site and try again'))
-      return
-    }
-    let settled = false
-    const settle = (fn: () => void) => {
-      if (settled) return
-      settled = true
-      window.removeEventListener('message', onMessage)
-      window.clearInterval(closedTimer)
-      fn()
-    }
-    const onMessage = (event: MessageEvent) => {
-      if (massagePomegranateOrigin(event.origin) !== centralOrigin) return
-      const token = extractToken(event.data)
-      if (!token) return
-      settle(() => {
-        try {
-          popup.close()
-        } catch {
-          /* already closed */
-        }
-        resolve(token)
-      })
-    }
-    const closedTimer = window.setInterval(() => {
-      if (popup.closed) {
-        settle(() => reject(new Error('Sign-in window was closed')))
-      }
-    }, 500)
-    window.addEventListener('message', onMessage)
-  })
-}
-
-/** The callback page posts either `{ token }` or a JSON string of the same shape. */
-function extractToken(data: unknown): string | null {
-  if (typeof data === 'string') {
-    try {
-      data = JSON.parse(data)
-    } catch {
-      return null
-    }
-  }
-  const token = (data as { token?: unknown } | null)?.token
-  return typeof token === 'string' && token.trim() ? token : null
 }

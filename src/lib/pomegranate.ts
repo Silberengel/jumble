@@ -36,6 +36,52 @@ const TOKEN_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
 const DISCOVERY_TIMEOUT_MS = 8_000
 
+/** Hard ceiling for central HTTP calls (browser fetch has no default timeout). */
+const POMEGRANATE_HTTP_TIMEOUT_MS = 15_000
+
+/** Wall-clock limit for kind-16440 relay discovery (includes argon2). */
+const SETUP_DISCOVERY_WALL_MS = 10_000
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new PomegranateLoginCancelledError()
+}
+
+function mergeAbortSignals(
+  ...signals: Array<AbortSignal | undefined>
+): AbortSignal | undefined {
+  const active = signals.filter((s): s is AbortSignal => !!s)
+  if (active.length === 0) return undefined
+  if (active.length === 1) return active[0]
+  if (typeof AbortSignal.any === 'function') return AbortSignal.any(active)
+  const merged = new AbortController()
+  for (const signal of active) {
+    if (signal.aborted) {
+      merged.abort()
+      break
+    }
+    signal.addEventListener('abort', () => merged.abort(), { once: true })
+  }
+  return merged.signal
+}
+
+async function withWallTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  onTimeout: () => T
+): Promise<T> {
+  let timer = 0
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = window.setTimeout(() => resolve(onTimeout()), ms)
+      })
+    ])
+  } finally {
+    if (timer) window.clearTimeout(timer)
+  }
+}
+
 export interface PomegranateGoogleToken {
   raw: string
   email: string
@@ -67,6 +113,158 @@ export class PomegranateLoginCancelledError extends Error {
   constructor() {
     super('Pomegranate sign-in cancelled')
   }
+}
+
+/** How long to wait for a lucky `postMessage` from the coordinator callback before giving up. */
+export const POMEGRANATE_GOOGLE_POPUP_TIMEOUT_MS = 90_000
+
+/**
+ * Token from the central callback `postMessage` payload (`{ token }` or a JSON string of that shape).
+ */
+export function extractPomegranatePostMessageToken(data: unknown): string | null {
+  let payload = data
+  if (typeof payload === 'string') {
+    try {
+      payload = JSON.parse(payload)
+    } catch {
+      return null
+    }
+  }
+  const token = (payload as { token?: unknown } | null)?.token
+  return typeof token === 'string' && token.trim() ? token.trim() : null
+}
+
+function popupIsClosed(popup: Window): boolean {
+  try {
+    return popup.closed
+  } catch {
+    // Cross-Origin-Opener-Policy can make `.closed` throw; treat as still open.
+    return false
+  }
+}
+
+/**
+ * Open `{central}/login/google` and await `{ token }` via `postMessage` when `window.opener` survives.
+ * Registers the listener **before** `window.open`. After Google COOP, opener is often null and this
+ * will time out — callers should offer paste-token as the reliable path.
+ */
+export function authenticateWithGooglePopup(
+  centralUrl: string,
+  options?: { signal?: AbortSignal; timeoutMs?: number }
+): Promise<string> {
+  const centralOrigin = normalizePomegranateCoordinatorBase(centralUrl)
+  const timeoutMs = options?.timeoutMs ?? POMEGRANATE_GOOGLE_POPUP_TIMEOUT_MS
+
+  return new Promise<string>((resolve, reject) => {
+    let settled = false
+    let popup: Window | null = null
+    let closedTimer = 0
+    let timeoutTimer = 0
+
+    const settle = (fn: () => void) => {
+      if (settled) return
+      settled = true
+      window.removeEventListener('message', onMessage)
+      if (closedTimer) window.clearInterval(closedTimer)
+      if (timeoutTimer) window.clearTimeout(timeoutTimer)
+      options?.signal?.removeEventListener('abort', onAbort)
+      fn()
+    }
+
+    const onAbort = () => {
+      settle(() => {
+        try {
+          popup?.close()
+        } catch {
+          /* ignore */
+        }
+        reject(new PomegranateLoginCancelledError())
+      })
+    }
+
+    const onMessage = (event: MessageEvent) => {
+      if (massagePomegranateOrigin(event.origin) !== centralOrigin) return
+      const token = extractPomegranatePostMessageToken(event.data)
+      if (!token) return
+      settle(() => {
+        try {
+          popup?.close()
+        } catch {
+          /* already closed */
+        }
+        resolve(token)
+      })
+    }
+
+    if (options?.signal?.aborted) {
+      reject(new PomegranateLoginCancelledError())
+      return
+    }
+
+    window.addEventListener('message', onMessage)
+    options?.signal?.addEventListener('abort', onAbort)
+
+    // Unique name each attempt — reusing one window can re-hit /callback with a
+    // spent code ("failed to exchange oauth code") or overwrite oauth state.
+    popup = window.open(
+      pomegranateGoogleLoginUrl(centralUrl),
+      `pomegranate-google-login-${Date.now()}`,
+      'popup=yes,width=500,height=640'
+    )
+    if (!popup) {
+      settle(() =>
+        reject(new Error('Popup blocked — allow popups for this site and try again'))
+      )
+      return
+    }
+
+    closedTimer = window.setInterval(() => {
+      if (!popupIsClosed(popup!)) return
+      settle(() =>
+        reject(
+          new Error(
+            'Sign-in window closed without a token. If the page said “Error: No token received.”, Google succeeded — paste the token from that page (see instructions).'
+          )
+        )
+      )
+    }, 400)
+
+    timeoutTimer = window.setTimeout(() => {
+      settle(() => {
+        try {
+          popup?.close()
+        } catch {
+          /* ignore */
+        }
+        reject(
+          new Error(
+            'Timed out waiting for Google. The coordinator usually cannot postMessage after Google (browser COOP). Paste the token instead.'
+          )
+        )
+      })
+    }, timeoutMs)
+  })
+}
+
+/** Exchange a Google ID token for a central Token via the Android-compatible endpoint. */
+export async function exchangeGoogleIdTokenForCentralToken(
+  centralBase: string,
+  googleIdToken: string
+): Promise<string> {
+  const central = normalizePomegranateCoordinatorBase(centralBase)
+  const response = await fetch(`${central}/login/google/android`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({ id_token: googleIdToken })
+  })
+  if (!response.ok) {
+    const body = await response.text().catch(() => '')
+    throw new Error(body.trim() || `Google sign-in exchange failed (${response.status})`)
+  }
+  const root = (await response.json().catch(() => null)) as { token?: string } | null
+  const token = root?.token?.trim()
+  if (!token) throw new Error('Central returned no sign-in token')
+  return token
 }
 
 /** Normalize to origin (scheme + host[+port]), matching the admin/Android `massageOrigin`. */
@@ -169,23 +367,43 @@ async function pomegranateFetch(
   centralBase: string,
   path: string,
   token: PomegranateGoogleToken,
-  init?: RequestInit
+  init?: RequestInit & { timeoutMs?: number }
 ): Promise<Response> {
   const central = normalizePomegranateCoordinatorBase(centralBase)
-  return fetch(`${central}${path}`, {
-    ...init,
-    headers: {
-      ...(init?.headers ?? {}),
-      Authorization: `Token ${token.raw}`
+  const timeoutMs = init?.timeoutMs ?? POMEGRANATE_HTTP_TIMEOUT_MS
+  const { timeoutMs: _omit, signal: userSignal, ...rest } = init ?? {}
+  const timeoutSignal =
+    typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
+  const signal = mergeAbortSignals(userSignal, timeoutSignal)
+  try {
+    return await fetch(`${central}${path}`, {
+      ...rest,
+      signal,
+      headers: {
+        ...(rest.headers ?? {}),
+        Authorization: `Token ${token.raw}`
+      }
+    })
+  } catch (err) {
+    if (userSignal?.aborted) throw new PomegranateLoginCancelledError()
+    if (err instanceof DOMException && err.name === 'TimeoutError') {
+      throw new Error(`Pomegranate request timed out (${path})`)
     }
-  })
+    if (err instanceof Error && /aborted|timeout/i.test(err.message)) {
+      throw new Error(`Pomegranate request timed out (${path})`)
+    }
+    throw err
+  }
 }
 
 export async function fetchPomegranateAccount(
   centralBase: string,
-  token: PomegranateGoogleToken
+  token: PomegranateGoogleToken,
+  options?: { signal?: AbortSignal }
 ): Promise<PomegranateAccount | null> {
-  const response = await pomegranateFetch(centralBase, '/account', token)
+  const response = await pomegranateFetch(centralBase, '/account', token, {
+    signal: options?.signal
+  })
   if (response.status === 401) throw new Error('Google session expired, please sign in again')
   if (response.status === 404) return null
   if (!response.ok) throw new Error(`Failed to load Pomegranate account (${response.status})`)
@@ -201,9 +419,12 @@ export async function fetchPomegranateAccount(
 
 export async function listPomegranateProfiles(
   centralBase: string,
-  token: PomegranateGoogleToken
+  token: PomegranateGoogleToken,
+  options?: { signal?: AbortSignal }
 ): Promise<PomegranateProfile[]> {
-  const response = await pomegranateFetch(centralBase, '/profiles', token)
+  const response = await pomegranateFetch(centralBase, '/profiles', token, {
+    signal: options?.signal
+  })
   if (!response.ok) throw new Error(`Failed to load signing profiles (${response.status})`)
   const arr = (await response.json().catch(() => null)) as
     | { name?: string; handler_pubkey?: string }[]
@@ -219,12 +440,14 @@ export async function listPomegranateProfiles(
 export async function createPomegranateProfile(
   centralBase: string,
   token: PomegranateGoogleToken,
-  name: string
+  name: string,
+  options?: { signal?: AbortSignal }
 ): Promise<void> {
   const response = await pomegranateFetch(centralBase, '/profiles', token, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ name })
+    body: JSON.stringify({ name }),
+    signal: options?.signal
   })
   if (!response.ok) throw new Error(`Signing profile creation failed (${response.status})`)
 }
@@ -237,13 +460,14 @@ export async function createPomegranateProfile(
  */
 export async function ensurePomegranateDefaultProfile(
   centralBase: string,
-  token: PomegranateGoogleToken
+  token: PomegranateGoogleToken,
+  options?: { signal?: AbortSignal }
 ): Promise<PomegranateProfile> {
   const isDefault = (p: PomegranateProfile) => p.name.toLowerCase() === 'default'
-  const existing = (await listPomegranateProfiles(centralBase, token)).find(isDefault)
+  const existing = (await listPomegranateProfiles(centralBase, token, options)).find(isDefault)
   if (existing) return existing
-  await createPomegranateProfile(centralBase, token, 'default')
-  const created = (await listPomegranateProfiles(centralBase, token)).find(isDefault)
+  await createPomegranateProfile(centralBase, token, 'default', options)
+  const created = (await listPomegranateProfiles(centralBase, token, options)).find(isDefault)
   if (!created) throw new Error('Signing profile "default" was not available after creation')
   return created
 }
@@ -287,8 +511,8 @@ export async function findExistingPomegranateSetup(
 
 /**
  * Pomegranate login for existing accounts only, per the README implementation guide:
- * Google token (steps 2–4) → kind-16440 setup discovery with user confirmation when
- * another central is found (step 5) → GET /account (step 6) → ensure the "default"
+ * Google token (steps 2–4) → GET /account on the chosen central (fast path) → optional
+ * kind-16440 setup discovery when the account is missing (step 5) → ensure the "default"
  * profile (step 15) → bunker:// (step 16). The caller connects NIP-46.
  *
  * New-account FROST registration (steps 8–14) is intentionally not implemented;
@@ -302,21 +526,49 @@ export async function findExistingPomegranateSetup(
 export async function pomegranateLogin(
   centralBase: string,
   authenticate: (centralUrl: string) => Promise<string>,
-  confirmAlternateCentral: (discoveredCentralUrl: string) => Promise<boolean> = async () => true
+  confirmAlternateCentral: (discoveredCentralUrl: string) => Promise<boolean> = async () => true,
+  options?: {
+    signal?: AbortSignal
+    onProgress?: (message: string) => void
+  }
 ): Promise<PomegranateLoginResult> {
-  let central = normalizePomegranateCoordinatorBase(centralBase)
-  let token = decodePomegranateGoogleToken(await authenticate(central))
+  const signal = options?.signal
+  const onProgress = options?.onProgress
+  throwIfAborted(signal)
 
-  const setup = await findExistingPomegranateSetup(token.email)
-  if (setup && setup.centralUrl !== central) {
-    if (!(await confirmAlternateCentral(setup.centralUrl))) {
-      throw new PomegranateLoginCancelledError()
+  let central = normalizePomegranateCoordinatorBase(centralBase)
+  onProgress?.('Decoding sign-in token…')
+  let token = decodePomegranateGoogleToken(await authenticate(central))
+  throwIfAborted(signal)
+
+  // Prefer the chosen central's /account first — skips argon2 + relay discovery when
+  // the account already lives here (the common paste-token path).
+  onProgress?.('Loading Pomegranate account…')
+  let account = await fetchPomegranateAccount(central, token, { signal })
+  throwIfAborted(signal)
+
+  let setup: PomegranateDiscoveredSetup | null = null
+  if (!account) {
+    onProgress?.('Looking for an existing setup…')
+    setup = await withWallTimeout(
+      findExistingPomegranateSetup(token.email),
+      SETUP_DISCOVERY_WALL_MS,
+      () => null
+    )
+    throwIfAborted(signal)
+    if (setup && setup.centralUrl !== central) {
+      if (!(await confirmAlternateCentral(setup.centralUrl))) {
+        throw new PomegranateLoginCancelledError()
+      }
+      central = setup.centralUrl
+      onProgress?.('Signing in at the discovered coordinator…')
+      token = decodePomegranateGoogleToken(await authenticate(central))
+      throwIfAborted(signal)
+      onProgress?.('Loading Pomegranate account…')
+      account = await fetchPomegranateAccount(central, token, { signal })
     }
-    central = setup.centralUrl
-    token = decodePomegranateGoogleToken(await authenticate(central))
   }
 
-  const account = await fetchPomegranateAccount(central, token)
   if (!account) {
     throw new Error(
       'No existing Pomegranate account was found for this Google login. ' +
@@ -333,7 +585,9 @@ export async function pomegranateLogin(
     )
   }
 
-  const profile = await ensurePomegranateDefaultProfile(central, token)
+  onProgress?.('Loading signing profile…')
+  const profile = await ensurePomegranateDefaultProfile(central, token, { signal })
+  throwIfAborted(signal)
   return {
     bunkerUrl: pomegranateBunkerUrl(central, profile.handlerPubkey),
     centralUrl: central

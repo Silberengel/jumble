@@ -1592,7 +1592,10 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const bunkerLogin = async (bunker: string, options?: { allowMissingSecret?: boolean }) => {
+  const bunkerLogin = async (
+    bunker: string,
+    options?: { allowMissingSecret?: boolean; timeoutMs?: number }
+  ) => {
     try {
       const bunkerSigner = new BunkerSigner()
       const pubkey = await bunkerSigner.login(bunker, true, options)

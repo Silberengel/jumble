@@ -37,6 +37,16 @@ describe('pomegranate argon2id', () => {
   }, 30_000)
 })
 
+describe('extractPomegranatePostMessageToken', () => {
+  it('reads token from object or JSON string payloads', async () => {
+    const { extractPomegranatePostMessageToken } = await import('./pomegranate')
+    expect(extractPomegranatePostMessageToken({ token: 'abc' })).toBe('abc')
+    expect(extractPomegranatePostMessageToken(JSON.stringify({ token: 'xyz' }))).toBe('xyz')
+    expect(extractPomegranatePostMessageToken({ token: '' })).toBeNull()
+    expect(extractPomegranatePostMessageToken('not-json')).toBeNull()
+  })
+})
+
 describe('massagePomegranateOrigin', () => {
   it('normalizes to origin like the admin/Android massageURL', () => {
     expect(massagePomegranateOrigin('https://auth.njump.me/some/path')).toBe(
