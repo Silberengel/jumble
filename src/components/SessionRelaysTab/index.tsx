@@ -43,7 +43,6 @@ function strikeStatusChips(
   if (now < entry.readStrikeSkipUntil) chips.push(t('Session relay strike read skipped'))
   if (now < entry.publishStrikeSkipUntil) chips.push(t('Session relay strike publish skipped'))
   if (now < entry.rateLimitUntil) chips.push(t('Session relay strike rate limited'))
-  if (now < entry.slowParkUntil) chips.push(t('Session relay strike slow parked'))
   return chips
 }
 
@@ -59,14 +58,10 @@ function strikeDetailLines(
   if (entry.publishFailures > 0) {
     lines.push(t('Session relay strike publish failures', { count: entry.publishFailures }))
   }
-  if (entry.slowSignals > 0) {
-    lines.push(t('Session relay strike slow signals', { count: entry.slowSignals }))
-  }
   for (const [ts, label] of [
     [entry.readStrikeSkipUntil, t('Session relay strike read skipped')],
     [entry.publishStrikeSkipUntil, t('Session relay strike publish skipped')],
-    [entry.rateLimitUntil, t('Session relay strike rate limited')],
-    [entry.slowParkUntil, t('Session relay strike slow parked')]
+    [entry.rateLimitUntil, t('Session relay strike rate limited')]
   ] as const) {
     const until = formatSkipUntil(ts, now)
     if (until) lines.push(`${label} ${t('Session relay strike until', { time: until })}`)

@@ -74,7 +74,7 @@ export function sweepIdleRelayPoolSockets(): void {
   }
 }
 
-/** Close specific relays when they are connected, have no active SUBs, and are not session-parked hot. */
+/** Close specific relays when they are connected and have no active SUBs. */
 export function closeRelayPoolSocketsIfIdle(urls: readonly string[]): void {
   if (!pool || !hasActiveSubs || urls.length === 0) return
   let status: Map<string, boolean>
@@ -98,7 +98,7 @@ export function closeRelayPoolSocketsIfIdle(urls: readonly string[]): void {
   if (toClose.length === 0) return
   try {
     pool.close(toClose)
-    logger.debug('[RelayPoolIdle] closed sockets after slow-park', { relays: toClose })
+    logger.debug('[RelayPoolIdle] closed idle sockets (explicit)', { relays: toClose })
   } catch {
     /* ignore */
   }

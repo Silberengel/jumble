@@ -2214,7 +2214,7 @@ export function NostrProvider({ children }: { children: React.ReactNode }) {
         favoriteRelayUrls,
         /** Picker / `specifiedRelayUrls` is the authoritative target list — do not prepend full NIP-65 outbox again. */
         skipOutboxRetry: (options.specifiedRelayUrls?.length ?? 0) > 0,
-        /** Explicitly-selected relays are always attempted, even if read-only / parked (admin can write). */
+        /** Explicitly-selected relays are always attempted, even if read-only / session-struck (admin can write). */
         forceRelayUrls: options.specifiedRelayUrls,
         publishTrace
       }

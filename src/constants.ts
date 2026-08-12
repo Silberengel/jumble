@@ -155,15 +155,6 @@ export const MULTI_RELAY_PUBLISH_ACK_CAP_MS = 16_000
  */
 export const PUBLISH_MULTI_RELAY_CONNECTION_CAP_MS = 12_000
 
-/** Session-park relays that finish REQ waves much slower than peers (see {@link relaySessionStrikes}). */
-export const RELAY_SLOW_PARK_ABSOLUTE_MS = 10_000
-/** Multiplier over batch median EOSE latency to count a relay as slow in multi-relay waves. */
-export const RELAY_SLOW_PARK_MEDIAN_MULTIPLIER = 2.5
-/** Slow signals within a session before omitting the relay from multi-relay read stacks. */
-export const RELAY_SLOW_PARK_SIGNALS_THRESHOLD = 2
-/** How long a session-parked slow relay stays out of multi-relay reads. */
-export const RELAY_SLOW_PARK_COOLDOWN_MS = 5 * 60 * 1000
-
 /** Close pooled WebSocket when no SUBs and no pool activity for this long (see {@link initRelayPoolIdle}). */
 export const RELAY_POOL_SOCKET_IDLE_MS = 15_000
 /** How often to scan for idle relay sockets. */

@@ -1,15 +1,8 @@
-import {
-  RELAY_SLOW_PARK_ABSOLUTE_MS,
-  RELAY_SLOW_PARK_COOLDOWN_MS,
-  RELAY_SLOW_PARK_MEDIAN_MULTIPLIER,
-  RELAY_SLOW_PARK_SIGNALS_THRESHOLD
-} from '@/constants'
 import type { Event } from 'nostr-tools'
 import { getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
-import { isReadOnlyRelayUrl, isRelayPublishPolicyRejection } from '@/lib/relay-publish-filter'
+import { isRelayPublishPolicyRejection } from '@/lib/relay-publish-filter'
 import { canonicalRelaySessionKey, httpIndexRelayBasesInUrlBatch, isLocalNetworkUrl } from '@/lib/url'
-import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
 
 /** Conservative: 5 read/publish failures → skip until this many ms after last qualifying failure. */
 const STRIKE_FAILURES_THRESHOLD = 5
@@ -49,8 +42,6 @@ type StrikeEntry = {
   readStrikeSkipUntil: number
   /** How many strike rounds this relay went through without a success (escalates the cooldown). */
   readStrikeLevel: number
-  slowSignals: number
-  slowParkUntil: number
   publishFailures: number
   publishLastStrikeIncrementAt: number
   publishStrikeSkipUntil: number
@@ -64,11 +55,10 @@ export type RelayStrikeDebugSnapshot = {
 
 /** True when the relay is skipped or has accrued session strike / cooldown state. */
 export function isRelayStrikeEntryActive(entry: StrikeEntry, now = Date.now()): boolean {
-  if (entry.readFailures > 0 || entry.publishFailures > 0 || entry.slowSignals > 0) return true
+  if (entry.readFailures > 0 || entry.publishFailures > 0) return true
   if (now < entry.readStrikeSkipUntil) return true
   if (now < entry.publishStrikeSkipUntil) return true
   if (now < entry.rateLimitUntil) return true
-  if (now < entry.slowParkUntil) return true
   return false
 }
 
@@ -78,8 +68,6 @@ function emptyEntry(): StrikeEntry {
     readLastStrikeIncrementAt: 0,
     readStrikeSkipUntil: 0,
     readStrikeLevel: 0,
-    slowSignals: 0,
-    slowParkUntil: 0,
     publishFailures: 0,
     publishLastStrikeIncrementAt: 0,
     publishStrikeSkipUntil: 0,
@@ -169,7 +157,7 @@ class RelaySessionStrikes {
     if (!key) return false
     const e = this.byKey.get(key)
     if (!e) return false
-    return Date.now() < Math.max(e.rateLimitUntil, e.readStrikeSkipUntil, e.slowParkUntil)
+    return Date.now() < Math.max(e.rateLimitUntil, e.readStrikeSkipUntil)
   }
 
   /** WS/HTTP connect failure: rate-limit style errors cool down without accruing read strikes. */
@@ -297,77 +285,7 @@ class RelaySessionStrikes {
     e.readStrikeSkipUntil = 0
     e.readStrikeLevel = 0
     e.readLastStrikeIncrementAt = 0
-    e.slowSignals = 0
-    e.slowParkUntil = 0
     this.emitChange()
-  }
-
-  /**
-   * After a subscribe/query wave: session-park relays that were much slower than peers (or timed out).
-   * Returns URLs whose pooled sockets should be closed when idle.
-   */
-  observeSubscribeBatch(rows: readonly RelayOpTerminalRow[]): string[] {
-    if (rows.length === 0) return []
-    const now = Date.now()
-    const socketsToClose: string[] = []
-
-    const eoseRows = rows.filter((r) => r.outcome === 'eose')
-    const sortedLatencies =
-      eoseRows.length > 0 ? [...eoseRows.map((r) => r.msFromBatchStart)].sort((a, b) => a - b) : []
-    const medianMs =
-      sortedLatencies.length > 0
-        ? sortedLatencies[Math.floor((sortedLatencies.length - 1) / 2)]!
-        : RELAY_SLOW_PARK_ABSOLUTE_MS
-
-    const slowThresholdMs =
-      rows.length > 1
-        ? Math.max(RELAY_SLOW_PARK_ABSOLUTE_MS, Math.round(medianMs * RELAY_SLOW_PARK_MEDIAN_MULTIPLIER))
-        : RELAY_SLOW_PARK_ABSOLUTE_MS
-
-    for (const row of rows) {
-      const key = sessionKey(row.relayUrl)
-      if (!key) continue
-
-      const timedOut = row.outcome === 'timeout'
-      const slowEose = row.outcome === 'eose' && row.msFromBatchStart >= slowThresholdMs
-      const fastEose = row.outcome === 'eose' && row.msFromBatchStart < slowThresholdMs * 0.6
-
-      if (timedOut || slowEose) {
-        const parked = this.recordSlowSignalKey(key, now, row.relayUrl)
-        if (parked) socketsToClose.push(row.relayUrl)
-        if (timedOut && !isReadOnlyRelayUrl(row.relayUrl)) {
-          this.recordReadFailureKey(key, 'connection', row.relayUrl)
-        }
-        continue
-      }
-
-      if (fastEose) {
-        const e = this.byKey.get(key)
-        if (e && e.slowSignals > 0) {
-          e.slowSignals = Math.max(0, e.slowSignals - 1)
-          this.emitChange()
-        }
-      }
-    }
-
-    return socketsToClose
-  }
-
-  private recordSlowSignalKey(key: string, now: number, url?: string): boolean {
-    const e = this.getEntry(key)
-    if (this.cacheRelayKeys.has(key)) return false
-    // Read-only index relays (aggr.nostr.land, search.nos.today, …) are intentionally slower than inbox relays.
-    if (url && isReadOnlyRelayUrl(url)) return false
-    e.slowSignals += 1
-    this.emitChange()
-    if (e.slowSignals < RELAY_SLOW_PARK_SIGNALS_THRESHOLD) return false
-    e.slowParkUntil = Math.max(e.slowParkUntil, now + RELAY_SLOW_PARK_COOLDOWN_MS)
-    logger.warn('[RelayStrikes] session-parked slow relay', {
-      key,
-      slowSignals: e.slowSignals,
-      cooldownMs: RELAY_SLOW_PARK_COOLDOWN_MS
-    })
-    return true
   }
 
   private publishStrikeThresholdForKey(key: string, url: string): number {

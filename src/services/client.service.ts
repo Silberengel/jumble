@@ -1780,7 +1780,7 @@ class ClientService extends EventTarget {
 
     /**
      * Relays the user explicitly selected (relay picker / single-relay "Share something on this relay").
-     * These are absolute publish targets: always attempted, bypassing read-only / social-kind / session-park
+     * These are absolute publish targets: always attempted, bypassing read-only / social-kind / session-strike
      * filters and the publish cap. An admin using our client must be able to write to their own relay even
      * when our heuristics would otherwise skip it.
      */

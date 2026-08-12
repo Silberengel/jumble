@@ -21,7 +21,7 @@ export function useRelaySessionStrikeRevision(): number {
 }
 
 /**
- * True when the relay has session strike / cooldown state (failures, skip windows, rate limit, slow park).
+ * True when the relay has session strike / cooldown state (failures, skip windows, rate limit).
  */
 export function useRelaySessionStrikeActive(url: string | undefined): boolean {
   const revision = useRelaySessionStrikeRevision()

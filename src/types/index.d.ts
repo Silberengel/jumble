@@ -232,7 +232,7 @@ export type TPublishEventExtras = {
   skipOutboxRetry?: boolean
   /**
    * Relays the user explicitly selected (e.g. relay picker / single-relay "Share something on this relay").
-   * These are always attempted, bypassing read-only / social-kind / session-park filters and the publish
+   * These are always attempted, bypassing read-only / social-kind / session-strike filters and the publish
    * cap — an admin using our client must be able to write to their own relay regardless of heuristics.
    */
   forceRelayUrls?: string[]

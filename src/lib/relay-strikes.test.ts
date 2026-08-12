@@ -4,63 +4,6 @@ import {
   RelayConnectivityBreaker,
   relaySessionStrikes
 } from './relay-strikes'
-import type { RelayOpTerminalRow } from '@/services/relay-operation-log.service'
-
-function row(
-  url: string,
-  outcome: RelayOpTerminalRow['outcome'],
-  msFromBatchStart: number
-): RelayOpTerminalRow {
-  return { cmdIndex: 0, relayUrl: url, outcome, msFromBatchStart }
-}
-
-describe('relaySessionStrikes.observeSubscribeBatch', () => {
-  beforeEach(() => {
-    relaySessionStrikes.reset()
-  })
-
-  it('session-parks a relay much slower than batch median after two slow waves', () => {
-    const slow = 'wss://slow.example.com/'
-    const fast = 'wss://fast.example.com/'
-
-    relaySessionStrikes.observeSubscribeBatch([
-      row(fast, 'eose', 400),
-      row(slow, 'eose', 12_000)
-    ])
-    expect(relaySessionStrikes.isReadHttpSkipped(slow)).toBe(false)
-
-    relaySessionStrikes.observeSubscribeBatch([
-      row(fast, 'eose', 500),
-      row(slow, 'eose', 11_000)
-    ])
-    expect(relaySessionStrikes.isReadHttpSkipped(slow)).toBe(true)
-    expect(relaySessionStrikes.isReadHttpSkipped(fast)).toBe(false)
-  })
-
-  it('does not session-park read-only index relays (e.g. aggr.nostr.land)', () => {
-    const aggr = 'wss://aggr.nostr.land/'
-    const fast = 'wss://fast.example.com/'
-
-    relaySessionStrikes.observeSubscribeBatch([
-      row(fast, 'eose', 400),
-      row(aggr, 'eose', 12_000)
-    ])
-    relaySessionStrikes.observeSubscribeBatch([
-      row(fast, 'eose', 500),
-      row(aggr, 'timeout', 10_000)
-    ])
-    expect(relaySessionStrikes.isReadHttpSkipped(aggr)).toBe(false)
-  })
-
-  it('clears slow parking on fast EOSE via recordReadSuccess', () => {
-    const url = 'wss://recover.example.com/'
-    relaySessionStrikes.observeSubscribeBatch([row(url, 'eose', 15_000)])
-    relaySessionStrikes.observeSubscribeBatch([row(url, 'eose', 14_000)])
-    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(true)
-    relaySessionStrikes.recordReadSuccess(url)
-    expect(relaySessionStrikes.isReadHttpSkipped(url)).toBe(false)
-  })
-})
 
 describe('relaySessionStrikes HTTP read failures', () => {
   beforeEach(() => {
@@ -304,8 +247,6 @@ describe('isRelayStrikeEntryActive', () => {
         readLastStrikeIncrementAt: 0,
         readStrikeSkipUntil: 0,
         readStrikeLevel: 0,
-        slowSignals: 0,
-        slowParkUntil: 0,
         publishFailures: 0,
         publishLastStrikeIncrementAt: 0,
         publishStrikeSkipUntil: 0,
