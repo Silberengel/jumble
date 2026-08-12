@@ -387,7 +387,7 @@ async function pomegranateFetch(
   const { timeoutMs: _omit, signal: userSignal, ...rest } = init ?? {}
   const timeoutSignal =
     typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(timeoutMs) : undefined
-  const signal = mergeAbortSignals(userSignal, timeoutSignal)
+  const signal = mergeAbortSignals(userSignal ?? undefined, timeoutSignal)
   try {
     return await fetch(`${central}${path}`, {
       ...rest,

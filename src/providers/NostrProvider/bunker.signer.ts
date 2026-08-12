@@ -2,7 +2,14 @@ import { ISigner, TDraftEvent } from '@/types'
 import { openBunkerAuthUrl } from '@/lib/bunker-auth-url'
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils'
 import { generateSecretKey } from 'nostr-tools'
+import { SimplePool } from 'nostr-tools/pool'
 import { BunkerSigner as NBunkerSigner, parseBunkerInput } from 'nostr-tools/nip46'
+
+/** Private fields/methods needed to rebind the NIP-46 filter after relays connect. */
+type BunkerSignerSocketBind = {
+  subCloser?: { close: () => void }
+  setupSubscription: () => void
+}
 
 /** Default wait for NIP-46 `connect` + `get_public_key` (nostr-tools has no built-in timeout). */
 export const BUNKER_CONNECT_TIMEOUT_MS = 25_000
@@ -52,7 +59,9 @@ export class BunkerSigner implements ISigner {
       )
     }
 
+    const pool = new SimplePool()
     this.signer = NBunkerSigner.fromBunker(this.clientSecretKey, bunkerPointer, {
+      pool,
       onauth: (url) => {
         openBunkerAuthUrl(url)
       }
@@ -60,7 +69,6 @@ export class BunkerSigner implements ISigner {
     if (isInitialConnection) {
       // auth.njump.me only delivers NIP-46 responses on the same websocket that published the
       // request. Wait until the pool relay is up, then re-subscribe so the filter is on that socket.
-      const pool = this.signer.pool
       await Promise.all(
         bunkerPointer.relays.map(async (url) => {
           try {
@@ -70,13 +78,14 @@ export class BunkerSigner implements ISigner {
           }
         })
       )
+      const bind = this.signer as unknown as BunkerSignerSocketBind
       try {
-        this.signer.subCloser?.close()
+        bind.subCloser?.close()
       } catch {
         /* ignore */
       }
-      this.signer.subCloser = undefined
-      this.signer.setupSubscription()
+      bind.subCloser = undefined
+      bind.setupSubscription()
       await new Promise<void>((resolve) => window.setTimeout(resolve, 200))
 
       const timeoutMs = options?.timeoutMs ?? BUNKER_CONNECT_TIMEOUT_MS

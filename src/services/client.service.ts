@@ -149,10 +149,7 @@ import {
 import { applyCapitalLetterTagRelayFallback } from '@/lib/relay-fetch-relay-stack'
 import {
   stripLocalNetworkRelaysFromRelayList,
-  stripMailboxLocalUrlsForRemoteViewers,
-  syntheticOriginalRelaysFromReadWrite,
   stripLocalNetworkRelaysForWssReq,
-  urlIsNonLocalForRemoteViewer,
   normalizeWssRelayHintUrl
 } from '@/lib/relay-list-sanitize'
 import {
