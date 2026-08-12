@@ -15,7 +15,6 @@ import {
   Gift,
   Hash,
   Image as ImageIcon,
-  MessageSquare,
   Users,
   type LucideIcon
 } from 'lucide-react'
@@ -59,8 +58,6 @@ export function fauxSpellLabelKey(name: FauxSpellName): string {
   switch (name) {
     case 'notifications':
       return 'Notifications'
-    case 'discussions':
-      return 'Discussions'
     case 'following':
       return 'Following'
     case 'heatMap':
@@ -84,7 +81,6 @@ export function fauxSpellLabelKey(name: FauxSpellName): string {
 
 export const FAUX_SPELL_ICON: Record<FauxSpellName, LucideIcon> = {
   notifications: Bell,
-  discussions: MessageSquare,
   following: Users,
   heatMap: Flame,
   followPacks: Gift,

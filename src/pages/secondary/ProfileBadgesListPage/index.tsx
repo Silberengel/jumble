@@ -1,4 +1,6 @@
 import JsonViewDialog from '@/components/JsonViewDialog'
+import CreateAwardBadgeDialog from '@/components/CreateAwardBadgeDialog'
+import UnclaimedBadgeAwards from '@/components/UnclaimedBadgeAwards'
 import { RefreshButton } from '@/components/RefreshButton'
 import {
   AlertDialog,
@@ -29,6 +31,7 @@ import { parseAddressableCoordinate, parseProfileBadgeEntries } from '@/lib/nip5
 import {
   fetchLegacyProfileBadgesListEvent,
   fetchProfileBadgesListEvent,
+  buildClaimedBadgeListSafely,
   profileBadgeEntriesToTags,
   shouldOfferProfileBadgesMigration
 } from '@/lib/nip58-profile-badges-list'
@@ -39,7 +42,7 @@ import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { replaceableEventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import dayjs from 'dayjs'
-import { Award, Code, Eraser, MoreVertical, Trash2 } from 'lucide-react'
+import { Award, Code, Eraser, MoreVertical, Plus, Trash2 } from 'lucide-react'
 import type { Event } from 'nostr-tools'
 import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -115,6 +118,7 @@ const ProfileBadgesListPage = forwardRef(
     const [jsonPayload, setJsonPayload] = useState<unknown>(null)
     const [cleanConfirmOpen, setCleanConfirmOpen] = useState(false)
     const [cleaning, setCleaning] = useState(false)
+    const [createAwardOpen, setCreateAwardOpen] = useState(false)
 
     const showMigrate = useMemo(
       () => shouldOfferProfileBadgesMigration(listEvent, legacyListEvent),
@@ -166,8 +170,8 @@ const ProfileBadgesListPage = forwardRef(
     }, [hideTitlebar, registerPrimaryPanelRefresh, loadLists])
 
     const publishEntries = useCallback(
-      async (nextEntries: ProfileBadgeEntry[], successMessage: string) => {
-        if (!pubkey) return
+      async (nextEntries: ProfileBadgeEntry[], successMessage: string): Promise<boolean> => {
+        if (!pubkey) return false
         setPublishing(true)
         try {
           if (dayjs().unix() === listEvent?.created_at) {
@@ -188,13 +192,45 @@ const ProfileBadgesListPage = forwardRef(
           setListEvent(published)
           setEntries(nextEntries)
           toast.success(successMessage)
+          return true
         } catch (e) {
           showPublishingError(e instanceof Error ? e : new Error(String(e)))
+          return false
         } finally {
           setPublishing(false)
         }
       },
-      [pubkey, listEvent?.created_at, favoriteRelays, blockedRelays, publish, t]
+      [pubkey, listEvent?.created_at, favoriteRelays, blockedRelays, publish]
+    )
+
+    const handleClaimBadge = useCallback(
+      async (claim: ProfileBadgeEntry): Promise<boolean> => {
+        if (!pubkey) return false
+        let claimed = false
+        await checkLogin(async () => {
+          try {
+            const { nextEntries, alreadyClaimed } = await buildClaimedBadgeListSafely({
+              pubkey,
+              localEntries: entries,
+              claim,
+              favoriteRelays: favoriteRelays ?? [],
+              blockedRelays
+            })
+            if (alreadyClaimed) {
+              toast.info(t('Badge already on your list'))
+              setEntries(nextEntries)
+              claimed = true
+              return
+            }
+            claimed = await publishEntries(nextEntries, t('Badge claimed'))
+          } catch (e) {
+            showPublishingError(e instanceof Error ? e : new Error(String(e)))
+            claimed = false
+          }
+        })
+        return claimed
+      },
+      [pubkey, checkLogin, entries, favoriteRelays, blockedRelays, publishEntries, t]
     )
 
     const handleSave = useCallback(() => {
@@ -332,6 +368,24 @@ const ProfileBadgesListPage = forwardRef(
 
         <div className="space-y-4 px-4 pt-2 pb-8">
           <p className="text-sm text-muted-foreground">{t('Profile badges list intro')}</p>
+
+          <UnclaimedBadgeAwards
+            claimedEntries={entries}
+            onClaimAndPublish={handleClaimBadge}
+            publishing={publishing || migrating}
+          />
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full sm:w-auto"
+            onClick={() => checkLogin(() => setCreateAwardOpen(true))}
+          >
+            <Plus className="mr-2 size-4" />
+            {t('Create and award badge')}
+          </Button>
+
+          <CreateAwardBadgeDialog open={createAwardOpen} onOpenChange={setCreateAwardOpen} />
 
           {showMigrate && (
             <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 space-y-2">

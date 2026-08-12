@@ -6,7 +6,10 @@ import {
 import {
   isNip58ProfileBadgesListEvent,
   LEGACY_PROFILE_BADGES_D_TAG,
+  appendUnclaimedProfileBadge,
+  mergeProfileBadgeEntries,
   parseAddressableCoordinate,
+  parseBadgeAwardForRecipient,
   parseProfileBadgeEntries,
   resolveBadgeDisplayFromDefinition,
   type ProfileBadgeEntry,
@@ -17,7 +20,8 @@ import { fetchLatestReplaceableListEvent } from '@/lib/replaceable-list-latest'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import client, { replaceableEventService } from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
-import type { Event } from 'nostr-tools'
+import { kinds, type Event } from 'nostr-tools'
+import { buildAccountListRelayUrlsForMerge } from '@/lib/account-list-relay-urls'
 
 export function profileBadgeEntriesToTags(entries: ProfileBadgeEntry[]): string[][] {
   const tags: string[][] = []
@@ -208,4 +212,71 @@ export function shouldOfferProfileBadgesMigration(
   const currentEntries = parseProfileBadgeEntries(currentList)
   if (currentEntries.length === 0) return true
   return legacyList.created_at > currentList.created_at
+}
+
+/** Fetch kind 8 badge awards that tag `pubkeyHex` as a recipient (`#p`). */
+export async function fetchBadgeAwardsForRecipient(
+  pubkeyHex: string,
+  relayUrls: string[],
+  options?: { limit?: number; signal?: AbortSignal }
+): Promise<ProfileBadgeEntry[]> {
+  const pk = normalizeHexPubkey(pubkeyHex)
+  const allUrls = [...new Set(relayUrls.map((u) => normalizeAnyRelayUrl(u) || u).filter(Boolean))]
+  if (!allUrls.length) return []
+
+  const rows = await client.fetchEvents(
+    allUrls,
+    {
+      kinds: [kinds.BadgeAward],
+      '#p': [pk],
+      limit: options?.limit ?? 200
+    },
+    {
+      eoseTimeout: METADATA_BATCH_QUERY_EOSE_TIMEOUT_MS,
+      globalTimeout: METADATA_BATCH_QUERY_GLOBAL_TIMEOUT_MS,
+      foreground: true,
+      signal: options?.signal
+    }
+  )
+
+  const out: ProfileBadgeEntry[] = []
+  const seen = new Set<string>()
+  for (const ev of rows) {
+    const parsed = parseBadgeAwardForRecipient(ev, pk)
+    if (!parsed) continue
+    const key = `${parsed.definitionCoordinate}:${parsed.awardEventId}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    out.push(parsed)
+  }
+  return out
+}
+
+/**
+ * Build the next profile-badges list for a claim without wiping existing badges:
+ * union of relay-latest + local editor state, then append the claim.
+ */
+export async function buildClaimedBadgeListSafely(options: {
+  pubkey: string
+  localEntries: ProfileBadgeEntry[]
+  claim: ProfileBadgeEntry
+  favoriteRelays: string[]
+  blockedRelays: string[]
+}): Promise<{ nextEntries: ProfileBadgeEntry[]; alreadyClaimed: boolean }> {
+  const relays = await buildAccountListRelayUrlsForMerge({
+    accountPubkey: options.pubkey,
+    favoriteRelays: options.favoriteRelays ?? [],
+    blockedRelays: options.blockedRelays
+  })
+  const remoteEvent = await fetchProfileBadgesListEvent(options.pubkey, relays, {
+    cacheFirst: false,
+    foreground: true
+  })
+  const remoteEntries = parseProfileBadgeEntries(remoteEvent)
+  const mergedBase = mergeProfileBadgeEntries(remoteEntries, options.localEntries)
+  const next = appendUnclaimedProfileBadge(mergedBase, options.claim)
+  if (!next) {
+    return { nextEntries: mergedBase, alreadyClaimed: true }
+  }
+  return { nextEntries: next, alreadyClaimed: false }
 }

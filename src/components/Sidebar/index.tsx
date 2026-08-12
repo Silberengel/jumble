@@ -9,8 +9,8 @@ import PostButton from './PostButton'
 import SearchButton from './SearchButton'
 import LibraryButton from './LibraryButton'
 import FavoritesButton from './FavoritesButton'
-import DiscussionsButton from './DiscussionsButton'
 import SpellsButton from './SpellsButton'
+import AndroidAppButton from './AndroidAppButton'
 import LiveActivitiesStrip from '@/components/LiveActivitiesStrip'
 import SidebarCalendarWeekWidget from './SidebarCalendarWeekWidget'
 import { ReadOnlySessionIndicator } from '@/components/ReadOnlySessionIndicator'
@@ -42,7 +42,6 @@ export default function PrimaryPageSidebar() {
           <SearchButton />
           <LibraryButton />
           <FavoritesButton />
-          <DiscussionsButton />
           <SpellsButton />
           <PostButton />
           <div className="max-xl:hidden w-full min-w-0 space-y-2 px-1">
@@ -53,6 +52,7 @@ export default function PrimaryPageSidebar() {
         <div
           className={`imwald-sidebar__footer shrink-0 border-t border-border/40 pt-2 pb-3 ${sidebarInsetX}`}
         >
+          <AndroidAppButton />
           <HelpAndAccountMenu variant="sidebar" />
         </div>
       </div>

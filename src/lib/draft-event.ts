@@ -1156,6 +1156,43 @@ export function createReplaceablePersonalListDraftEvent(
   }
 }
 
+/** NIP-58 badge definition (kind 30009). Tags must include `d`; optional name/description/image/thumb. */
+export function createBadgeDefinitionDraftEvent(tags: string[][], content = ''): TDraftEvent {
+  return {
+    kind: ExtendedKind.BADGE_DEFINITION,
+    content,
+    tags,
+    created_at: dayjs().unix()
+  }
+}
+
+/**
+ * NIP-58 badge award (kind 8): awards a badge definition to one or more recipients.
+ * `a` = `30009:<issuer>:<d>`; each `p` is a recipient hex pubkey (optional relay hint).
+ */
+export function createBadgeAwardDraftEvent(
+  definitionCoordinate: string,
+  recipientPubkeys: string[],
+  options?: { relayHint?: string; content?: string }
+): TDraftEvent {
+  const a = definitionCoordinate.trim()
+  if (!a) throw new Error('Badge definition coordinate is required')
+  const tags: string[][] = [['a', a]]
+  const hint = options?.relayHint?.trim()
+  for (const pk of recipientPubkeys) {
+    const hex = pk.trim().toLowerCase()
+    if (!hex) continue
+    tags.push(hint ? ['p', hex, hint] : ['p', hex])
+  }
+  if (tags.length < 2) throw new Error('At least one recipient is required')
+  return {
+    kind: kinds.BadgeAward,
+    content: options?.content?.trim() ?? '',
+    tags,
+    created_at: dayjs().unix()
+  }
+}
+
 /** NIP-B0 (kind 39701): parameterized web bookmark; required `d` = URL without scheme. */
 export function createWebBookmarkDraftEvent(options: {
   url: string

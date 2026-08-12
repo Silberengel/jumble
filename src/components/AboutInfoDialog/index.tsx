@@ -1,7 +1,7 @@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle, DrawerDescription, DrawerTrigger } from '@/components/ui/drawer'
 import { Button } from '@/components/ui/button'
-import { SILBERENGEL_PUBKEY } from '@/constants'
+import { IMWALD_ANDROID_ZAPSTORE_URL, SILBERENGEL_PUBKEY } from '@/constants'
 import { useSmartProfileNavigationOptional } from '@/PageManager'
 import { useScreenSize } from '@/providers/ScreenSizeProvider'
 import { useState, useEffect } from 'react'
@@ -9,8 +9,10 @@ import { replaceableEventService } from '@/services/client.service'
 import { getProfileFromEvent } from '@/lib/event-metadata'
 import { kinds } from 'nostr-tools'
 import { toProfile } from '@/lib/link'
+import { useTranslation } from 'react-i18next'
 
 export default function AboutInfoDialog({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation()
   const { isSmallScreen } = useScreenSize()
   const { navigateToProfile } = useSmartProfileNavigationOptional()
   const [open, setOpen] = useState(false)
@@ -41,6 +43,11 @@ export default function AboutInfoDialog({ children }: { children: React.ReactNod
     window.open('https://github.com/Silberengel/jumble', '_blank', 'noopener,noreferrer')
   }
 
+  const openAndroidApp = () => {
+    setOpen(false)
+    window.open(IMWALD_ANDROID_ZAPSTORE_URL, '_blank', 'noopener,noreferrer')
+  }
+
   const content = (
     <>
       <div className="text-xl font-semibold">Imwald</div>
@@ -67,6 +74,12 @@ export default function AboutInfoDialog({ children }: { children: React.ReactNod
             )}
           </div>
         </div>
+      </div>
+      <div>
+        <div className="mb-1">{t('Download the Android app')}</div>
+        <Button type="button" variant="link" className="h-auto p-0 text-primary" onClick={openAndroidApp}>
+          Zapstore
+        </Button>
       </div>
       <div>
         <div className="mb-1">Source code:</div>

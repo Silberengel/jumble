@@ -29,7 +29,6 @@ import client from '@/services/client.service'
 import {
   buildBookmarksSubRequests,
   buildCalendarSpellFilter,
-  buildDiscussionFilter,
   buildInterestsSubRequests,
   buildMediaSpellFilter,
   buildNostrSpecsSpellFilter,
@@ -41,7 +40,6 @@ import {
   MEDIA_SPELL_KINDS,
   NOTIFICATION_SPELL_KINDS,
   applyFauxSpellCapsToSubRequests,
-  buildDiscussionsSpellRelayUrls,
   buildNotificationSpellRelayUrls,
   ensureFauxSpellRelayStackTouchesFastRead
 } from './fauxSpellFeeds'
@@ -382,7 +380,6 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
     )
       return []
     const fauxSpellSkipSocialKindBlocked =
-      selectedFauxSpell === 'discussions' ||
       selectedFauxSpell === 'calendar' ||
       selectedFauxSpell === 'followPacks' ||
       selectedFauxSpell === 'media' ||
@@ -398,10 +395,7 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
         applySocialKindBlockedFilter: fauxSpellSkipSocialKindBlocked ? false : undefined
       }
     )
-    const feedUrls =
-      selectedFauxSpell === 'discussions'
-        ? buildDiscussionsSpellRelayUrls(baseFeedUrls, blockedRelays)
-        : ensureFauxSpellRelayStackTouchesFastRead(baseFeedUrls)
+    const feedUrls = ensureFauxSpellRelayStackTouchesFastRead(baseFeedUrls)
 
     if (selectedFauxSpell === 'notifications') {
       if (!notificationsFeedPubkey) return []
@@ -413,10 +407,6 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
         notificationEventsIFollowListEvent ?? null
       )
       return [...base, ...extra]
-    }
-    if (selectedFauxSpell === 'discussions') {
-      if (!feedUrls.length) return []
-      return [{ urls: feedUrls, filter: buildDiscussionFilter() }]
     }
     if (selectedFauxSpell === 'media') {
       if (!feedUrls.length) return []
@@ -531,9 +521,6 @@ export function useSpellsPageFeed(a: UseSpellsPageFeedArgs) {
   const showKinds = useMemo(() => {
     if (selectedFauxSpell === 'notifications') {
       return [...NOTIFICATION_SPELL_KINDS]
-    }
-    if (selectedFauxSpell === 'discussions') {
-      return [ExtendedKind.DISCUSSION]
     }
     if (selectedFauxSpell && isFollowFeedFauxSpellId(selectedFauxSpell)) {
       const k = kindFilterShowKinds

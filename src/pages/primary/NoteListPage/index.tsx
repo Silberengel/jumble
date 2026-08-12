@@ -21,7 +21,6 @@ import React, {
 import { useTranslation } from 'react-i18next'
 import Logo from '@/assets/Logo'
 import HomeFeedRelaySourceSelect from '@/components/HomeFeedRelaySourceSelect'
-import { DiscussionsTitlebarButton } from '@/components/Sidebar/DiscussionsButton'
 import { LibraryTitlebarButton } from '@/components/Sidebar/LibraryButton'
 import HomeFeed from '@/features/home-feed/HomeFeed'
 import { usePrimaryPage } from '@/contexts/primary-page-context'
@@ -200,7 +199,6 @@ function NoteListPageTitlebar({
         >
           <Logo className="max-h-7 w-full min-w-0 object-contain object-center sm:max-h-8" />
         </button>
-        <DiscussionsTitlebarButton />
         <Button
           variant="ghost"
           size="titlebar-icon"

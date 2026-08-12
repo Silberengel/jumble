@@ -1107,7 +1107,6 @@ export const DEFAULT_FEED_SHOW_KINDS = PROFILE_FEED_KINDS.filter(
 /** Order for faux-spells in the feed / spell picker. */
 export const FAUX_SPELL_ORDER = [
   'notifications',
-  'discussions',
   'following',
   'heatMap',
   'followPacks',
@@ -1162,6 +1161,9 @@ export const IMWALD_MAINTAINER_PUBKEY =
 
 export const CODY_PUBKEY = '8125b911ed0e94dbe3008a0be48cfe5cd0c0b05923cfff917ae7e87da8400883'
 export const SILBERENGEL_PUBKEY = 'fd208ee8c8f283780a9552896e4823cc9dc6bfd442063889577106940fd927c1'
+
+/** Imwald Android on Zapstore. */
+export const IMWALD_ANDROID_ZAPSTORE_URL = 'https://zapstore.dev/apps/eu.imwald.android'
 
 export const NIP_96_SERVICE = [
   'https://mockingyou.com',
