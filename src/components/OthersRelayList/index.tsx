@@ -29,14 +29,14 @@ export default function OthersRelayList({ userId }: { userId: string }) {
         >
           {t('othersRelayListKind10002Fallback', {
             defaultValue:
-              'No NIP-65 relay list (kind 10002) was found for this user in local storage yet. The addresses below are default discovery relays, not this user’s published read/write list.'
+              'No usable NIP-65 relay list (kind 10002) was found for this user. Profile-index mirrors alone do not count. Network reads/writes use default FAST relays; nothing is shown below as a published mailbox.'
           })}
         </p>
       )}
       {relayList.originalRelays.length === 0 ? (
         <p className="text-sm text-muted-foreground">
           {t('othersRelayListEmpty', {
-            defaultValue: 'No relay URLs to show. Check your connection or try again later.'
+            defaultValue: 'No published relay URLs to show for this user.'
           })}
         </p>
       ) : (

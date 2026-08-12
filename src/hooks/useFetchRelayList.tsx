@@ -1,5 +1,7 @@
 import { FETCH_RELAY_LIST_HOOK_MAX_MS } from '@/constants'
+import { getRelayListFromEvent } from '@/lib/event-metadata'
 import logger from '@/lib/logger'
+import { relayListHasUsableMailboxUrls } from '@/lib/viewer-relay-defaults'
 import client from '@/services/client.service'
 import indexedDb from '@/services/indexed-db.service'
 import { TRelayList } from '@/types'
@@ -18,16 +20,22 @@ const emptyRelayList = (): TRelayList => ({
 export function useFetchRelayList(pubkey?: string | null) {
   const [relayList, setRelayList] = useState<TRelayList>(emptyRelayList)
   const [isFetching, setIsFetching] = useState(true)
-  /** True when IndexedDB has this author's kind 10002 (even if `originalRelays` is empty after merge). */
-  const [hasKind10002InStorage, setHasKind10002InStorage] = useState(false)
+  /** True when IndexedDB has a usable kind 10002 (not missing / not profile-index-only). */
+  const [hasUsableKind10002InStorage, setHasUsableKind10002InStorage] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     const targetPk = pubkey?.trim() || null
 
+    const usableFromStoredEvent = async (pk: string): Promise<boolean> => {
+      const k10002 = await indexedDb.getReplaceableEvent(pk, kinds.RelayList).catch(() => null)
+      if (!k10002) return false
+      return relayListHasUsableMailboxUrls(getRelayListFromEvent(k10002))
+    }
+
     const fetchRelayList = async () => {
       setIsFetching(true)
-      setHasKind10002InStorage(false)
+      setHasUsableKind10002InStorage(false)
       if (!targetPk) {
         setRelayList(emptyRelayList())
         setIsFetching(false)
@@ -37,12 +45,12 @@ export function useFetchRelayList(pubkey?: string | null) {
       setRelayList(emptyRelayList())
 
       try {
-        const [fromStorage, k10002] = await Promise.all([
+        const [fromStorage, usable] = await Promise.all([
           client.peekRelayListFromStorage(targetPk),
-          indexedDb.getReplaceableEvent(targetPk, kinds.RelayList).catch(() => null)
+          usableFromStoredEvent(targetPk)
         ])
         if (cancelled) return
-        setHasKind10002InStorage(!!k10002)
+        setHasUsableKind10002InStorage(usable)
         setRelayList(fromStorage)
 
         const merged = await Promise.race([
@@ -63,18 +71,18 @@ export function useFetchRelayList(pubkey?: string | null) {
         })
         if (cancelled) return
         setRelayList(merged)
-        const k10002After = await indexedDb.getReplaceableEvent(targetPk, kinds.RelayList).catch(() => null)
+        const usableAfter = await usableFromStoredEvent(targetPk)
         if (!cancelled) {
-          setHasKind10002InStorage(!!k10002After)
+          setHasUsableKind10002InStorage(usableAfter)
         }
       } catch (err) {
         logger.error('Failed to fetch relay list', { error: err, pubkey: targetPk })
         try {
           const fallback = await client.peekRelayListFromStorage(targetPk)
-          const k10002 = await indexedDb.getReplaceableEvent(targetPk, kinds.RelayList).catch(() => null)
+          const usable = await usableFromStoredEvent(targetPk)
           if (!cancelled) {
             setRelayList(fallback)
-            setHasKind10002InStorage(!!k10002)
+            setHasUsableKind10002InStorage(usable)
           }
         } catch {
           if (!cancelled) {
@@ -94,8 +102,13 @@ export function useFetchRelayList(pubkey?: string | null) {
     }
   }, [pubkey])
 
-  /** True when no kind 10002 for this author in IDB — UI may show default discovery relays with a disclaimer. */
-  const showingRelayListFallback = !isFetching && !hasKind10002InStorage
+  /** True when no usable kind 10002 — UI may show FAST_* defaults / empty with a disclaimer. */
+  const showingRelayListFallback = !isFetching && !hasUsableKind10002InStorage
 
-  return { relayList, isFetching, hasKind10002InStorage, showingRelayListFallback }
+  return {
+    relayList,
+    isFetching,
+    hasKind10002InStorage: hasUsableKind10002InStorage,
+    showingRelayListFallback
+  }
 }

@@ -575,6 +575,7 @@ export const SEARCH_QUERY_DEBOUNCE_MS = 550
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://indexer.coracle.social/',
+  'wss://indexer.oracle.social/',
   'wss://purplepag.es'
 ]
 
@@ -729,9 +730,13 @@ export const USER_STATUS_BACKGROUND_REFRESH_MS = 5 * 60 * 1000
 /** WebLN wallet connect + pay BOLT11; NIP-57 zaps when LNURL-pay supports nostr. */
 export const LIGHTNING_WALLET_PAY_ENABLED = true
 
-/** Kind 0 + NIP-A3 payment: publish to profile mirrors, full outbox (NIP-65 + HTTP + cache), and IndexedDB. */
+/** Kind 0, NIP-A3 payment info, and NIP-38 user status: publish to profile mirrors + full outbox. */
 export function isAuthorProfileMetadataPublishKind(kind: number): boolean {
-  return kind === kinds.Metadata || kind === ExtendedKind.PAYMENT_INFO
+  return (
+    kind === kinds.Metadata ||
+    kind === ExtendedKind.PAYMENT_INFO ||
+    kind === ExtendedKind.USER_STATUS
+  )
 }
 
 /**
@@ -756,6 +761,7 @@ export const AUTHOR_PROFILE_VIEW_REPLACEABLE_KINDS: readonly number[] = [
   ExtendedKind.BLOCKED_RELAYS,
   ExtendedKind.BLOSSOM_SERVER_LIST,
   ExtendedKind.PAYMENT_INFO,
+  ExtendedKind.USER_STATUS,
   kinds.UserEmojiList,
   ExtendedKind.CACHE_RELAYS,
   ExtendedKind.HTTP_RELAY_LIST

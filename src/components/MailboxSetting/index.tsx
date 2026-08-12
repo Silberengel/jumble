@@ -1,7 +1,11 @@
 import { Button } from '@/components/ui/button'
+import { getRelayListFromEvent } from '@/lib/event-metadata'
 import { isLocalNetworkUrl, normalizeAnyRelayUrl } from '@/lib/url'
+import { relayListHasUsableMailboxUrls } from '@/lib/viewer-relay-defaults'
+import indexedDb from '@/services/indexed-db.service'
 import { useNostr } from '@/providers/NostrProvider'
 import { TMailboxRelay, TMailboxRelayScope } from '@/types'
+import { kinds } from 'nostr-tools'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
@@ -32,6 +36,7 @@ export default function MailboxSetting() {
   const { pubkey, relayList, checkLogin } = useNostr()
   const [relays, setRelays] = useState<TMailboxRelay[]>([])
   const [hasChange, setHasChange] = useState(false)
+  const [showingKind10002Fallback, setShowingKind10002Fallback] = useState(false)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -68,9 +73,41 @@ export default function MailboxSetting() {
     if (!relayList) return
 
     // Filter out cache relays (local network URLs) - they belong in kind 10432, not kind 10002
-    const mailboxRelays = relayList.originalRelays.filter(relay => !isLocalNetworkUrl(relay.url))
+    const mailboxRelays = relayList.originalRelays.filter((relay) => !isLocalNetworkUrl(relay.url))
     setRelays(mailboxRelays)
   }, [relayList])
+
+  useEffect(() => {
+    let cancelled = false
+    const pk = pubkey?.trim()
+    if (!pk) {
+      setShowingKind10002Fallback(false)
+      return
+    }
+    void indexedDb
+      .getReplaceableEvent(pk, kinds.RelayList)
+      .then((ev) => {
+        if (cancelled) return
+        if (!ev) {
+          setShowingKind10002Fallback(true)
+          return
+        }
+        setShowingKind10002Fallback(!relayListHasUsableMailboxUrls(getRelayListFromEvent(ev)))
+      })
+      .catch(() => {
+        if (!cancelled) setShowingKind10002Fallback(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [pubkey, relayList])
+
+  // Synthetic FAST_* mailbox: enable Save so the user can publish it as a real kind 10002.
+  useEffect(() => {
+    if (showingKind10002Fallback && relays.length > 0) {
+      setHasChange(true)
+    }
+  }, [showingKind10002Fallback, relays])
 
   if (!pubkey) {
     return (
@@ -111,9 +148,7 @@ export default function MailboxSetting() {
   }
 
   const handleAddDiscoveredRelays = (newRelays: TMailboxRelay[]) => {
-    const relaysToAdd = newRelays.filter(
-      newRelay => !relays.some(r => r.url === newRelay.url)
-    )
+    const relaysToAdd = newRelays.filter((newRelay) => !relays.some((r) => r.url === newRelay.url))
     if (relaysToAdd.length > 0) {
       setRelays([...relays, ...relaysToAdd])
       setHasChange(true)
@@ -127,6 +162,17 @@ export default function MailboxSetting() {
         <div>{t('write relays description')}</div>
         <div>{t('read & write relays notice')}</div>
       </div>
+      {showingKind10002Fallback && (
+        <p
+          className="rounded-md border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-sm text-foreground"
+          role="status"
+        >
+          {t('mailboxKind10002Fallback', {
+            defaultValue:
+              'No usable NIP-65 relay list (kind 10002) yet — showing default FAST_READ / FAST_WRITE relays. Edit and save to publish your own list. Profile-index mirrors alone are not treated as a mailbox.'
+          })}
+        </p>
+      )}
       <DiscoveredRelays onAdd={handleAddDiscoveredRelays} />
       <RelayCountWarning relays={relays} />
       <SaveButton mailboxRelays={relays} hasChange={hasChange} setHasChange={setHasChange} />

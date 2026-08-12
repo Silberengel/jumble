@@ -65,8 +65,12 @@ import {
   setViewerPersonalRelayKeys
 } from '@/lib/read-only-relay-personal'
 import {
+  emptyMailboxRelayListFallback,
   profileFetchRelayUrlsWithoutFastReadLayer,
   publicReadRelayFallbackUrls,
+  relayListHasUsableMailboxUrls,
+  remoteAuthorMissingRelayListFallback,
+  viewerMissingRelayListFallback,
   viewerUsesGlobalRelayDefaults
 } from '@/lib/viewer-relay-defaults'
 import {
@@ -1498,6 +1502,10 @@ class ClientService extends EventTarget {
         bootstrapExtras.push(
           ...(useGlobalRelayDefaults ? PROFILE_RELAY_URLS : profileFetchRelayUrlsWithoutFastReadLayer())
         )
+        // NIP-38 statuses need general write relays; many profile/index mirrors only accept kind 0 / 10002.
+        if (event.kind === ExtendedKind.USER_STATUS) {
+          bootstrapExtras.push(...FAST_WRITE_RELAY_URLS)
+        }
         logger.debug('[DetermineTargetRelays] Profile / list event: adding profile-fetch relays', {
           kind: event.kind,
           profileFetchRelays: useGlobalRelayDefaults
@@ -1567,17 +1575,18 @@ class ClientService extends EventTarget {
       }
     }
 
-    // Fallback for all publishing when no relays (e.g. after cache clear or fetch failure).
-    // Use FAST_WRITE_RELAY_URLS so writes always have known-good write relays.
+    // Fallback when filtering left no targets (empty outbox, all profile-index-only for this kind, etc.).
+    // Prefer known write relays over failing with `no_targets` — personal-relay mode still prefers the
+    // user's outbox above; this only runs when that list is empty after publish filters.
     if (!relays.length) {
-      if (useGlobalRelayDefaults) {
-        relays = isDocumentRelayKind(event.kind)
-          ? dedupeNormalizeRelayUrlsOrdered([...FAST_WRITE_RELAY_URLS, ...DOCUMENT_RELAY_URLS])
-          : [...FAST_WRITE_RELAY_URLS]
-        logger.info('[DetermineTargetRelays] Using default write relays (no user/extra relays)', {
-          count: relays.length
-        })
-      }
+      relays = isDocumentRelayKind(event.kind)
+        ? dedupeNormalizeRelayUrlsOrdered([...FAST_WRITE_RELAY_URLS, ...DOCUMENT_RELAY_URLS])
+        : [...FAST_WRITE_RELAY_URLS]
+      logger.info('[DetermineTargetRelays] Using default write relays (no user/extra relays after filters)', {
+        kind: event.kind,
+        count: relays.length,
+        useGlobalRelayDefaults
+      })
     }
 
     relays = this.filterPublishingRelaysKeeping(relays, event, specifiedRelayUrls)
@@ -5053,16 +5062,7 @@ class ClientService extends EventTarget {
           const [fallback] = await this.mergeRelayListsFromStoredOnly([pubkey])
           return fallback!
         } catch {
-          const read = PROFILE_RELAY_URLS
-          const write = PROFILE_RELAY_URLS
-          return {
-            write,
-            read,
-            originalRelays: syntheticOriginalRelaysFromReadWrite(read, write),
-            httpRead: [],
-            httpWrite: [],
-            httpOriginalRelays: []
-          }
+          return viewerMissingRelayListFallback()
         }
       } finally {
         this.relayListRequestCache.delete(cacheKey)
@@ -5075,7 +5075,8 @@ class ClientService extends EventTarget {
 
   /**
    * Merge relay list from IndexedDB only (no network). Same rules as a timed-out {@link fetchRelayLists}:
-   * defaults to {@link PROFILE_RELAY_URLS} when kind 10002 is missing.
+   * defaults to {@link FAST_READ_RELAY_URLS} / {@link FAST_WRITE_RELAY_URLS} when kind 10002 is missing
+   * or only lists profile-index mirrors.
    */
   async peekRelayListFromStorage(pubkey: string): Promise<TRelayList> {
     const [rl] = await this.mergeRelayListsFromStoredOnly([pubkey])
@@ -5189,21 +5190,39 @@ class ClientService extends EventTarget {
       // LAN / loopback belong on kind 10432 (cache), not NIP-65 10002 — strip 10002 before merging cache.
       const relayList = stripLocalNetworkRelaysFromRelayList(relayListFrom10002)
 
+      // Kind 10002 that only lists profile/index mirrors is not a usable mailbox (and used to be
+      // synthesized as a fake default). Treat like a missing list so UI + FAST_* defaults apply.
+      const usableNip65 = !!relayEvent && relayListHasUsableMailboxUrls(relayList)
+      const effectiveRelayEvent = usableNip65 ? relayEvent : undefined
+      const effectiveRelayList = usableNip65
+        ? relayList
+        : {
+            write: [] as string[],
+            read: [] as string[],
+            originalRelays: [] as TMailboxRelay[],
+            ...emptyHttp
+          }
+
       if (isOwnRelayList && cacheEvent) {
         const cacheRelayList = getRelayListFromEvent(cacheEvent, viewerBlocked)
 
-        const mergedRead = [...cacheRelayList.read, ...relayList.read]
-        const mergedWrite = [...cacheRelayList.write, ...relayList.write]
+        const mergedRead = [...cacheRelayList.read, ...effectiveRelayList.read]
+        const mergedWrite = [...cacheRelayList.write, ...effectiveRelayList.write]
         const mergedOriginalRelays = new Map<string, TMailboxRelay>()
 
         cacheRelayList.originalRelays.forEach((relay) => {
           mergedOriginalRelays.set(relay.url, relay)
         })
-        relayList.originalRelays.forEach((relay) => {
+        effectiveRelayList.originalRelays.forEach((relay) => {
           if (!mergedOriginalRelays.has(relay.url)) {
             mergedOriginalRelays.set(relay.url, relay)
           }
         })
+
+        // If NIP-65 was unusable and cache has no WS rows, seed FAST_* so the mailbox UI is not empty.
+        if (!usableNip65 && mergedRead.length === 0 && mergedWrite.length === 0) {
+          return mergeKind10243(viewerMissingRelayListFallback())
+        }
 
         return mergeKind10243({
           write: Array.from(new Set(mergedWrite)),
@@ -5213,35 +5232,23 @@ class ClientService extends EventTarget {
         })
       }
 
-      if (!relayEvent) {
+      if (!effectiveRelayEvent) {
         if (isOwnRelayList && storedCacheEvent) {
           const cacheRelayList = getRelayListFromEvent(storedCacheEvent, viewerBlocked)
-          return mergeKind10243({
-            write: cacheRelayList.write.length > 0 ? cacheRelayList.write : PROFILE_RELAY_URLS,
-            read: cacheRelayList.read.length > 0 ? cacheRelayList.read : PROFILE_RELAY_URLS,
-            originalRelays: cacheRelayList.originalRelays,
-            ...emptyHttp
-          })
-        }
-        let read = PROFILE_RELAY_URLS
-        let write = PROFILE_RELAY_URLS
-        if (!isOwnRelayList) {
-          const stripped = stripMailboxLocalUrlsForRemoteViewers({ read, write })
-          read =
-            stripped.read.length > 0 ? stripped.read : read.filter(urlIsNonLocalForRemoteViewer)
-          write =
-            stripped.write.length > 0 ? stripped.write : write.filter(urlIsNonLocalForRemoteViewer)
-          if (read.length === 0 && write.length === 0) {
-            read = [...publicReadRelayFallbackUrls()]
-            write = [...FAST_WRITE_RELAY_URLS]
+          if (cacheRelayList.read.length > 0 || cacheRelayList.write.length > 0) {
+            return mergeKind10243({
+              write: cacheRelayList.write,
+              read: cacheRelayList.read,
+              originalRelays: cacheRelayList.originalRelays,
+              ...emptyHttp
+            })
           }
         }
-        return mergeKind10243({
-          write,
-          read,
-          originalRelays: syntheticOriginalRelaysFromReadWrite(read, write),
-          ...emptyHttp
-        })
+        // No usable kind 10002: never invent PROFILE_RELAY_URLS as inbox/outbox.
+        if (!isOwnRelayList) {
+          return mergeKind10243(remoteAuthorMissingRelayListFallback())
+        }
+        return mergeKind10243(viewerMissingRelayListFallback())
       }
 
       const merged = mergeKind10243(relayList)
@@ -5462,16 +5469,7 @@ class ClientService extends EventTarget {
       try {
         return await this.mergeRelayListsFromStoredOnly(pubkeys)
       } catch {
-        const read = PROFILE_RELAY_URLS
-        const write = PROFILE_RELAY_URLS
-        return pubkeys.map(() => ({
-          write,
-          read,
-          originalRelays: syntheticOriginalRelaysFromReadWrite(read, write),
-          httpRead: [] as string[],
-          httpWrite: [] as string[],
-          httpOriginalRelays: [] as TMailboxRelay[]
-        }))
+        return pubkeys.map(() => emptyMailboxRelayListFallback())
       }
     }
   }
