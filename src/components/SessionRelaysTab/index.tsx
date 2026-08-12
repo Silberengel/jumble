@@ -1,13 +1,9 @@
 import client from '@/services/client.service'
 import relayInfoService from '@/services/relay-info.service'
-import {
-  isRelayStrikeEntryActive,
-  type RelayStrikeDebugSnapshot
-} from '@/lib/relay-strikes'
 import { isKind10243HttpRelayTagUrl } from '@/lib/url'
 import { useTranslation } from 'react-i18next'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { RefreshCw, CheckCircle2, Zap, AlertTriangle } from 'lucide-react'
+import { RefreshCw, CheckCircle2, Zap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { TRelayInfo } from '@/types'
 import { useNostr } from '@/providers/NostrProvider'
@@ -15,58 +11,11 @@ import { useNostr } from '@/providers/NostrProvider'
 type SessionDebug = {
   scoredRelays: { url: string; successCount: number; avgLatencyMs: number }[]
   presetWorking: string[]
-  relayStrikes: RelayStrikeDebugSnapshot
 }
-
-type StrikeEntry = RelayStrikeDebugSnapshot['entries'][number]['entry']
 
 function loadDebug(): SessionDebug {
-  return client.getSessionRelayDebug()
-}
-
-function formatSkipUntil(ts: number, now: number): string | null {
-  if (ts <= now) return null
-  const sec = Math.ceil((ts - now) / 1000)
-  if (sec < 90) return `${sec}s`
-  if (sec < 7200) return `${Math.ceil(sec / 60)}m`
-  return new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
-}
-
-function strikeStatusChips(
-  entry: StrikeEntry,
-  cacheRelay: boolean,
-  now: number,
-  t: (key: string, opts?: Record<string, unknown>) => string
-): string[] {
-  const chips: string[] = []
-  if (cacheRelay) chips.push(t('Session relay strike cache relay'))
-  if (now < entry.readStrikeSkipUntil) chips.push(t('Session relay strike read skipped'))
-  if (now < entry.publishStrikeSkipUntil) chips.push(t('Session relay strike publish skipped'))
-  if (now < entry.rateLimitUntil) chips.push(t('Session relay strike rate limited'))
-  return chips
-}
-
-function strikeDetailLines(
-  entry: StrikeEntry,
-  now: number,
-  t: (key: string, opts?: Record<string, unknown>) => string
-): string[] {
-  const lines: string[] = []
-  if (entry.readFailures > 0) {
-    lines.push(t('Session relay strike read failures', { count: entry.readFailures }))
-  }
-  if (entry.publishFailures > 0) {
-    lines.push(t('Session relay strike publish failures', { count: entry.publishFailures }))
-  }
-  for (const [ts, label] of [
-    [entry.readStrikeSkipUntil, t('Session relay strike read skipped')],
-    [entry.publishStrikeSkipUntil, t('Session relay strike publish skipped')],
-    [entry.rateLimitUntil, t('Session relay strike rate limited')]
-  ] as const) {
-    const until = formatSkipUntil(ts, now)
-    if (until) lines.push(`${label} ${t('Session relay strike until', { time: until })}`)
-  }
-  return lines
+  const d = client.getSessionRelayDebug()
+  return { scoredRelays: d.scoredRelays, presetWorking: d.presetWorking }
 }
 
 export default function SessionRelaysTab() {
@@ -74,11 +23,9 @@ export default function SessionRelaysTab() {
   const { httpRelayListEvent } = useNostr()
   const [debug, setDebug] = useState<SessionDebug | null>(null)
   const [relayInfoByUrl, setRelayInfoByUrl] = useState<Record<string, TRelayInfo | undefined>>({})
-  const [now, setNow] = useState(() => Date.now())
 
   const refresh = useCallback(() => {
     setDebug(loadDebug())
-    setNow(Date.now())
   }, [])
 
   useEffect(() => {
@@ -86,23 +33,9 @@ export default function SessionRelaysTab() {
   }, [refresh])
 
   useEffect(() => {
-    const id = window.setInterval(() => setNow(Date.now()), 30_000)
-    return () => window.clearInterval(id)
-  }, [])
-
-  const activeStrikes = useMemo(() => {
-    if (!debug) return []
-    return debug.relayStrikes.entries.filter(({ entry }) => isRelayStrikeEntryActive(entry, now))
-  }, [debug, now])
-
-  useEffect(() => {
     if (debug === null) return
     const urls = Array.from(
-      new Set([
-        ...debug.presetWorking,
-        ...debug.scoredRelays.map((r) => r.url),
-        ...activeStrikes.map((s) => s.key)
-      ])
+      new Set([...debug.presetWorking, ...debug.scoredRelays.map((r) => r.url)])
     )
     if (urls.length === 0) return
     let cancelled = false
@@ -117,7 +50,7 @@ export default function SessionRelaysTab() {
     return () => {
       cancelled = true
     }
-  }, [debug, activeStrikes])
+  }, [debug])
 
   const formatRelayAddress = (url: string) => {
     try {
@@ -149,14 +82,6 @@ export default function SessionRelaysTab() {
   const isHttpRelayEntry = (url: string): boolean => {
     return configuredHttpRelayAddresses.has(formatRelayAddress(url).toLowerCase())
   }
-
-  const freeRelay = useCallback(
-    (key: string) => {
-      client.clearSessionRelayStrike(key)
-      refresh()
-    },
-    [refresh]
-  )
 
   if (debug === null) return null
 
@@ -220,67 +145,6 @@ export default function SessionRelaysTab() {
                 </span>
               </li>
             ))
-          )}
-        </ul>
-      </section>
-
-      <section className="space-y-2">
-        <h3 className="text-sm font-medium flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-500" />
-          {t('Session relay strikes')}
-        </h3>
-        <p className="text-muted-foreground text-xs">{t('Session relay strikes hint')}</p>
-        {debug.relayStrikes.cacheRelayKeys.length > 0 ? (
-          <p className="text-xs text-muted-foreground">
-            <span className="font-medium">{t('Cache relay keys')}:</span>{' '}
-            <span className="font-mono break-all">
-              {debug.relayStrikes.cacheRelayKeys.join(', ')}
-            </span>
-          </p>
-        ) : null}
-        <ul className="rounded-lg border bg-muted/30 divide-y divide-border text-sm">
-          {activeStrikes.length === 0 ? (
-            <li className="p-3 text-muted-foreground">{t('Session relay strikes none active')}</li>
-          ) : (
-            activeStrikes.map(({ key, entry, cacheRelay }) => {
-              const chips = strikeStatusChips(entry, cacheRelay, now, t)
-              const details = strikeDetailLines(entry, now, t)
-              return (
-                <li key={key} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div className="min-w-0 flex-1 space-y-1.5">
-                    <RelayNameWithTransport url={key} />
-                    {chips.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {chips.map((chip) => (
-                          <span
-                            key={chip}
-                            className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 dark:text-amber-200"
-                          >
-                            {chip}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                    {details.length > 0 ? (
-                      <ul className="text-xs text-muted-foreground space-y-0.5">
-                        {details.map((line) => (
-                          <li key={line}>{line}</li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="shrink-0 self-end sm:self-start"
-                    onClick={() => freeRelay(key)}
-                  >
-                    {t('Session relay strike free')}
-                  </Button>
-                </li>
-              )
-            })
           )}
         </ul>
       </section>

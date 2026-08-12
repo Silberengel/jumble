@@ -83,7 +83,7 @@ export function filterRelaysForEventPublish(urls: readonly string[], eventKind: 
 
 /**
  * Relay refused the EVENT due to kind / content policy (not connectivity).
- * These are expected when publishing to specialty relays — do not session-strike the relay.
+ * Useful for classifying publish errors in logs / UI.
  */
 export function isRelayPublishPolicyRejection(message: string): boolean {
   const m = message.trim().toLowerCase()
