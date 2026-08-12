@@ -1,12 +1,45 @@
 import { describe, expect, it } from 'vitest'
+import { FAST_WRITE_RELAY_URLS } from '@/constants'
 import {
   buildPrioritizedReadRelayUrls,
+  buildPrioritizedWriteRelayUrls,
   dedupeNormalizeRelayUrlsOrdered,
-  filterContextAuthorReadRelaysForPublish
+  filterContextAuthorReadRelaysForPublish,
+  pinRelayUrlsFirst
 } from '@/lib/relay-url-priority'
 import { buildProfilePageReadRelayUrls, getFavoritesFeedRelayUrls } from '@/lib/favorites-feed-relays'
 import { stripMailboxLocalUrlsForRemoteViewers } from '@/lib/relay-list-sanitize'
 import { syncViewerRelayStackNostrLandAggrEligible } from '@/lib/nostr-land-relay-eligibility'
+
+describe('pinRelayUrlsFirst', () => {
+  it('moves pin URLs to the front while keeping relative order of the rest', () => {
+    expect(
+      pinRelayUrlsFirst(
+        ['wss://fav.example/', 'wss://pipe.imwald.eu/', 'wss://other.example/'],
+        ['wss://pipe.imwald.eu/', 'wss://missing.example/']
+      )
+    ).toEqual(['wss://pipe.imwald.eu/', 'wss://fav.example/', 'wss://other.example/'])
+  })
+})
+
+describe('buildPrioritizedWriteRelayUrls', () => {
+  it('places FAST_WRITE ahead of favorites so write relays are contacted first', () => {
+    const out = buildPrioritizedWriteRelayUrls({
+      userWriteRelays: ['wss://my-outbox.example/'],
+      favoriteRelays: ['wss://theforest.nostr1.com/'],
+      maxRelays: 8,
+      applySocialKindBlockedFilter: false
+    })
+    expect(out[0]).toBe('wss://my-outbox.example/')
+    const pipe = FAST_WRITE_RELAY_URLS.find((u) => u.includes('pipe.imwald.eu'))
+    expect(pipe).toBeTruthy()
+    const pipeIdx = out.findIndex((u) => u.includes('pipe.imwald.eu'))
+    const favIdx = out.findIndex((u) => u.includes('theforest.nostr1.com'))
+    expect(pipeIdx).toBeGreaterThan(-1)
+    expect(favIdx).toBeGreaterThan(-1)
+    expect(pipeIdx).toBeLessThan(favIdx)
+  })
+})
 
 describe('dedupeNormalizeRelayUrlsOrdered', () => {
   it('drops npub, nevent, and other non-relay strings', () => {

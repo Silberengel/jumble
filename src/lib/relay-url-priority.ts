@@ -145,29 +145,29 @@ export function buildPrioritizedReadRelayUrls(opts: {
 
 /**
  * Ordered layers for publish / write (before merge, blocked strip, kind-1 strip, cap).
+ * Write outboxes and {@link FAST_WRITE_RELAY_URLS} come before favorites / extras so they
+ * start connecting first and are less likely to lose the early-success race to a random favorite.
  */
 function buildWriteRelayPriorityLayers(opts: {
   userWriteRelays: string[]
   authorReadRelays?: string[]
   favoriteRelays?: string[]
   extraRelays?: string[]
-  /** When false, omit global FAST_WRITE tail. Default true. */
+  /** When false, omit global FAST_WRITE tier. Default true. */
   includeGlobalFastWriteReadTails?: boolean
 }): string[][] {
   const tier1 = relayUrlsLocalsFirst(opts.userWriteRelays)
-  const tier2 = filterContextAuthorReadRelaysForPublish(opts.authorReadRelays ?? [])
-  const tier3 = dedupeNormalizeRelayUrlsOrdered(opts.favoriteRelays ?? [])
-  const tier4 = dedupeNormalizeRelayUrlsOrdered(opts.extraRelays ?? [])
-  if (opts.includeGlobalFastWriteReadTails === false) {
-    return [tier1, tier2, tier3, tier4, []]
-  }
-  const tier5 = normFastWrite()
+  const tier2 =
+    opts.includeGlobalFastWriteReadTails === false ? [] : normFastWrite()
+  const tier3 = filterContextAuthorReadRelaysForPublish(opts.authorReadRelays ?? [])
+  const tier4 = dedupeNormalizeRelayUrlsOrdered(opts.favoriteRelays ?? [])
+  const tier5 = dedupeNormalizeRelayUrlsOrdered(opts.extraRelays ?? [])
   return [tier1, tier2, tier3, tier4, tier5]
 }
 
 /**
- * Publish / write: user outboxes (locals first) → target author inboxes → favorites → extras → FAST_WRITE.
- * Read aggregators ({@link FAST_READ_RELAY_URLS}) are intentionally omitted — they reject social writes.
+ * Publish / write: user outboxes (locals first) → FAST_WRITE → target author inboxes → favorites → extras.
+ * Read aggregators ({@link FAST_READ_RELAY_URLS}) are not added as their own tier.
  */
 export function buildPrioritizedWriteRelayUrls(opts: {
   userWriteRelays: string[]
@@ -178,7 +178,7 @@ export function buildPrioritizedWriteRelayUrls(opts: {
   maxRelays?: number
   /** When true, strip {@link SOCIAL_KIND_BLOCKED_RELAY_URLS} before capping (social kinds). */
   applySocialKindBlockedFilter?: boolean
-  /** Default true: append FAST_WRITE tier. */
+  /** Default true: insert FAST_WRITE tier after user outboxes. */
   includeGlobalFastWriteReadTails?: boolean
 }): string[] {
   const max = opts.maxRelays ?? MAX_PUBLISH_RELAYS
@@ -191,10 +191,10 @@ export function buildPrioritizedWriteRelayUrls(opts: {
   })
   return feedRelayPolicyUrls([
     { source: 'viewer-write', urls: layers[0] ?? [] },
-    { source: 'author-read', urls: layers[1] ?? [] },
-    { source: 'favorites', urls: layers[2] ?? [] },
-    { source: 'explicit', urls: layers[3] ?? [] },
-    { source: 'fast-write', urls: layers[4] ?? [] }
+    { source: 'fast-write', urls: layers[1] ?? [] },
+    { source: 'author-read', urls: layers[2] ?? [] },
+    { source: 'favorites', urls: layers[3] ?? [] },
+    { source: 'explicit', urls: layers[4] ?? [] }
   ], {
     operation: 'write',
     blockedRelays: opts.blockedRelays,
@@ -203,4 +203,30 @@ export function buildPrioritizedWriteRelayUrls(opts: {
     applySocialKindBlockedFilter: opts.applySocialKindBlockedFilter === true,
     allowThirdPartyLocalRelays: true
   })
+}
+
+/** Put `pinFirst` URLs (that appear in `urls`) at the front, preserving pin order then remaining order. */
+export function pinRelayUrlsFirst(urls: readonly string[], pinFirst: readonly string[]): string[] {
+  if (pinFirst.length === 0) return [...urls]
+  const byKey = new Map<string, string>()
+  for (const u of urls) {
+    const k = (normalizeRelayUrlByScheme(u) || u).toLowerCase()
+    if (k && !byKey.has(k)) byKey.set(k, u)
+  }
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const p of pinFirst) {
+    const k = (normalizeRelayUrlByScheme(p) || p).toLowerCase()
+    const u = k ? byKey.get(k) : undefined
+    if (!u || seen.has(k)) continue
+    out.push(u)
+    seen.add(k)
+  }
+  for (const u of urls) {
+    const k = (normalizeRelayUrlByScheme(u) || u).toLowerCase()
+    if (!k || seen.has(k)) continue
+    out.push(u)
+    seen.add(k)
+  }
+  return out
 }

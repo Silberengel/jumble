@@ -134,7 +134,11 @@ import {
   buildPublicMessagePublishRelayUrls,
   collectRecipientInboxUrls
 } from '@/lib/public-message-publish-relays'
-import { buildPrioritizedWriteRelayUrls, dedupeNormalizeRelayUrlsOrdered } from '@/lib/relay-url-priority'
+import {
+  buildPrioritizedWriteRelayUrls,
+  dedupeNormalizeRelayUrlsOrdered,
+  pinRelayUrlsFirst
+} from '@/lib/relay-url-priority'
 import { filterPublishingRelayUrls } from '@/lib/social-kind-blocked-relays'
 import {
   IndexRelayTransportError,
@@ -1805,7 +1809,7 @@ class ClientService extends EventTarget {
     )
 
     const uniqueRelayUrls = filtered
-    const publishTargetUrls = relaySessionStrikes.filterPublishUrls(uniqueRelayUrls)
+    let publishTargetUrls = relaySessionStrikes.filterPublishUrls(uniqueRelayUrls)
     if (forcedRelayUrls.length) {
       const present = new Set(publishTargetUrls.map((u) => canonicalRelaySessionKey(u)))
       for (const url of forcedRelayUrls) {
@@ -1816,6 +1820,17 @@ class ClientService extends EventTarget {
         }
       }
     }
+    /** NIP-65 / forced / FAST_WRITE first so pipe & outboxes start before favorites and survive early-ACK cleanup. */
+    publishTargetUrls = pinRelayUrlsFirst(publishTargetUrls, [
+      ...userOutboxUrls,
+      ...forcedRelayUrls,
+      ...FAST_WRITE_RELAY_URLS
+    ])
+    const keepWriteRelayKeys = new Set(
+      [...userOutboxUrls, ...forcedRelayUrls, ...FAST_WRITE_RELAY_URLS]
+        .map((u) => canonicalRelaySessionKey(u))
+        .filter(Boolean)
+    )
     trace?.step('publishEvent targets ready', {
       afterOutboxMerge: mergedRelayUrls.length,
       afterFilters: countAfterFiltersBeforeCap,
@@ -1847,7 +1862,7 @@ class ClientService extends EventTarget {
         finalContactedRelayCount: publishTargetUrls.length,
         finalRelays: publishTargetUrls,
         explain:
-          'Your NIP-65 write relays are prepended, then the list is de-duplicated, filtered (read-only / social-kind blocks), and capped at maxPublishRelays in outbox→inbox→favorite→fast-write priority. Unchecked relays in the picker are never contacted; checked relays beyond the cap or filtered out are also skipped.'
+          'Your NIP-65 write relays are prepended, then the list is de-duplicated, filtered (read-only / social-kind blocks), and capped at maxPublishRelays in outbox→fast-write→inbox→favorite priority. Unchecked relays in the picker are never contacted; checked relays beyond the cap or filtered out are also skipped.'
       })
     }
 
@@ -1922,7 +1937,16 @@ class ClientService extends EventTarget {
         })
         publishOpBatch.logEnd(status)
         queueMicrotask(() => {
-          closePublishTransientRelaySockets(publishTargetUrls)
+          /**
+           * Early grace used to abort every non-personal socket ~900ms after the first ACK. Write
+           * outboxes / FAST_WRITE (incl. pipe) are often still mid-flight then — leave those open so
+           * they can finish instead of failing with "relay connection closed by us".
+           */
+          const urlsToClose =
+            status === 'early_any_success_grace'
+              ? publishTargetUrls.filter((u) => !keepWriteRelayKeys.has(canonicalRelaySessionKey(u)))
+              : publishTargetUrls
+          closePublishTransientRelaySockets(urlsToClose)
           client.closePublishTransientRelays()
         })
       }
