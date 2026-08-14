@@ -1,0 +1,135 @@
+# Durable Jumble stack (moved off deleted /root/tmp/jumble).
+# Caps: mem_limit == memswap_limit; json-file log rotation.
+
+name: jumble
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-logging-og: &og-logging
+  driver: json-file
+  options:
+    max-size: "2m"
+    max-file: "2"
+
+services:
+  jumble:
+    image: silberengel/imwald-jumble:latest
+    container_name: imwald-jumble
+    restart: unless-stopped
+    ports:
+      - "8089:80"
+    environment:
+      NIP66_MONITOR_NPUB: ${NIP66_MONITOR_NPUB}
+    mem_limit: 512m
+    memswap_limit: 512m
+    logging: *default-logging
+
+  og-proxy:
+    image: silberengel/wikistr:latest-og-proxy
+    container_name: imwald-og-proxy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8090:8090"
+    environment:
+      PROXY_PORT: "8090"
+      PROXY_ALLOW_ORIGIN: https://jumble.imwald.eu
+      PROXY_TIMEOUT_MS: "30000"
+      PROXY_MAX_BODY_BYTES: "5242880"
+      PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: "true"
+      PUPPETEER_EXECUTABLE_PATH: /usr/bin/chromium-browser
+    tmpfs:
+      - /tmp:size=512m,mode=1777
+    mem_limit: 768m
+    memswap_limit: 768m
+    logging: *og-logging
+
+  languagetool:
+    image: silviof/docker-languagetool:latest
+    container_name: imwald-languagetool
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8010:8010"
+    mem_limit: 1.5g
+    memswap_limit: 1.5g
+    logging: *default-logging
+
+  libretranslate:
+    image: libretranslate/libretranslate:latest
+    container_name: imwald-libretranslate
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      LT_UPDATE_MODELS: "true"
+      LT_LOAD_ONLY: en,de,es,fr,it,pt,ru,zh,ar,nl,pl,cs,tr
+    volumes:
+      - ./.local-libretranslate:/home/libretranslate/.local
+    mem_limit: 1.5g
+    memswap_limit: 1.5g
+    logging: *default-logging
+
+  piper-wyoming:
+    image: silberengel/wyoming-piper:latest
+    container_name: imwald-piper-wyoming
+    restart: unless-stopped
+    command:
+      - --voice
+      - en_US-lessac-medium
+      - --uri
+      - tcp://0.0.0.0:10200
+      - --data-dir
+      - /data
+    volumes:
+      - piper-stack-data:/data
+    mem_limit: 1g
+    memswap_limit: 1g
+    logging: *default-logging
+
+  piper-tts-proxy:
+    image: silberengel/imwald-piper-tts-proxy:latest
+    container_name: imwald-piper-tts-proxy
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9876:9876"
+    environment:
+      PORT: "9876"
+      PIPER_TTS_HOST: piper-wyoming
+      PIPER_TTS_PORT: "10200"
+    depends_on:
+      - piper-wyoming
+    mem_limit: 128m
+    memswap_limit: 128m
+    logging: *default-logging
+
+  jumble-nip66-monitor:
+    image: silberengel/imwald-jumble-nip66-monitor:latest
+    container_name: imwald-jumble-nip66-monitor
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NIP66_MONITOR_NSEC: ${NIP66_MONITOR_NSEC}
+      MAX_RELAYS_TO_MONITOR: ${MAX_RELAYS_TO_MONITOR:-}
+      RELAYS_TO_MONITOR: ${RELAYS_TO_MONITOR:-}
+      PUBLISH_RELAYS: ${PUBLISH_RELAYS:-}
+      INTERVAL_MS: ${INTERVAL_MS:-}
+      RELAY_LIST_SKIP_KIND10002: ${RELAY_LIST_SKIP_KIND10002:-}
+    mem_limit: 128m
+    memswap_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+volumes:
+  piper-stack-data:
+    name: jumble_piper-stack-data
+
+networks:
+  default:
+    name: jumble_default

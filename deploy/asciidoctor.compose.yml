@@ -1,0 +1,30 @@
+# Ascidoctor OG/HTML helper used by Unfold (wikistr-network).
+
+name: asciidoctor
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  asciidoctor:
+    image: silberengel/wikistr:latest-asciidoctor
+    container_name: asciidoctor
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8091:8091"
+    environment:
+      ASCIIDOCTOR_PORT: "8091"
+      ASCIIDOCTOR_ALLOW_ORIGIN: "https://*.imwald.eu"
+    networks:
+      - wikistr-network
+    mem_limit: 512m
+    memswap_limit: 512m
+    logging: *default-logging
+
+networks:
+  wikistr-network:
+    external: true
+    name: wikistr-network
