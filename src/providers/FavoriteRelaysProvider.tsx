@@ -338,11 +338,17 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
         .map((relayUrl) => normalizeAnyRelayUrl(relayUrl))
         .filter((url) => !!url && !blockedRelays.includes(url))
       if (!normalizedUrls.length) return
+      const previousBlockedRelays = blockedRelays
       const newBlockedRelays = [...blockedRelays, ...normalizedUrls]
       setBlockedRelays(newBlockedRelays)
-      const draftEvent = createBlockedRelaysDraftEvent(newBlockedRelays)
-      const newBlockedRelaysEvent = await publish(draftEvent)
-      updateBlockedRelaysEvent(newBlockedRelaysEvent)
+      try {
+        const draftEvent = createBlockedRelaysDraftEvent(newBlockedRelays)
+        const newBlockedRelaysEvent = await publish(draftEvent)
+        updateBlockedRelaysEvent(newBlockedRelaysEvent)
+      } catch (e) {
+        setBlockedRelays(previousBlockedRelays)
+        throw e
+      }
     },
     [blockedRelays, publish, updateBlockedRelaysEvent]
   )
@@ -350,11 +356,17 @@ export function FavoriteRelaysProvider({ children }: { children: React.ReactNode
   const deleteBlockedRelays = useCallback(
     async (relayUrls: string[]) => {
       const normalizedUrls = relayUrls.map((relayUrl) => normalizeAnyRelayUrl(relayUrl)).filter(Boolean)
+      const previousBlockedRelays = blockedRelays
       const newBlockedRelays = blockedRelays.filter((relay) => !normalizedUrls.includes(relay))
       setBlockedRelays(newBlockedRelays)
-      const draftEvent = createBlockedRelaysDraftEvent(newBlockedRelays)
-      const newBlockedRelaysEvent = await publish(draftEvent)
-      updateBlockedRelaysEvent(newBlockedRelaysEvent)
+      try {
+        const draftEvent = createBlockedRelaysDraftEvent(newBlockedRelays)
+        const newBlockedRelaysEvent = await publish(draftEvent)
+        updateBlockedRelaysEvent(newBlockedRelaysEvent)
+      } catch (e) {
+        setBlockedRelays(previousBlockedRelays)
+        throw e
+      }
     },
     [blockedRelays, publish, updateBlockedRelaysEvent]
   )

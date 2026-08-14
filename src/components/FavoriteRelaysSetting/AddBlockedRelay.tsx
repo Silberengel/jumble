@@ -1,3 +1,4 @@
+import { LoginRequiredError } from '@/lib/nostr-errors'
 import { normalizeAnyRelayUrl } from '@/lib/url'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
 import { useState } from 'react'
@@ -41,7 +42,11 @@ export default function AddBlockedRelay() {
       setTimeout(() => setSuccessMsg(''), 3000)
     } catch (error) {
       logger.error('Failed to block relay', { error, relay: normalizedUrl })
-      setErrorMsg(t('Failed to block relay. Please try again.'))
+      setErrorMsg(
+        error instanceof LoginRequiredError
+          ? t('readOnlySession.cannotPublish')
+          : t('Failed to block relay. Please try again.')
+      )
     } finally {
       setIsLoading(false)
     }
