@@ -575,7 +575,6 @@ export const SEARCH_QUERY_DEBOUNCE_MS = 550
 export const PROFILE_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://indexer.coracle.social/',
-  'wss://indexer.oracle.social/',
   'wss://purplepag.es'
 ]
 
