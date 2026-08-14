@@ -1,4 +1,4 @@
-import NoteCard from '@/components/NoteCard'
+import WikiCard from '@/components/Note/WikiCard'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   DOCUMENT_RELAY_URLS,
@@ -9,6 +9,7 @@ import {
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
+import { expandIdentifier } from '@/lib/identifier-expander'
 import { queryIndexRelayWikiSearch } from '@/lib/index-relay-http'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
 import { normalizeWikiDTag } from '@/lib/nip54'
@@ -32,15 +33,13 @@ type Phase = 'idle' | 'loading' | 'done' | 'error'
 /**
  * Dedicated NIP-54 wiki (kind 30818) results section for the generic Search page's FULL TEXT mode.
  *
- * Mirrors the Library page's robust search shape (see {@code useLibrarySearch}): three sources stream
- * into one deduped, relevance-sorted merge map so results appear progressively instead of waiting for
- * the slowest path:
- *   1. Local — session cache + IndexedDB stores ({@link collectLocalEventsForTextSearch}), rendered first.
- *   2. Mercury HTTP — `POST /api/wiki/search` (body + metadata tags `d`/`title`/`summary`/`source`).
- *   3. Relays — NIP-50 `search` plus an exact `#d` slug REQ on NIP-50-capable + document/inbox relays.
+ * Always runs Mercury HTTP and WS/document-relay tag filters in parallel (merge/dedupe) — never
+ * Mercury-only-then-fallback:
+ *   1. Local — session cache + IndexedDB stores
+ *   2. Mercury HTTP — `POST /api/wiki/search`
+ *   3. Relays — NIP-50 `search`, exact `#d`, plus `#T` / `#i` / `#s` from the identifier expander
  *
- * Rendered alongside the broader NIP-50 full-text results in {@link SearchResult}. Hidden when there are
- * no wiki hits to avoid clutter.
+ * Opens articles with the event already in hand (WikiCard → note route).
  */
 export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string }) {
   const { t } = useTranslation()
@@ -62,8 +61,9 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
     setEvents([])
     const abort = new AbortController()
     const dTag = normalizeWikiDTag(q)
+    const expanded = expandIdentifier(q)
 
-    // WebSocket relays worth a NIP-50 / `#d` REQ for wiki articles: NIP-50-capable relays plus the
+    // WebSocket relays worth a NIP-50 / tag REQ for wiki articles: NIP-50-capable relays plus the
     // document/library relays, the viewer's own inboxes/outboxes, and fast read defaults.
     const wsRelays = Array.from(
       new Set(
@@ -132,7 +132,7 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
       }
     }
 
-    /** Mercury HTTP `/api/wiki/search` (body + metadata, server-ranked). */
+    /** Mercury HTTP `/api/wiki/search` (body + metadata, server-ranked) — always in parallel with WS. */
     const fetchHttp = async () => {
       await Promise.all(
         WIKI_SEARCH_HTTP_BASES.map(async (base) => {
@@ -149,14 +149,37 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
       )
     }
 
-    /** WS NIP-50 `search` (relays that index full text) + exact `#d` slug lookup (title match). */
+    /**
+     * WS NIP-50 `search` + exact `#d` + catalog `#T` / `#i` / `#s` (never `#title`).
+     * Always runs alongside Mercury — merge/dedupe; never Mercury-only-then-fallback.
+     */
     const fetchWs = async () => {
       if (wsRelays.length === 0) return
       const filters: Filter[] = [
-        { kinds: [ExtendedKind.WIKI_ARTICLE], search: q, limit: WIKI_SEARCH_LIMIT }
+        { kinds: [ExtendedKind.WIKI_ARTICLE], search: q, limit: WIKI_SEARCH_LIMIT },
+        { kinds: [ExtendedKind.WIKI_ARTICLE], '#T': [q], limit: WIKI_SEARCH_LIMIT } as Filter
       ]
       if (dTag) {
         filters.push({ kinds: [ExtendedKind.WIKI_ARTICLE], '#d': [dTag], limit: WIKI_SEARCH_LIMIT })
+        filters.push({
+          kinds: [ExtendedKind.WIKI_ARTICLE],
+          '#T': [dTag],
+          limit: WIKI_SEARCH_LIMIT
+        } as Filter)
+      }
+      if (expanded.i?.length) {
+        filters.push({
+          kinds: [ExtendedKind.WIKI_ARTICLE],
+          '#i': expanded.i,
+          limit: WIKI_SEARCH_LIMIT
+        } as Filter)
+      }
+      if (expanded.s?.length) {
+        filters.push({
+          kinds: [ExtendedKind.WIKI_ARTICLE],
+          '#s': expanded.s,
+          limit: WIKI_SEARCH_LIMIT
+        } as Filter)
       }
       try {
         const evs = await queryService.fetchEvents(wsRelays, filters, {
@@ -165,14 +188,30 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
           globalTimeout: 12_000
         })
         // Relays that ignore NIP-50 `search` return recent articles instead — keep only true matches
-        // (an exact `#d` slug hit always counts even if the body text differs).
+        // (exact `#d` / identifier / title-tag hits always count even if the body text differs).
         merge(
-          (evs ?? []).filter(
-            (ev) =>
-              ev.kind === ExtendedKind.WIKI_ARTICLE &&
-              (eventMatchesGeneralSearchQuery(ev, q) ||
-                (!!dTag && ev.tags.some((tg) => tg[0] === 'd' && tg[1] === dTag)))
-          )
+          (evs ?? []).filter((ev) => {
+            if (ev.kind !== ExtendedKind.WIKI_ARTICLE) return false
+            if (eventMatchesGeneralSearchQuery(ev, q)) return true
+            if (dTag && ev.tags.some((tg) => tg[0] === 'd' && tg[1] === dTag)) return true
+            if (expanded.i?.some((id) => ev.tags.some((tg) => tg[0] === 'i' && tg[1] === id))) {
+              return true
+            }
+            if (expanded.s?.some((src) => ev.tags.some((tg) => tg[0] === 's' && tg[1] === src))) {
+              return true
+            }
+            if (
+              ev.tags.some(
+                (tg) =>
+                  (tg[0] === 'T' || tg[0] === 'title') &&
+                  typeof tg[1] === 'string' &&
+                  tg[1].toLowerCase().includes(q.toLowerCase())
+              )
+            ) {
+              return true
+            }
+            return false
+          })
         )
       } catch {
         // best effort; local / http sources still render
@@ -230,14 +269,7 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
             key={event.id}
             className="min-w-0 overflow-hidden rounded-lg border border-border/60 bg-card/30 shadow-none transition-[border-color,box-shadow,background-color] duration-150 hover:border-border hover:bg-muted/15 hover:shadow-sm"
           >
-            <NoteCard
-              event={event}
-              className="w-full border-0 bg-transparent shadow-none"
-              filterMutedNotes
-              fetchNoteStatsIfMissing={false}
-              deferAuthorAvatar
-              searchListPreview
-            />
+            <WikiCard event={event} className="w-full border-0 bg-transparent shadow-none" />
           </article>
         ))}
       </div>

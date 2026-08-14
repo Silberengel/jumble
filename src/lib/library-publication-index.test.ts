@@ -36,7 +36,7 @@ import {
   searchLibraryPublications
 } from '@/lib/library-publication-index'
 import { buildIndexByAddress } from '@/lib/publication-index'
-import type { Event } from 'nostr-tools'
+import type { Event, Filter } from 'nostr-tools'
 import { finalizeEvent, generateSecretKey, getPublicKey, kinds } from 'nostr-tools'
 
 const sk = generateSecretKey()
@@ -254,15 +254,16 @@ describe('library-publication-index', () => {
     const dTagFilters = buildLibraryPublicationRelaySearchFiltersForAxis('d-tag', {
       query: 'Village Life in China'
     })
-    expect(dTagFilters).toHaveLength(1)
-    expect(dTagFilters[0].kinds).toEqual([ExtendedKind.PUBLICATION])
-    expect(dTagFilters[0]['#d']).toContain('village-life-in-china')
-    expect(dTagFilters[0].search).toBeUndefined()
+    expect(dTagFilters.some((f) => f['#d']?.includes('village-life-in-china'))).toBe(true)
+    expect(dTagFilters.every((f) => f.kinds?.includes(ExtendedKind.PUBLICATION))).toBe(true)
+    expect(dTagFilters.every((f) => f.search == null)).toBe(true)
 
     const titleFilters = buildLibraryPublicationRelaySearchFiltersForAxis('title', {
       query: 'Village Life in China'
     })
-    expect(titleFilters).toHaveLength(0)
+    expect(titleFilters.some((f) => (f as Filter & { '#T'?: string[] })['#T']?.length)).toBe(true)
+    expect(titleFilters.every((f) => !(f as Filter & { '#title'?: string[] })['#title'])).toBe(true)
+    expect(titleFilters.every((f) => f.search == null)).toBe(true)
 
     const docDTag = buildDocumentRelayPublicationFilters('d-tag', 'redacted-science')
     expect(docDTag[0]?.['#d']).toContain('redacted-science')
@@ -274,22 +275,27 @@ describe('library-publication-index', () => {
 
     const docTitle = buildDocumentRelayPublicationFilters('title', 'Redacted Science')
     expect(docTitle.some((f) => f['#d']?.includes('redacted-science'))).toBe(true)
-    expect(docTitle.some((f) => f['#title']?.includes('Redacted Science'))).toBe(true)
+    expect(docTitle.some((f) => (f as Filter & { '#T'?: string[] })['#T']?.includes('Redacted Science'))).toBe(
+      true
+    )
+    expect(docTitle.every((f) => !(f as Filter & { '#title'?: string[] })['#title'])).toBe(true)
     expect(docTitle.every((f) => f.search == null)).toBe(true)
 
     const docAuthor = buildDocumentRelayPublicationFilters('author', 'Jane Austen')
-    expect(docAuthor.some((f) => f['#author']?.includes('Jane Austen'))).toBe(true)
+    expect(docAuthor.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.includes('Jane Austen'))).toBe(
+      true
+    )
     expect(docAuthor.every((f) => f.search == null)).toBe(true)
 
     const authorFilters = buildLibraryPublicationRelaySearchFiltersForAxis('author', {
       query: 'Village Life in China'
     })
-    expect(authorFilters).toHaveLength(0)
+    expect(authorFilters.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.length)).toBe(true)
 
     const merged = buildLibraryPublicationRelaySearchFilters({ query: 'Village Life in China' })
-    expect(merged).toHaveLength(1)
-    expect(merged[0]['#d']).toContain('village-life-in-china')
+    expect(merged.some((f) => f['#d']?.includes('village-life-in-china'))).toBe(true)
     expect(merged.every((f) => f.search == null)).toBe(true)
+    expect(merged.every((f) => !(f as Filter & { '#title'?: string[] })['#title'])).toBe(true)
   })
 
   it('filterEventsForPublicationRelaySearchAxis keeps axis-specific kind-30040 matches', () => {

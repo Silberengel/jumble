@@ -287,6 +287,7 @@ export type TSearchType =
   | 'hashtag'
   | 'relay'
   | 'dtag'
+  | 'wiki'
 
 export type TSearchParams = {
   type: TSearchType

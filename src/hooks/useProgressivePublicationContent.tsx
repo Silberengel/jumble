@@ -1,3 +1,6 @@
+import { LIBRARY_RELAY_URLS } from '@/constants'
+import { getNoteBech32Id } from '@/lib/event'
+import { queryIndexRelayPublicationStream } from '@/lib/index-relay-http'
 import { isMobileBrowserProfile } from '@/lib/client-platform'
 import { indexPublicationEvents } from '@/lib/publication-asciidoc-assembler'
 import {
@@ -22,6 +25,20 @@ const READ_AHEAD_COUNT = 8
 const BLOCKING_PREFETCH_BUDGET_MS = isMobileBrowserProfile() ? 12_000 : 18_000
 const BLOCKING_BATCH_SIZE = 6
 const BACKGROUND_DRAIN_BATCH_SIZE = 8
+const MERCURY_HTTP_BASES = LIBRARY_RELAY_URLS.filter((u) => /^https?:\/\//i.test(u))
+
+function streamRawToEvent(raw: Record<string, unknown> | null | undefined): Event | null {
+  if (!raw || typeof raw !== 'object') return null
+  const id = typeof raw.id === 'string' ? raw.id : ''
+  const pubkey = typeof raw.pubkey === 'string' ? raw.pubkey : ''
+  const kind = typeof raw.kind === 'number' ? raw.kind : -1
+  const created_at = typeof raw.created_at === 'number' ? raw.created_at : 0
+  const content = typeof raw.content === 'string' ? raw.content : ''
+  const sig = typeof raw.sig === 'string' ? raw.sig : ''
+  const tags = Array.isArray(raw.tags) ? (raw.tags as string[][]) : []
+  if (!id || !pubkey || kind < 0 || !sig) return null
+  return { id, pubkey, kind, created_at, content, sig, tags } as Event
+}
 
 export function useProgressivePublicationContent(
   rootIndex: Event,
@@ -151,6 +168,47 @@ export function useProgressivePublicationContent(
     },
     [loadSection]
   )
+
+  useEffect(() => {
+    if (!enabled) return
+    let cancelled = false
+    void (async () => {
+      let naddr: string | null = null
+      try {
+        const id = getNoteBech32Id(rootIndex)
+        naddr = id.startsWith('naddr1') ? id : null
+      } catch {
+        return
+      }
+      if (!naddr) return
+      for (const base of MERCURY_HTTP_BASES) {
+        try {
+          const { items } = await queryIndexRelayPublicationStream(base, naddr, {
+            from: 0,
+            limit: 40
+          })
+          if (cancelled || items.length === 0) continue
+          const events = items
+            .map((item) => streamRawToEvent(item.event ?? undefined))
+            .filter((ev): ev is Event => Boolean(ev))
+          if (events.length === 0) continue
+          setFetched((prev) => {
+            const next = new Map(prev)
+            indexPublicationEvents(next, events)
+            fetchedRef.current = next
+            return next
+          })
+          syncLoadProgress()
+          return
+        } catch {
+          // try next Mercury base; relay BFS remains the fallback
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, rootIndex.id, syncLoadProgress])
 
   useEffect(() => {
     if (!enabled) {

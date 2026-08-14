@@ -52,6 +52,15 @@ function indexRelayWikiSearchUrl(baseUrl: string): string {
   return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/wiki/search`
 }
 
+function indexRelaySuggestUrl(baseUrl: string): string {
+  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/suggest`
+}
+
+function indexRelayPublicationNaddrUrl(baseUrl: string, naddr: string, path: string): string {
+  const encoded = encodeURIComponent(naddr.trim())
+  return `${trimSlash(normalizeHttpRelayUrl(baseUrl) || baseUrl)}/api/publications/${encoded}/${path}`
+}
+
 /** Map a Nostr filter to gc_index_relay POST body (requires `limit` 1–100; strips unsupported keys). */
 function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> | null {
   const body: Record<string, unknown> = {}
@@ -76,13 +85,18 @@ function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> | null 
   if (f.since != null) body.since = f.since
   if (f.until != null) body.until = f.until
   /** NIP-50 `search` is not supported on Mercury `/api/events/filter` (400 Unknown filter key). */
-  /** Index relays expect NIP-01 lowercase single-letter tag keys (`#e` not `#E`). */
+  /**
+   * Single-letter tag filter keys are **case-sensitive** on Mercury (`#T` title slug ≠ `#t` subject;
+   * `#N` author slug ≠ `#n`). Preserve the letter case from the Filter object.
+   */
   const tagBuckets = new Map<string, string[]>()
   for (const key of Object.keys(f)) {
     if (key.length !== 2 || !key.startsWith('#')) continue
+    const letter = key[1]
+    if (!/^[a-zA-Z]$/.test(letter)) continue
     const v = (f as Record<string, unknown>)[key]
     if (!Array.isArray(v) || v.length === 0) continue
-    const normKey = `#${key[1].toLowerCase()}`
+    const normKey = `#${letter}`
     const cur = tagBuckets.get(normKey) ?? []
     for (const item of v) {
       if (item != null && String(item).length > 0) cur.push(String(item))
@@ -183,7 +197,9 @@ function shouldSkipDevIndexRelayFetch(endpoint: string): boolean {
   if (
     endpoint.includes('/api/publications/sections/search') ||
     endpoint.includes('/api/publications/search') ||
-    endpoint.includes('/api/wiki/search')
+    endpoint.includes('/api/wiki/search') ||
+    endpoint.includes('/api/suggest') ||
+    endpoint.includes('/api/publications/')
   ) {
     return false
   }
@@ -486,13 +502,65 @@ function filterForIndexRelay(f: Filter): Filter {
 }
 
 /** Kind-30040 metadata search (d / title / author / source) on Mercury-style index relays. */
+export type IndexRelayPublicationSearchBody = {
+  q?: string
+  title?: string
+  author?: string
+  language?: string
+  subject?: string
+  d?: string
+  identifier?: string
+  limit?: number
+}
+
+function publicationSearchBodyHasQuery(body: IndexRelayPublicationSearchBody): boolean {
+  const keys: (keyof IndexRelayPublicationSearchBody)[] = [
+    'q',
+    'title',
+    'author',
+    'language',
+    'subject',
+    'd',
+    'identifier'
+  ]
+  return keys.some((key) => {
+    const v = body[key]
+    return typeof v === 'string' && v.trim().length > 0
+  })
+}
+
+function parseIndexRelayEventPage(json: { data?: unknown }): TIndexRelayLibraryPage {
+  const data = json.data
+  if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }
+
+  const events: NEvent[] = []
+  const seen = new Set<string>()
+  for (const item of data) {
+    if (!item || typeof item !== 'object') continue
+    const ev = rawToIndexRelayEvent(item as Record<string, unknown>)
+    if (ev && !seen.has(ev.id)) {
+      seen.add(ev.id)
+      events.push(ev)
+    }
+  }
+  return { events, apiRowCount: data.length }
+}
+
+/** Kind-30040 metadata search (d / title / author / source / structured fields) on Mercury-style index relays. */
 export async function queryIndexRelayPublicationMetadataSearch(
   baseUrl: string,
-  query: string,
+  query: string | IndexRelayPublicationSearchBody,
   options?: { limit?: number; signal?: AbortSignal }
 ): Promise<TIndexRelayLibraryPage> {
-  const q = normalizeGeneralSearchQuery(query.trim())
-  if (!q) return { events: [], apiRowCount: 0 }
+  const body: IndexRelayPublicationSearchBody =
+    typeof query === 'string'
+      ? { q: normalizeGeneralSearchQuery(query.trim()) }
+      : { ...query }
+
+  if (typeof body.q === 'string') {
+    body.q = normalizeGeneralSearchQuery(body.q.trim())
+  }
+  if (!publicationSearchBodyHasQuery(body)) return { events: [], apiRowCount: 0 }
 
   const base = devHttpIndexRelayBaseForFetch(baseUrl)
   const endpoint = indexRelayPublicationMetadataSearchUrl(base)
@@ -500,7 +568,8 @@ export async function queryIndexRelayPublicationMetadataSearch(
     return { events: [], apiRowCount: 0 }
   }
 
-  const limit = Math.max(1, Math.min(options?.limit ?? 100, 100))
+  const limit = Math.max(1, Math.min(body.limit ?? options?.limit ?? 100, 100))
+  const payload: IndexRelayPublicationSearchBody = { ...body, limit }
   try {
     const res = await fetchWithTimeout(endpoint, {
       method: 'POST',
@@ -508,7 +577,7 @@ export async function queryIndexRelayPublicationMetadataSearch(
         Accept: 'application/json',
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ q, limit }),
+      body: JSON.stringify(payload),
       signal: options?.signal,
       timeoutMs: 25_000
     })
@@ -522,21 +591,7 @@ export async function queryIndexRelayPublicationMetadataSearch(
       }
       return { events: [], apiRowCount: 0 }
     }
-    const json = (await res.json()) as { data?: unknown }
-    const data = json.data
-    if (!Array.isArray(data)) return { events: [], apiRowCount: 0 }
-
-    const events: NEvent[] = []
-    const seen = new Set<string>()
-    for (const item of data) {
-      if (!item || typeof item !== 'object') continue
-      const ev = rawToIndexRelayEvent(item as Record<string, unknown>)
-      if (ev && !seen.has(ev.id)) {
-        seen.add(ev.id)
-        events.push(ev)
-      }
-    }
-    return { events, apiRowCount: data.length }
+    return parseIndexRelayEventPage((await res.json()) as { data?: unknown })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
     if (e instanceof IndexRelayTransportError) throw e
@@ -549,6 +604,280 @@ export async function queryIndexRelayPublicationMetadataSearch(
       error: e
     })
     return { events: [], apiRowCount: 0 }
+  }
+}
+
+export type IndexRelaySuggestRow = {
+  kind?: number
+  title?: string | null
+  author?: string | null
+  authors?: string[]
+  d?: string | null
+  i?: string[]
+  naddr?: string | null
+  id?: string
+  pubkey?: string
+}
+
+/** Typeahead over T/N/d/i (no body scan) via POST /api/suggest. */
+export async function queryIndexRelaySuggest(
+  baseUrl: string,
+  q: string,
+  options?: { limit?: number; signal?: AbortSignal }
+): Promise<IndexRelaySuggestRow[]> {
+  const query = normalizeGeneralSearchQuery(q.trim())
+  if (!query || query.length < 2) return []
+
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelaySuggestUrl(base)
+  if (shouldSkipDevIndexRelayFetch(endpoint)) return []
+
+  const limit = Math.max(1, Math.min(options?.limit ?? 10, 25))
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ q: query, limit }),
+      signal: options?.signal,
+      timeoutMs: 8_000
+    })
+    if (!res.ok) {
+      if (res.status === 404 || res.status === 405) return []
+      if (res.status >= 500) throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      return []
+    }
+    const json = (await res.json()) as { data?: unknown }
+    return Array.isArray(json.data) ? (json.data as IndexRelaySuggestRow[]) : []
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    warnIndexRelayHttpThrottled(endpoint, '[IndexRelayHttp] suggest request error', {
+      endpoint,
+      error: e
+    })
+    return []
+  }
+}
+
+export type IndexRelayPublicationMeta = {
+  readable: boolean
+  event_count: number
+  index_count: number
+  content_count: number
+  d?: string | null
+  naddr?: string | null
+}
+
+export type IndexRelayPublicationTocEntry = {
+  pos: number
+  kind: number
+  d?: string | null
+  id?: string | null
+  title?: string | null
+  event?: Record<string, unknown> | null
+}
+
+export type IndexRelayPublicationStreamItem = {
+  pos: number
+  kind: number
+  d?: string | null
+  id?: string | null
+  event?: Record<string, unknown> | null
+}
+
+export type IndexRelayPublicationStreamMeta = {
+  readable: boolean
+  event_count: number
+  index_count: number
+  content_count: number
+}
+
+function parseNdjsonLines(text: string): IndexRelayPublicationStreamItem[] {
+  const out: IndexRelayPublicationStreamItem[] = []
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const row = JSON.parse(trimmed) as IndexRelayPublicationStreamItem
+      if (row && typeof row === 'object' && typeof row.pos === 'number') out.push(row)
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return out
+}
+
+function streamMetaFromHeaders(res: Response): IndexRelayPublicationStreamMeta {
+  const num = (name: string) => {
+    const raw = res.headers.get(name)
+    const n = raw != null ? Number(raw) : NaN
+    return Number.isFinite(n) ? n : 0
+  }
+  return {
+    readable: String(res.headers.get('x-readable') || '').toLowerCase() === 'true',
+    event_count: num('x-event-count'),
+    index_count: num('x-index-count'),
+    content_count: num('x-content-count')
+  }
+}
+
+/** GET /api/publications/:naddr/meta */
+export async function queryIndexRelayPublicationMeta(
+  baseUrl: string,
+  naddr: string,
+  options?: { signal?: AbortSignal }
+): Promise<IndexRelayPublicationMeta | null> {
+  const id = naddr.trim()
+  if (!id) return null
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayPublicationNaddrUrl(base, id, 'meta')
+  if (shouldSkipDevIndexRelayFetch(endpoint)) return null
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: options?.signal,
+      timeoutMs: 15_000
+    })
+    if (!res.ok) {
+      if (res.status === 404) return null
+      if (res.status >= 500) throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      return null
+    }
+    return (await res.json()) as IndexRelayPublicationMeta
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    return null
+  }
+}
+
+/** GET /api/publications/:naddr/toc */
+export async function queryIndexRelayPublicationToc(
+  baseUrl: string,
+  naddr: string,
+  options?: { signal?: AbortSignal }
+): Promise<IndexRelayPublicationTocEntry[]> {
+  const id = naddr.trim()
+  if (!id) return []
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayPublicationNaddrUrl(base, id, 'toc')
+  if (shouldSkipDevIndexRelayFetch(endpoint)) return []
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+      signal: options?.signal,
+      timeoutMs: 30_000
+    })
+    if (!res.ok) {
+      if (res.status === 404) return []
+      if (res.status >= 500) throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      return []
+    }
+    const json = (await res.json()) as { toc?: unknown }
+    return Array.isArray(json.toc) ? (json.toc as IndexRelayPublicationTocEntry[]) : []
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    return []
+  }
+}
+
+/** GET /api/publications/:naddr/stream?from=&limit= as NDJSON. */
+export async function queryIndexRelayPublicationStream(
+  baseUrl: string,
+  naddr: string,
+  options?: { from?: number; limit?: number; signal?: AbortSignal }
+): Promise<{ items: IndexRelayPublicationStreamItem[]; meta: IndexRelayPublicationStreamMeta }> {
+  const id = naddr.trim()
+  const empty = {
+    items: [] as IndexRelayPublicationStreamItem[],
+    meta: { readable: false, event_count: 0, index_count: 0, content_count: 0 }
+  }
+  if (!id) return empty
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const from = Math.max(0, options?.from ?? 0)
+  const limit = Math.max(1, Math.min(options?.limit ?? 40, 200))
+  const endpoint = `${indexRelayPublicationNaddrUrl(base, id, 'stream')}?from=${from}&limit=${limit}`
+  if (shouldSkipDevIndexRelayFetch(endpoint)) return empty
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/x-ndjson, application/json' },
+      signal: options?.signal,
+      timeoutMs: 45_000
+    })
+    if (!res.ok) {
+      if (res.status === 404) return empty
+      if (res.status >= 500) throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      return empty
+    }
+    const text = await res.text()
+    return { items: parseNdjsonLines(text), meta: streamMetaFromHeaders(res) }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    return empty
+  }
+}
+
+/** GET /api/publications/:naddr/export as NDJSON (full flattened list). */
+export async function queryIndexRelayPublicationExport(
+  baseUrl: string,
+  naddr: string,
+  options?: { signal?: AbortSignal }
+): Promise<{ items: IndexRelayPublicationStreamItem[]; meta: IndexRelayPublicationStreamMeta }> {
+  const id = naddr.trim()
+  const empty = {
+    items: [] as IndexRelayPublicationStreamItem[],
+    meta: { readable: false, event_count: 0, index_count: 0, content_count: 0 }
+  }
+  if (!id) return empty
+  const base = devHttpIndexRelayBaseForFetch(baseUrl)
+  const endpoint = indexRelayPublicationNaddrUrl(base, id, 'export')
+  if (shouldSkipDevIndexRelayFetch(endpoint)) return empty
+  try {
+    const res = await fetchWithTimeout(endpoint, {
+      method: 'GET',
+      headers: { Accept: 'application/x-ndjson, application/json' },
+      signal: options?.signal,
+      timeoutMs: 120_000
+    })
+    if (!res.ok) {
+      if (res.status === 404) return empty
+      if (res.status >= 500) throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
+      return empty
+    }
+    const text = await res.text()
+    return { items: parseNdjsonLines(text), meta: streamMetaFromHeaders(res) }
+  } catch (e) {
+    if ((e as Error).name === 'AbortError') throw e
+    if (e instanceof IndexRelayTransportError) throw e
+    if (isIndexRelayTransportFailure(e)) {
+      handleFilterTransportFailure(endpoint, e)
+      throw new IndexRelayTransportError(e)
+    }
+    return empty
   }
 }
 

@@ -163,6 +163,7 @@ const SearchBar = forwardRef<
     const normalizedDTag = normalizeToDTag(search)
 
     setSelectableOptions([
+      { type: 'wiki', search },
       { type: 'notes', search },
       { type: 'profiles', search },
       { type: 'hashtag', search: hashtag, input: `#${hashtag}` },
@@ -202,6 +203,16 @@ const SearchBar = forwardRef<
                 selected={selectedIndex === index}
                 userId={option.search}
                 prefetchedProfile={option.profile}
+                onClick={() => updateSearch(option)}
+              />
+            )
+          }
+          if (option.type === 'wiki') {
+            return (
+              <WikiSearchItem
+                key={`wiki-${option.search}`}
+                selected={selectedIndex === index}
+                search={option.search}
                 onClick={() => updateSearch(option)}
               />
             )
@@ -434,6 +445,26 @@ export default SearchBar
 export type TSearchBarRef = {
   focus: () => void
   blur: () => void
+}
+
+function WikiSearchItem({
+  search,
+  onClick,
+  selected
+}: {
+  search: string
+  onClick?: () => void
+  selected?: boolean
+}) {
+  return (
+    <Item onClick={onClick} selected={selected}>
+      <div className="flex flex-col items-center gap-0.5">
+        <Search className="text-muted-foreground" />
+        <span className="text-[10px] text-muted-foreground/70 uppercase leading-none">WIKI</span>
+      </div>
+      <div className="font-semibold truncate">{search}</div>
+    </Item>
+  )
 }
 
 function NormalItem({

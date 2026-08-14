@@ -109,6 +109,13 @@ export default function SearchResult({ searchParams }: { searchParams: TSearchPa
       <ProfileListBySearch search={searchParams.search} alexandriaEmptyHref={alexandriaEmptyHref} />
     )
   }
+  if (searchParams.type === 'wiki') {
+    return (
+      <div className="min-w-0 space-y-4">
+        <WikiSearchByRelay searchQuery={searchParams.search} />
+      </div>
+    )
+  }
   if (searchParams.type === 'notes') {
     return (
       <div className="min-w-0 space-y-4">

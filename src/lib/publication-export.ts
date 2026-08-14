@@ -90,11 +90,10 @@ export async function fetchPublicationTreeForExport(
   return fetched
 }
 
-export async function assemblePublicationForExport(
+function assembleFromFetchedMap(
   rootIndex: Event,
-  relayUrls: string[]
-): Promise<ReturnType<typeof assemblePublicationAsciidoc>> {
-  const fetched = await fetchPublicationTreeForExport(rootIndex, relayUrls)
+  fetched: Map<string, Event>
+): ReturnType<typeof assemblePublicationAsciidoc> {
   const eventsByAddress = new Map<string, Event>()
   const seenIds = new Set<string>()
   for (const ev of fetched.values()) {
@@ -110,13 +109,28 @@ export async function assemblePublicationForExport(
   return assembled
 }
 
-export async function exportPublicationDownload(
+export async function assemblePublicationForExport(
   rootIndex: Event,
-  format: PublicationDownloadFormat,
   relayUrls: string[]
-): Promise<{ filename: string }> {
-  const assembled = await assemblePublicationForExport(rootIndex, relayUrls)
+): Promise<ReturnType<typeof assemblePublicationAsciidoc>> {
+  const fetched = await fetchPublicationTreeForExport(rootIndex, relayUrls)
+  return assembleFromFetchedMap(rootIndex, fetched)
+}
 
+/** Assemble from Mercury `/export` events — no client a/e walk. */
+export async function assemblePublicationFromMercuryEvents(
+  rootIndex: Event,
+  events: Event[]
+): Promise<ReturnType<typeof assemblePublicationAsciidoc>> {
+  const fetched = new Map<string, Event>()
+  indexPublicationEvents(fetched, [rootIndex, ...events])
+  return assembleFromFetchedMap(rootIndex, fetched)
+}
+
+async function downloadAssembled(
+  assembled: ReturnType<typeof assemblePublicationAsciidoc>,
+  format: PublicationDownloadFormat
+): Promise<{ filename: string }> {
   if (format === 'adoc') {
     const blob = new Blob([assembled.content], { type: 'text/plain;charset=utf-8' })
     const filename = safeFilename(assembled.title, 'adoc')
@@ -129,9 +143,6 @@ export async function exportPublicationDownload(
   }
 
   const serverFormat = format === 'epub' ? 'epub3' : 'pdf'
-  // The cover is set via the document's `:front-cover-image:` (+ `:allow-uri-read:` so the converter
-  // fetches it). Do NOT pass the image separately: the server's own handling injects a broken cover
-  // (manifest references a jacket file it never creates, no `cover-image` property).
   const converted = await convertAsciiDocViaServer(
     serverFormat,
     assembled.content,
@@ -142,4 +153,22 @@ export async function exportPublicationDownload(
   const filename = safeFilename(assembled.title, converted.extension)
   downloadBlob(filename, converted.blob)
   return { filename }
+}
+
+export async function exportPublicationFromMercuryEvents(
+  rootIndex: Event,
+  events: Event[],
+  format: PublicationDownloadFormat
+): Promise<{ filename: string }> {
+  const assembled = await assemblePublicationFromMercuryEvents(rootIndex, events)
+  return downloadAssembled(assembled, format)
+}
+
+export async function exportPublicationDownload(
+  rootIndex: Event,
+  format: PublicationDownloadFormat,
+  relayUrls: string[]
+): Promise<{ filename: string }> {
+  const assembled = await assemblePublicationForExport(rootIndex, relayUrls)
+  return downloadAssembled(assembled, format)
 }

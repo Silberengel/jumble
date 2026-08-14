@@ -9,12 +9,13 @@ import { useSecondaryPageOptional } from '@/PageManager'
 import { useShouldAutoLoadMedia } from '@/hooks/useShouldAutoLoadMedia'
 import { ExternalLink } from 'lucide-react'
 import { Event, kinds } from 'nostr-tools'
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import PublicationCoverFallback from './PublicationCoverFallback'
 import PublicationCoverImage from './PublicationCoverImage'
 import PublicationBooklistButton from './PublicationBooklistButton'
 import PublicationIndexBody from './PublicationIndexBody'
+import PublicationOverviewActions from './PublicationOverviewActions'
 import PublicationSourceEventLink from './PublicationSourceEventLink'
 
 function formatAuthorLine(authors: PublicationAuthor[]): string {
@@ -75,6 +76,8 @@ export default function PublicationIndexMetadata({
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getPublicationIndexMetadataFromEvent(event), [event])
+  const [perusing, setPerusing] = useState(false)
+  const startPeruse = useCallback(() => setPerusing(true), [])
 
   if (event.kind !== ExtendedKind.PUBLICATION) return null
 
@@ -232,11 +235,19 @@ export default function PublicationIndexMetadata({
           {tagsComponent}
 
           {isFull ? <PublicationBooklistButton event={event} className="w-fit self-start" /> : null}
+
+          {isFull ? (
+            <PublicationOverviewActions
+              event={event}
+              onPeruse={startPeruse}
+              className="w-full max-w-md"
+            />
+          ) : null}
         </div>
       ) : null}
 
-      {isFull && metadata.sectionCount > 0 ? (
-        <PublicationIndexBody event={event} autoStartReading={isFull} />
+      {isFull && perusing ? (
+        <PublicationIndexBody event={event} autoStartReading />
       ) : null}
     </div>
   )
