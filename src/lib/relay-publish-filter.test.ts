@@ -15,11 +15,6 @@ describe('relay-publish-filter', () => {
     expect(relayAllowsPublishKind('wss://indexer.coracle.social/', kinds.ShortTextNote)).toBe(false)
   })
 
-  it('blocks indexer.oracle.social profile mirrors for social kinds', () => {
-    expect(relayAllowsPublishKind('wss://indexer.oracle.social/', kinds.ShortTextNote)).toBe(false)
-    expect(relayAllowsPublishKind('wss://indexer.oracle.social/', kinds.RelayList)).toBe(true)
-  })
-
   it('allows profile/index mirrors for kind 0, 10002, and NIP-38 user status', () => {
     expect(relayAllowsPublishKind('wss://profiles.nostrver.se/', kinds.Metadata)).toBe(true)
     expect(relayAllowsPublishKind('wss://indexer.coracle.social/', kinds.RelayList)).toBe(true)

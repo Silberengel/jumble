@@ -13,9 +13,7 @@ export const PROFILE_INDEX_ONLY_RELAY_URLS = [
   'wss://profiles.nostr1.com',
   'wss://purplepag.es',
   'wss://profiles.nostrver.se/',
-  'wss://indexer.coracle.social/',
-  // Same kind of indexer; some published kind-10002 lists still use this hostname.
-  'wss://indexer.oracle.social/'
+  'wss://indexer.coracle.social/'
 ] as const
 
 function relayKey(url: string): string {

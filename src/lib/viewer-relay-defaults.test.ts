@@ -11,7 +11,7 @@ describe('viewer-relay-defaults', () => {
   it('treats profile-index-only lists as unusable mailboxes', () => {
     expect(
       relayListHasUsableMailboxUrls({
-        read: ['wss://profiles.nostr1.com/', 'wss://indexer.oracle.social/'],
+        read: ['wss://profiles.nostr1.com/', 'wss://indexer.coracle.social/'],
         write: ['wss://purplepag.es/'],
         httpRead: []
       })
