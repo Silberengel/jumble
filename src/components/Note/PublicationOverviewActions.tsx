@@ -177,7 +177,7 @@ export default function PublicationOverviewActions({
         try {
           await runExport('epub')
         } catch {
-          await exportPublicationDownload(event, 'epub', LIBRARY_RELAY_URLS)
+          await exportPublicationDownload(event, 'epub', [...LIBRARY_RELAY_URLS])
         }
       }
     } catch (e) {

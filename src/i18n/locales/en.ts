@@ -1401,7 +1401,6 @@ export default {
     "Are you sure you want to unregister the service worker? This will clear this app's service worker caches and you will need to reload the page.": "Are you sure you want to unregister the service worker? This will clear this app's service worker caches and you will need to reload the page.",
     "Article exported as AsciiDoc": "Article exported as AsciiDoc",
     "Download as AsciiDoc": "Download as AsciiDoc",
-    "Download as EPUB": "Download as EPUB",
     "Download as PDF": "Download as PDF",
     "Exporting publication…": "Exporting publication…",
     "Publication exported as EPUB": "Publication exported as EPUB",
