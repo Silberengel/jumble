@@ -25,7 +25,7 @@ services:
     image: silberengel/imwald-jumble:latest
     container_name: imwald-jumble
     ports:
-      - "8089:80"
+      - "127.0.0.1:8089:80"
     restart: unless-stopped
     # Do NOT pass NIP66_MONITOR_NSEC to the web app; only npub is needed for the relay info page.
     environment:
