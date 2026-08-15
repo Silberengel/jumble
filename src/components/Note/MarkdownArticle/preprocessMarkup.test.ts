@@ -44,3 +44,26 @@ describe('hardenAsciidocLinkMacros', () => {
     expect(hardenAsciidocLinkMacros('*\n*\n').trim()).toBe('')
   })
 })
+
+describe('preprocessAsciidocMediaLinks', () => {
+  it('does not re-wrap URLs already inside hardened link macros', async () => {
+    const { preprocessAsciidocMediaLinks } = await import('./preprocessMarkup')
+    const raw = [
+      '* link:https://www.youtube.com/watch?v=1Z5OoBqqYsk[A YouTube video introducing the Bronx Zoo\'s aardvarks]',
+      '* link:https://web.archive.org/web/20080414134457/http://www.tierseiten.com/roehrenzaehner/aardvark.pdf["The Biology of the Aardvark" (_Orycteropus afer_)\\"] the thesis with images'
+    ].join('\n')
+    const out = preprocessAsciidocMediaLinks(raw)
+    expect(out).toContain(
+      'link:++https://www.youtube.com/watch?v=1Z5OoBqqYsk++[A YouTube video introducing the Bronx Zoo\'s aardvarks]'
+    )
+    expect(out).toContain(
+      'link:++https://web.archive.org/web/20080414134457/http://www.tierseiten.com/roehrenzaehner/aardvark.pdf++[The Biology of the Aardvark (_Orycteropus afer_)]'
+    )
+    // Corruption signatures from index-mismatched re-wraps (not the word "video").
+    expect(out).not.toMatch(/(?:^|[^\w])ideo introducing/)
+    expect(out).not.toMatch(/^\*\s*\+\+\[/m)
+    expect(out).not.toMatch(/pdfogy/)
+    expect(out).not.toMatch(/link:link:/)
+    expect(out).toContain("A YouTube video introducing")
+  })
+})

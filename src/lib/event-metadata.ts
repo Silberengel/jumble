@@ -903,14 +903,55 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
 
 /**
  * Source URL (`s`, else `source`) plus `i` identifier chips for wiki / publication chrome.
- * When the event has a source URL but no `i` tags, derives identifiers from the URL
- * (e.g. Wikipedia → `wikipedia:en:Page`) for interlinking.
+ * Returns one deduped list: source first, then identifiers whose URLs are not the same page.
  */
-export function getContentProvenanceFromEvent(event: Event): {
-  source?: string
-  identifiers: PublicationIdentifier[]
-} {
+export type ContentProvenanceLink = {
+  href: string
+  label: string
+}
+
+function normalizeProvenanceUrl(raw: string): string {
+  try {
+    const u = new URL(raw.trim())
+    u.hash = ''
+    // Wikipedia / wiki paths: compare decoded path so Aardvark vs Aardvark%20 match.
+    let path = u.pathname
+    try {
+      path = decodeURIComponent(path)
+    } catch {
+      // keep encoded
+    }
+    path = path.replace(/\/+$/, '') || '/'
+    return `${u.protocol}//${u.hostname.toLowerCase().replace(/^www\./, '')}${path}${u.search}`.toLowerCase()
+  } catch {
+    return raw.trim().toLowerCase()
+  }
+}
+
+function provenanceHostnameLabel(source: string): string {
+  try {
+    return new URL(source).hostname.replace(/^www\./, '')
+  } catch {
+    return source
+  }
+}
+
+export function getContentProvenanceFromEvent(event: Event): ContentProvenanceLink[] {
   const meta = getPublicationIndexMetadataFromEvent(event)
+  const links: ContentProvenanceLink[] = []
+  const seen = new Set<string>()
+
+  const push = (href: string, label: string) => {
+    const key = normalizeProvenanceUrl(href)
+    if (!href.trim() || seen.has(key)) return
+    seen.add(key)
+    links.push({ href, label })
+  }
+
+  if (meta.source) {
+    push(meta.source, provenanceHostnameLabel(meta.source))
+  }
+
   const identifiers = [...meta.identifiers]
   if (identifiers.length === 0 && meta.source) {
     const derived = expandIdentifier(meta.source)
@@ -919,7 +960,20 @@ export function getContentProvenanceFromEvent(event: Event): {
       if (parsed) identifiers.push(parsed)
     }
   }
-  return { source: meta.source, identifiers }
+
+  for (const identifier of identifiers) {
+    if (identifier.url) {
+      push(identifier.url, identifier.label)
+    } else if (identifier.label) {
+      // Non-URL chips: dedupe on label text.
+      const key = `label:${identifier.label.toLowerCase()}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      links.push({ href: '', label: identifier.label })
+    }
+  }
+
+  return links
 }
 
 export function getLiveEventMetadataFromEvent(event: Event) {

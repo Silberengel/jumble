@@ -145,6 +145,17 @@ export function hardenAsciidocLinkMacros(content: string): string {
   return s
 }
 
+/** True when this URL occurrence is already inside an AsciiDoc link/media macro. */
+function isUrlInsideAsciidocMacro(text: string, urlIndex: number): boolean {
+  const before = text.substring(Math.max(0, urlIndex - 12), urlIndex)
+  if (/(?:^|[^:])(?:link|image|video|audio)::?\+*$/.test(before)) return true
+  if (/link:\+\+$/.test(before) || /link:$/.test(before)) return true
+  // Already wrapped: link:++https://…++[
+  const after = text.substring(urlIndex, Math.min(text.length, urlIndex + 400))
+  if (/^https?:\/\/[^\s\[]*\+\+\[[^\]]*\]/.test(after)) return true
+  return false
+}
+
 export function preprocessAsciidocMediaLinks(content: string): string {
   let processed = hardenAsciidocLinkMacros(content)
   
@@ -165,11 +176,12 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     })
   }
   
-  // Find all URLs but process them in reverse order to preserve indices
-  const allMatches = findHttpUrlsInText(content).filter(({ url, index }) => {
+  // Scan the *hardened* string so indices match what we replace into. Re-wrapping URLs that
+  // are already inside link:++…++[…] corrupts macros (e.g. "ideo…" leftovers, "++[…pdfogy").
+  const allMatches = findHttpUrlsInText(processed).filter(({ url, index }) => {
     const urlEnd = index + url.length
-    const beforeUrl = content.substring(Math.max(0, index - 100), index)
-    const afterUrl = content.substring(urlEnd, Math.min(content.length, urlEnd + 100))
+    const beforeUrl = processed.substring(Math.max(0, index - 100), index)
+    const afterUrl = processed.substring(urlEnd, Math.min(processed.length, urlEnd + 100))
     if (
       beforeUrl.includes('WIKILINK_MARKER:') ||
       beforeUrl.includes('WIKILINK:') ||
@@ -177,20 +189,17 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     ) {
       return false
     }
-    return true
-  }).filter(({ url, index }) => {
-    const urlEnd = index + url.length
-    // Check if this URL is part of an AsciiDoc link format url[text]
-    const contextAfter = content.substring(urlEnd, Math.min(content.length, urlEnd + 50))
+    if (isUrlInsideAsciidocMacro(processed, index)) return false
+    // Bare url[text] AsciiDoc form
+    const contextAfter = processed.substring(urlEnd, Math.min(processed.length, urlEnd + 50))
     if (contextAfter.match(/^\s*\[[^\]]+\]/)) {
       return false
     }
-    const before = content.substring(Math.max(0, index - 30), index)
-    // Check if this URL is already part of AsciiDoc syntax
+    const before = processed.substring(Math.max(0, index - 30), index)
     if (before.match(/image::\s*$/) ||
         before.match(/video::\s*$/) ||
         before.match(/audio::\s*$/) ||
-        before.match(/link:\S+\[/) ||
+        before.match(/link:\S+$/) ||
         before.match(/https?:\/\/[^\s]*\[/)) {
       return false
     }
@@ -202,7 +211,7 @@ export function preprocessAsciidocMediaLinks(content: string): string {
     const { url, index } = allMatches[i]
     
     // Check if URL is in code block
-    const beforeUrl = content.substring(0, index)
+    const beforeUrl = processed.substring(0, index)
     const codeBlockCount = (beforeUrl.match(/----/g) || []).length
     if (codeBlockCount % 2 === 1) {
       continue // In code block

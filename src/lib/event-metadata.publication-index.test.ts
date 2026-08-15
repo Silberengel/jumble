@@ -209,8 +209,28 @@ describe('getContentProvenanceFromEvent', () => {
       ['title', 'Aardvark'],
       ['source', 'https://en.wikipedia.org/wiki/Aardvark']
     ])
-    const prov = getContentProvenanceFromEvent(event)
-    expect(prov.source).toBe('https://en.wikipedia.org/wiki/Aardvark')
-    expect(prov.identifiers.some((i) => i.value === 'wikipedia:en:Aardvark')).toBe(true)
+    const links = getContentProvenanceFromEvent(event)
+    expect(links).toHaveLength(1)
+    expect(links[0]).toEqual({
+      href: 'https://en.wikipedia.org/wiki/Aardvark',
+      label: 'en.wikipedia.org'
+    })
+  })
+
+  it('dedupes source and wikipedia i that point at the same page', async () => {
+    const { getContentProvenanceFromEvent } = await import('@/lib/event-metadata')
+    const event = indexEvent([
+      ['d', 'aardvark'],
+      ['title', 'Aardvark'],
+      ['s', 'https://en.wikipedia.org/wiki/Aardvark'],
+      ['i', 'wikipedia:en:Aardvark'],
+      ['i', 'wikidata:Q123']
+    ])
+    const links = getContentProvenanceFromEvent(event)
+    expect(links.map((l) => l.href)).toEqual([
+      'https://en.wikipedia.org/wiki/Aardvark',
+      'https://www.wikidata.org/wiki/Q123'
+    ])
+    expect(links[0].label).toBe('en.wikipedia.org')
   })
 })

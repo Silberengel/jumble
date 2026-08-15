@@ -1,5 +1,6 @@
 import { ExtendedKind } from '@/constants'
 import {
+  getContentProvenanceFromEvent,
   getPublicationIndexMetadataFromEvent,
   type PublicationAuthor
 } from '@/lib/event-metadata'
@@ -37,14 +38,6 @@ function formatPublicationType(type: string): string {
     .join(' ')
 }
 
-function sourceHostname(source: string): string {
-  try {
-    return new URL(source).hostname.replace(/^www\./, '')
-  } catch {
-    return source
-  }
-}
-
 function MetaChip({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
     <span
@@ -76,6 +69,7 @@ export default function PublicationIndexMetadata({
   const push = secondaryPage?.push ?? ((url: string) => { window.location.href = url })
   const autoLoadMedia = useShouldAutoLoadMedia(event.pubkey, event)
   const metadata = useMemo(() => getPublicationIndexMetadataFromEvent(event), [event])
+  const provenanceLinks = useMemo(() => getContentProvenanceFromEvent(event), [event])
   const [perusing, setPerusing] = useState(false)
   const startPeruse = useCallback(() => setPerusing(true), [])
 
@@ -189,31 +183,15 @@ export default function PublicationIndexMetadata({
         </div>
       ) : null}
 
-      {metadata.source || metadata.identifiers.length > 0 || tagsComponent || isFull ? (
+      {provenanceLinks.length > 0 || tagsComponent || isFull ? (
         <div className="flex min-w-0 flex-col gap-2">
-          {metadata.source ? (
-            <a
-              href={metadata.source}
-              target="_blank"
-              rel="noopener noreferrer"
-              className={cn(
-                'flex min-w-0 max-w-full items-center gap-1.5 text-primary hover:underline',
-                isFull ? 'text-sm' : 'text-xs'
-              )}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <ExternalLink className="size-3.5 shrink-0" aria-hidden />
-              <span className="truncate">{sourceHostname(metadata.source)}</span>
-            </a>
-          ) : null}
-
-          {metadata.identifiers.length > 0 ? (
+          {provenanceLinks.length > 0 ? (
             <div className="flex min-w-0 flex-wrap gap-1.5">
-              {metadata.identifiers.map((identifier) =>
-                identifier.url ? (
+              {provenanceLinks.map((link) =>
+                link.href ? (
                   <a
-                    key={identifier.value}
-                    href={identifier.url}
+                    key={`${link.href}:${link.label}`}
+                    href={link.href}
                     target="_blank"
                     rel="noopener noreferrer"
                     className={cn(
@@ -223,10 +201,10 @@ export default function PublicationIndexMetadata({
                     onClick={(e) => e.stopPropagation()}
                   >
                     <ExternalLink className="size-3 shrink-0" aria-hidden />
-                    <span className="truncate">{identifier.label}</span>
+                    <span className="truncate">{link.label}</span>
                   </a>
                 ) : (
-                  <MetaChip key={identifier.value}>{identifier.label}</MetaChip>
+                  <MetaChip key={`label:${link.label}`}>{link.label}</MetaChip>
                 )
               )}
             </div>
