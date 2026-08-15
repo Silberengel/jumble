@@ -5,7 +5,10 @@ import NormalFeed from '@/components/NormalFeed'
 import { RefreshButton } from '@/components/RefreshButton'
 import { Button } from '@/components/ui/button'
 import {
+  DOCUMENT_RELAY_URLS,
+  ExtendedKind,
   isSocialKindBlockedKind,
+  LIBRARY_RELAY_URLS,
   NIP_SEARCH_DOCUMENT_KINDS,
   SEARCHABLE_RELAY_URLS
 } from '@/constants'
@@ -29,6 +32,10 @@ import {
 } from '@/lib/dtag-search'
 import { eventMatchesTopicOrContentHashtag, normalizeTopic, relayTopicTagFilterValues } from '@/lib/discussion-topics'
 import { fetchPubkeysFromDomain } from '@/lib/nip05'
+import {
+  clearDevIndexRelayUnavailableThisSession,
+  queryIndexRelayForLibrary
+} from '@/lib/index-relay-http'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useSecondaryPage } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -249,9 +256,11 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
             setSubRequests([])
           }
         } else {
-          // D-tag browse: exact `#d` REQ on index + user relays (no NIP-50 full-text — that is not the same as a d-tag pick).
+          // D-tag browse: exact `#d` REQ. Wikilinks (pk=30818) use Mercury HTTP `#d` first —
+          // the same fast path as wiki search — instead of waiting on a wide WS fan-out.
           const priorityKindRaw = parseInt(searchParams.get('pk') ?? '', 10)
           const priorityKind = isNaN(priorityKindRaw) ? undefined : priorityKindRaw
+          const wikiWikilink = priorityKind === ExtendedKind.WIKI_ARTICLE
           setTitle(`D-Tag: ${domain}`)
           setData({
             type: 'dtag',
@@ -265,11 +274,52 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
             userReadInboxUrls(relayList, cacheRelayListEvent),
             readUrlOpts
           )
-          const mergedReqKinds = Array.from(
-            new Set([...NIP_SEARCH_DOCUMENT_KINDS, ...(kinds.length > 0 ? kinds : [])])
-          ).sort((a, b) => a - b)
+          const mergedReqKinds = wikiWikilink
+            ? [ExtendedKind.WIKI_ARTICLE]
+            : Array.from(
+                new Set([...NIP_SEARCH_DOCUMENT_KINDS, ...(kinds.length > 0 ? kinds : [])])
+              ).sort((a, b) => a - b)
           const kindFilter = { kinds: mergedReqKinds }
-          const dUrls = [...new Set([...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean), ...relayUrls])]
+          const dUrls = wikiWikilink
+            ? [
+                ...new Set(
+                  [
+                    ...DOCUMENT_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean),
+                    ...relayUrls
+                  ]
+                )
+              ]
+            : [
+                ...new Set([
+                  ...SEARCHABLE_RELAY_URLS.map((u) => normalizeUrl(u) || u).filter(Boolean),
+                  ...relayUrls
+                ])
+              ]
+
+          if (wikiWikilink) {
+            clearDevIndexRelayUnavailableThisSession()
+            const mercuryBases = LIBRARY_RELAY_URLS.filter((u) => /^https?:\/\//i.test(u))
+            void Promise.all(
+              mercuryBases.map(async (base) => {
+                try {
+                  const page = await queryIndexRelayForLibrary(base, {
+                    kinds: [ExtendedKind.WIKI_ARTICLE],
+                    '#d': [domain],
+                    limit: 50
+                  })
+                  for (const ev of page.events ?? []) {
+                    if (ev.kind !== ExtendedKind.WIKI_ARTICLE) continue
+                    client.addEventToCache(ev as import('nostr-tools').Event, {
+                      explicitNoteLookupHexId: (ev as import('nostr-tools').Event).id
+                    })
+                  }
+                } catch {
+                  /* best-effort Mercury seed for progressive warmup */
+                }
+              })
+            )
+          }
+
           setSubRequests([
             {
               filter: { '#d': [domain], ...kindFilter },
@@ -359,7 +409,11 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           oneShotFetch
           progressiveWarmupQuery={data.dtag}
           progressiveWarmupMatch={(ev) => eventMatchesDTagQuery(data.dtag!, ev)}
-          progressiveDocumentKinds={NIP_SEARCH_DOCUMENT_KINDS}
+          progressiveDocumentKinds={
+            data.priorityKind === ExtendedKind.WIKI_ARTICLE
+              ? [ExtendedKind.WIKI_ARTICLE]
+              : NIP_SEARCH_DOCUMENT_KINDS
+          }
           oneShotAfterMergeComparator={(a, b) =>
             data.priorityKind !== undefined
               ? compareEventsForDTagQueryWithPriorityKind(data.dtag!, data.priorityKind, a, b)
@@ -367,6 +421,15 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           }
           extraShouldHideEvent={(ev) => !eventMatchesDTagQuery(data.dtag!, ev)}
           oneShotMergedCap={400}
+          oneShotGlobalTimeoutMs={
+            data.priorityKind === ExtendedKind.WIKI_ARTICLE ? 6_000 : undefined
+          }
+          oneShotEoseTimeoutMs={
+            data.priorityKind === ExtendedKind.WIKI_ARTICLE ? 1_500 : undefined
+          }
+          oneShotFirstRelayGraceMs={
+            data.priorityKind === ExtendedKind.WIKI_ARTICLE ? 600 : undefined
+          }
           alexandriaEmptyUrl={alexandriaEmptyUrl}
         />
       ) : data.type === 'hashtag' ? (

@@ -55,6 +55,9 @@ const NormalFeed = forwardRef<TNoteListRef, {
   /** Union into kind picker kinds for REQ + UI when set (e.g. document kinds on search / d-tag feeds). */
   progressiveDocumentKinds?: readonly number[]
   oneShotAfterMergeComparator?: (a: Event, b: Event) => number
+  oneShotGlobalTimeoutMs?: number
+  oneShotEoseTimeoutMs?: number
+  oneShotFirstRelayGraceMs?: number | false
   extraShouldHideEvent?: (ev: Event) => boolean
   extraShouldHideRepliesEvent?: (ev: Event) => boolean
   /** Override default cap for merged one-shot batches (wide d-tag / search merges). */
@@ -90,6 +93,9 @@ const NormalFeed = forwardRef<TNoteListRef, {
     progressiveWarmupMatch,
     progressiveDocumentKinds,
     oneShotAfterMergeComparator,
+    oneShotGlobalTimeoutMs,
+    oneShotEoseTimeoutMs,
+    oneShotFirstRelayGraceMs,
     extraShouldHideEvent,
     extraShouldHideRepliesEvent,
     oneShotMergedCap,
@@ -179,6 +185,9 @@ const NormalFeed = forwardRef<TNoteListRef, {
           progressiveWarmupMatch={progressiveWarmupMatch}
           progressiveDocumentKinds={progressiveDocumentKinds}
           oneShotAfterMergeComparator={oneShotAfterMergeComparator}
+          oneShotGlobalTimeoutMs={oneShotGlobalTimeoutMs}
+          oneShotEoseTimeoutMs={oneShotEoseTimeoutMs}
+          oneShotFirstRelayGraceMs={oneShotFirstRelayGraceMs}
           extraShouldHideEvent={noteListExtraShouldHide}
           oneShotMergedCap={oneShotMergedCap}
           timelinePublicReadFallback={timelinePublicReadFallback}
