@@ -8,6 +8,7 @@ import {
   parseWikiMergeAcceptance,
   parseWikiMergeRequest,
   parseWikiRedirect,
+  wikiDTagVariants,
   wikiMergeRequestResolution
 } from '@/lib/nip54'
 import type { Event } from 'nostr-tools'
@@ -45,6 +46,27 @@ describe('normalizeWikiDTag', () => {
   it('preserves hyphens in slugs like NKBIP-01', () => {
     expect(normalizeWikiDTag('NKBIP-01')).toBe('nkbip-01')
     expect(normalizeWikiDTag('nkbip-01')).toBe('nkbip-01')
+    expect(normalizeWikiDTag('Jean-Baptiste Lamarck')).toBe('jean-baptiste-lamarck')
+  })
+})
+
+describe('wikiDTagVariants', () => {
+  it('includes legacy hyphen-stripped import slugs', () => {
+    expect(wikiDTagVariants('Jean-Baptiste Lamarck')).toEqual(
+      expect.arrayContaining(['jean-baptiste-lamarck', 'jeanbaptiste-lamarck'])
+    )
+    expect(wikiDTagVariants('jean-baptiste-lamarck')).toEqual(
+      expect.arrayContaining(['jean-baptiste-lamarck', 'jeanbaptiste-lamarck'])
+    )
+  })
+
+  it('adds an ASCII-folded twin for accented wiki titles', () => {
+    expect(wikiDTagVariants('Étienne Geoffroy Saint-Hilaire')).toEqual(
+      expect.arrayContaining([
+        'étienne-geoffroy-saint-hilaire',
+        'etienne-geoffroy-saint-hilaire'
+      ])
+    )
   })
 })
 

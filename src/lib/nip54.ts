@@ -35,6 +35,41 @@ export function normalizeWikiDTag(input: string): string {
   return out.replace(/-+/g, '-').replace(/^-+|-+$/g, '')
 }
 
+/** Strip combining marks so `Étienne` and `Etienne` share a lookup slug. */
+export function asciiFoldWikiText(input: string): string {
+  return input.normalize('NFD').replace(/\p{M}/gu, '')
+}
+
+/**
+ * NIP-54 `d` plus lookup twins for:
+ * - ASCII-folded accents (`Étienne` → also `etienne-…`)
+ * - legacy Wikipedia imports that stripped title hyphens (`Jean-Baptiste` → `jeanbaptiste-…`)
+ */
+export function wikiDTagVariants(input: string): string[] {
+  const variants = new Set<string>()
+
+  const addFromRaw = (raw: string) => {
+    const d = normalizeWikiDTag(raw)
+    if (!d) return
+    variants.add(d)
+    // Old importer dropped `-` as punctuation before space→hyphen.
+    const legacy = normalizeWikiDTag(raw.replace(/-/g, ''))
+    if (legacy) variants.add(legacy)
+    // When `raw` is already a hyphenated d-tag, try joining adjacent segments so
+    // `jean-baptiste-lamarck` also finds imported `jeanbaptiste-lamarck`.
+    const parts = d.split('-').filter(Boolean)
+    for (let i = 0; i < parts.length - 1; i++) {
+      variants.add([...parts.slice(0, i), parts[i] + parts[i + 1], ...parts.slice(i + 2)].join('-'))
+    }
+  }
+
+  addFromRaw(input)
+  const folded = asciiFoldWikiText(input)
+  if (folded !== input) addFromRaw(folded)
+
+  return [...variants]
+}
+
 /** The marker (4th element) of an `a`/`e` tag, e.g. `fork`, `defer`, `result`, `request`. */
 export function getTagMarker(tag: string[]): string | undefined {
   return tag[3]?.trim() || undefined

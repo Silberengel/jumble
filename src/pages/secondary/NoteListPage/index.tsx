@@ -36,6 +36,7 @@ import {
   clearDevIndexRelayUnavailableThisSession,
   queryIndexRelayForLibrary
 } from '@/lib/index-relay-http'
+import { wikiDTagVariants } from '@/lib/nip54'
 import { usePrimaryNoteView } from '@/contexts/primary-note-view-context'
 import { useSecondaryPage } from '@/PageManager'
 import { useFavoriteRelays } from '@/providers/FavoriteRelaysProvider'
@@ -299,30 +300,36 @@ const NoteListPage = forwardRef<HTMLDivElement, NoteListPageProps>(({ index, hid
           if (wikiWikilink) {
             clearDevIndexRelayUnavailableThisSession()
             const mercuryBases = LIBRARY_RELAY_URLS.filter((u) => /^https?:\/\//i.test(u))
+            const dVariants = wikiDTagVariants(domain)
             void Promise.all(
-              mercuryBases.map(async (base) => {
-                try {
-                  const page = await queryIndexRelayForLibrary(base, {
-                    kinds: [ExtendedKind.WIKI_ARTICLE],
-                    '#d': [domain],
-                    limit: 50
-                  })
-                  for (const ev of page.events ?? []) {
-                    if (ev.kind !== ExtendedKind.WIKI_ARTICLE) continue
-                    client.addEventToCache(ev as import('nostr-tools').Event, {
-                      explicitNoteLookupHexId: (ev as import('nostr-tools').Event).id
+              mercuryBases.flatMap((base) =>
+                dVariants.map(async (dTag) => {
+                  try {
+                    const page = await queryIndexRelayForLibrary(base, {
+                      kinds: [ExtendedKind.WIKI_ARTICLE],
+                      '#d': [dTag],
+                      limit: 50
                     })
+                    for (const ev of page.events ?? []) {
+                      if (ev.kind !== ExtendedKind.WIKI_ARTICLE) continue
+                      client.addEventToCache(ev as import('nostr-tools').Event, {
+                        explicitNoteLookupHexId: (ev as import('nostr-tools').Event).id
+                      })
+                    }
+                  } catch {
+                    /* best-effort Mercury seed for progressive warmup */
                   }
-                } catch {
-                  /* best-effort Mercury seed for progressive warmup */
-                }
-              })
+                })
+              )
             )
           }
 
           setSubRequests([
             {
-              filter: { '#d': [domain], ...kindFilter },
+              filter: {
+                '#d': wikiWikilink ? wikiDTagVariants(domain) : [domain],
+                ...kindFilter
+              },
               urls: dUrls
             }
           ])

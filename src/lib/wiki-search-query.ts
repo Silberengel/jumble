@@ -8,7 +8,7 @@ import {
   expandIdentifier,
   type IdentifierExpanderQuery
 } from '@/lib/identifier-expander'
-import { normalizeWikiDTag } from '@/lib/nip54'
+import { wikiDTagVariants } from '@/lib/nip54'
 import type { Event, Filter } from 'nostr-tools'
 import { ExtendedKind } from '@/constants'
 
@@ -52,8 +52,7 @@ export function planWikiSearchQuery(raw: string): WikiSearchQueryPlan {
       textQueries.add(spaced)
     }
     if (parsed.page) titleNeedles.add(parsed.page)
-    const d = normalizeWikiDTag(spaced || parsed.page)
-    if (d) dTags.add(d)
+    for (const d of wikiDTagVariants(spaced || parsed.page)) dTags.add(d)
   }
 
   if (expanded.s?.length || expanded.i?.length || expanded.d?.length) {
@@ -61,8 +60,7 @@ export function planWikiSearchQuery(raw: string): WikiSearchQueryPlan {
   }
 
   if (!fromStructuredId) {
-    const d = normalizeWikiDTag(q)
-    if (d) dTags.add(d)
+    for (const d of wikiDTagVariants(q)) dTags.add(d)
     if (q) textQueries.add(q)
   } else if (textQueries.size === 0 && q && !/^https?:\/\//i.test(q)) {
     textQueries.add(q)

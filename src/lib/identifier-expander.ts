@@ -12,7 +12,7 @@ import {
   gutenbergEbookPageUrl,
   parseGutenbergEbookId
 } from '@/lib/gutenberg-cover'
-import { normalizeWikiDTag } from '@/lib/nip54'
+import { wikiDTagVariants } from '@/lib/nip54'
 import type { Filter } from 'nostr-tools'
 
 export type IdentifierExpanderQuery = {
@@ -87,8 +87,8 @@ function wikiLangFromHost(url: string): string {
   }
 }
 
-function dTagFromWikipediaPage(page: string): string {
-  return normalizeWikiDTag(page.replace(/_/g, ' '))
+function dTagFromWikipediaPage(page: string): string[] {
+  return wikiDTagVariants(page.replace(/_/g, ' '))
 }
 
 function wikipediaIVariants(lang: string, page: string): string[] {
@@ -125,8 +125,7 @@ function expandUrl(raw: string): IdentifierExpanderQuery {
     if (!m) return packUrlIdentity([cleaned], [])
     const page = decodeURIComponent(m[1])
     const lang = wikiLangFromHost(url)
-    const d = dTagFromWikipediaPage(page)
-    return packUrlIdentity([cleaned], wikipediaIVariants(lang, page), d ? [d] : [])
+    return packUrlIdentity([cleaned], wikipediaIVariants(lang, page), dTagFromWikipediaPage(page))
   }
 
   if (host.includes('gutenberg.org')) {
@@ -200,9 +199,11 @@ function expandTerm(raw: string): IdentifierExpanderQuery {
     const dTags: string[] = []
     const wiki = /^wikipedia:([a-z]{2,3}):(.+)$/i.exec(raw)
     if (wiki) {
-      const d = dTagFromWikipediaPage(wiki[2])
-      if (d) dTags.push(d)
-      return pack([], wikipediaIVariants(wiki[1].toLowerCase(), wiki[2]), dTags)
+      return pack(
+        [],
+        wikipediaIVariants(wiki[1].toLowerCase(), wiki[2]),
+        dTagFromWikipediaPage(wiki[2])
+      )
     }
     const gut = /^gutenberg:(\d+)$/i.exec(raw)
     if (gut) dTags.push(`pg${gut[1]}`, gut[1])
@@ -254,13 +255,15 @@ function expandTerm(raw: string): IdentifierExpanderQuery {
   // Wikipedia page slug or title (spaces or underscores, optional parens) — also treat as d-tag.
   if (/^[A-Za-z0-9].*[_\s(]/.test(raw) || /^[A-Za-z][\w()'!.\-]+$/.test(raw)) {
     const page = raw.trim().replace(/ /g, '_')
-    const d = dTagFromWikipediaPage(page)
-    return pack([], wikipediaIVariants('en', page), d ? [d, normalizeWikiDTag(raw)] : [])
+    return pack([], wikipediaIVariants('en', page), [
+      ...dTagFromWikipediaPage(page),
+      ...wikiDTagVariants(raw)
+    ])
   }
 
-  // Hyphenated slug → d-tag only (plus as-is i attempt for custom schemes).
-  const asD = normalizeWikiDTag(raw)
-  if (asD) return pack([], [], [asD])
+  // Hyphenated slug / accented title → d-tag variants only.
+  const asD = wikiDTagVariants(raw)
+  if (asD.length > 0) return pack([], [], asD)
 
   return pack([], [])
 }
