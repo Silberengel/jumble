@@ -294,6 +294,27 @@ function suppressExpectedErrors() {
     )) {
       return
     }
+
+    // Firefox: SW CacheFirst/NetworkOnly reject when flaky cover CDNs fail (pre-update SW).
+    if (
+      message.includes('no-response') &&
+      (message.includes('ServiceWorker') ||
+        message.includes('FetchEvent.respondWith') ||
+        message.includes('workbox') ||
+        message.includes('covers.openlibrary.org') ||
+        message.includes('githubassets.com'))
+    ) {
+      return
+    }
+
+    // Firefox ignores no-referrer-when-downgrade on cross-site images (one warn per cover).
+    if (
+      message.includes('Referrer Policy') ||
+      message.includes('Referrer-Policy') ||
+      message.includes('weniger eingeschränkte Referrer Policy')
+    ) {
+      return
+    }
     
     // Suppress "too many concurrent REQs" errors (handled by circuit breaker)
     if (message.includes('too many concurrent REQs')) {
@@ -419,8 +440,18 @@ function suppressExpectedErrors() {
     if (message.includes('workbox') && (
       message.includes('will not be cached') ||
       message.includes('Network request for') ||
-      message.includes('returned a response with status')
+      message.includes('returned a response with status') ||
+      message.includes('no-response')
     )) {
+      return
+    }
+
+    // Firefox ignores no-referrer-when-downgrade on cross-site images (one warn per cover).
+    if (
+      message.includes('Referrer Policy') ||
+      message.includes('Referrer-Policy') ||
+      message.includes('weniger eingeschränkte Referrer Policy')
+    ) {
       return
     }
     

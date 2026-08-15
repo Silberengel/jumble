@@ -1,4 +1,5 @@
-import { cardEventBodyBlurb } from '@/lib/card-event-body-blurb'
+import { cardEventBodyBlurb, type CardBlurbMarkup } from '@/lib/card-event-body-blurb'
+import { ExtendedKind } from '@/constants'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote, toNoteList } from '@/lib/link'
 import { useSecondaryPageOptional } from '@/PageManager'
@@ -9,6 +10,17 @@ import { Event, kinds } from 'nostr-tools'
 import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import ArticleHeroCard from './ArticleHeroCard'
+
+function cardBlurbMarkupForKind(kind: number): CardBlurbMarkup {
+  if (
+    kind === ExtendedKind.WIKI_ARTICLE ||
+    kind === ExtendedKind.PUBLICATION ||
+    kind === ExtendedKind.PUBLICATION_CONTENT
+  ) {
+    return 'asciidoc'
+  }
+  return 'markdown'
+}
 
 /**
  * Feed / embed / preview surface for NIP-23 long-form (kind 30023): title, summary, image, tags — no “Show more” body.
@@ -36,7 +48,10 @@ export default function LongFormCard({
   const autoLoadFromPolicy = useShouldAutoLoadMedia(event.pubkey, event)
   const autoLoadMedia = forceLoad || (autoLoadMediaProp ?? autoLoadFromPolicy)
   const metadata = useMemo(() => getLongFormArticleMetadataFromEvent(event), [event])
-  const bodyBlurb = useMemo(() => cardEventBodyBlurb(event.content), [event.content])
+  const bodyBlurb = useMemo(
+    () => cardEventBodyBlurb(event.content, { markup: cardBlurbMarkupForKind(event.kind) }),
+    [event.content, event.kind]
+  )
   const summaryText = (metadata.summary?.trim() || bodyBlurb).trim()
 
   const displayTitle = metadata.title?.trim() || t('Long-form Article')

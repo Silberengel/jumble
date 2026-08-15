@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { parseContent, PARSE_CONTENT_PARSERS_NOTE_TEXT } from '@/lib/content-parser'
-import { parseWikilinkInner, wikilinkTargetToDTag } from '@/lib/wikilink'
+import { parseWikilinkInner, wikilinkTargetToDTag, wikilinksToPlaintext } from '@/lib/wikilink'
 
 describe('wikilink helpers', () => {
   it('slugifies a target into a d-tag', () => {
@@ -40,6 +40,15 @@ describe('wikilink helpers', () => {
       dTag: 'target-page',
       displayText: 'see this'
     })
+  })
+
+  it('flattens wikilinks to display text for card blurbs', () => {
+    expect(
+      wikilinksToPlaintext(
+        'an [[island country]] including the [[Geography of Madagascar|island of Madagascar]]'
+      )
+    ).toBe('an island country including the island of Madagascar')
+    expect(wikilinksToPlaintext('see [[citation::web::nevent1abc]] later')).toBe('see   later')
   })
 })
 

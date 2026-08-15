@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { preprocessMarkdownMediaLinks } from './preprocessMarkup'
+import { hardenAsciidocLinkMacros, preprocessMarkdownMediaLinks } from './preprocessMarkup'
 
 describe('preprocessMarkdownMediaLinks', () => {
   it('leaves a bare URL on its own line unchanged for WebPreview rendering', () => {
@@ -25,5 +25,22 @@ describe('preprocessMarkdownMediaLinks', () => {
     const out = preprocessMarkdownMediaLinks(content)
     expect(out).toContain(url)
     expect(out).not.toContain(`![](${url})`)
+  })
+})
+
+describe('hardenAsciidocLinkMacros', () => {
+  it('wraps link targets in passthrough and strips quoted labels', () => {
+    const raw =
+      'link:https://web.archive.org/x.pdf["The Biology of the Aardvark" (_Orycteropus afer_)\\"]'
+    expect(hardenAsciidocLinkMacros(raw)).toBe(
+      'link:++https://web.archive.org/x.pdf++[The Biology of the Aardvark (_Orycteropus afer_)]'
+    )
+  })
+
+  it('drops empty wiki reference bullets', () => {
+    expect(hardenAsciidocLinkMacros('*\n*\n* link:https://a.test[A]\n')).toContain(
+      'link:++https://a.test++[A]'
+    )
+    expect(hardenAsciidocLinkMacros('*\n*\n').trim()).toBe('')
   })
 })

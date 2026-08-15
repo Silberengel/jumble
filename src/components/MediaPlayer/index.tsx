@@ -283,7 +283,7 @@ export default function MediaPlayer({
             title={t('liveEvent.zapStreamPlayer')}
             className={cn('aspect-video h-[min(520px,70dvh)] w-full rounded-md border border-border bg-black', className)}
             loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
+            referrerPolicy="no-referrer"
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
             allow="autoplay; encrypted-media; microphone; clipboard-write"
             onLoad={onEmbedReady}

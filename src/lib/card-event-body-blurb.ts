@@ -1,5 +1,6 @@
 import { stripMarkdownLinksForBlurb } from '@/lib/image-url-identity'
 import { findHttpUrlsInText } from '@/lib/url'
+import { wikilinksToPlaintext } from '@/lib/wikilink'
 
 /** Max length for card blurb when the `summary` tag is absent (article-style events). */
 export const CARD_EVENT_BODY_BLURB_MAX = 250
@@ -23,6 +24,7 @@ export function cardEventBodyBlurb(
   if (!s) return ''
 
   s = stripMarkdownLinksForBlurb(s)
+  s = wikilinksToPlaintext(s)
 
   s = s.replace(/```[\s\S]*?```/g, ' ')
   s = s.replace(/`[^`]+`/g, ' ')

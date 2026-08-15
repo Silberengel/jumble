@@ -3,6 +3,7 @@ import OrphanedImetaMediaSection from '@/components/OrphanedImetaMedia/OrphanedI
 import Image from '@/components/Image'
 import MediaPlayer from '@/components/MediaPlayer'
 import YoutubeEmbeddedPlayer from '@/components/YoutubeEmbeddedPlayer'
+import ContentProvenanceBar from '@/components/Note/ContentProvenanceBar'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNoteList } from '@/lib/link'
 import { useMediaExtraction } from '@/hooks'
@@ -978,26 +979,28 @@ export default function AsciidocArticle({
           htmlString = htmlString.substring(0, linkMatches[i].index) + replacement + htmlString.substring(linkMatches[i].index + match.length)
         }
         
-        // Handle YouTube URLs in plain text (not in <a> tags)
-        // Create a new regex instance to avoid state issues
-        const youtubeRegex = new RegExp(YOUTUBE_URL_REGEX.source, YOUTUBE_URL_REGEX.flags)
-        htmlString = htmlString.replace(youtubeRegex, (match) => {
-          // Only replace if not already in a tag (basic check)
-          if (!match.includes('<') && !match.includes('>') && isYouTubeUrl(match)) {
-            const cleanedUrl = cleanUrl(match)
+        // Handle YouTube URLs in plain text nodes only (not inside existing tags/attributes).
+        // Running YOUTUBE_URL_REGEX on the full HTML string rematches URLs inside
+        // data-youtube-url="…" and nests a second placeholder, leaving raw fragments like
+        // `class="youtube-placeholder my-2">` in the article body.
+        htmlString = htmlString.replace(/>([^<]+)</g, (_fullMatch, textContent) => {
+          const youtubeRegex = new RegExp(YOUTUBE_URL_REGEX.source, YOUTUBE_URL_REGEX.flags)
+          const replacedText = textContent.replace(youtubeRegex, (rawUrl: string) => {
+            if (!isYouTubeUrl(rawUrl)) return rawUrl
+            const cleanedUrl = cleanUrl(rawUrl)
             return `<div data-youtube-url="${cleanedUrl.replace(/"/g, '&quot;')}" class="youtube-placeholder my-2"></div>`
-          }
-          return match
+          })
+          return `>${replacedText}<`
         })
         
         // Handle relay URLs in plain text (not in <a> tags) - convert to relay page links
-        htmlString = htmlString.replace(WS_URL_REGEX, (match) => {
-          // Only replace if not already in a tag (basic check)
-          if (!match.includes('<') && !match.includes('>') && isWebsocketUrl(match)) {
+        htmlString = htmlString.replace(/>([^<]+)</g, (_fullMatch, textContent) => {
+          const replacedText = textContent.replace(WS_URL_REGEX, (match: string) => {
+            if (!isWebsocketUrl(match)) return match
             const relayPath = `/relays/${encodeURIComponent(match)}`
             return `<a href="${relayPath}" class="${URI_LINK_INLINE_HTML_CLASS} cursor-pointer" data-relay-url="${match}" data-original-text="${match.replace(/"/g, '&quot;')}">${match}</a>`
-          }
-          return match
+          })
+          return `>${replacedText}<`
         })
         
         // Handle plain HTTP/HTTPS URLs in text nodes only (not inside existing HTML tags/attributes).
@@ -1899,6 +1902,9 @@ export default function AsciidocArticle({
         {showArticleChrome && !effectiveHideTitle && !effectiveHideImagesAndInfo && metadata.title && (
           <h1 className="break-words">{metadata.title}</h1>
         )}
+        {showArticleChrome && !effectiveHideImagesAndInfo && (
+          <ContentProvenanceBar event={event} />
+        )}
         {showArticleChrome && !effectiveHideImagesAndInfo && metadata.summary && (
           <blockquote>
             <p className="break-words">{metadata.summary}</p>
@@ -1906,6 +1912,9 @@ export default function AsciidocArticle({
         )}
         {showArticleChrome && !effectiveHideTitle && effectiveHideImagesAndInfo && metadata.title && (
           <h2 className="text-2xl font-bold mb-4 leading-tight break-words">{metadata.title}</h2>
+        )}
+        {showArticleChrome && !effectiveHideTitle && effectiveHideImagesAndInfo && (
+          <ContentProvenanceBar event={event} className="mb-3" />
         )}
         
         {/* Metadata image */}

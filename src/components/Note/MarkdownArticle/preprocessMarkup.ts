@@ -126,8 +126,27 @@ export function preprocessMarkdownMediaLinks(content: string): string {
  * - Hyperlinks: https://example.com/page -> https://example.com/page[link text]
  * - Wikilinks: [[link]] or [[link|display]] -> +++WIKILINK_MARKER:link|display:WIKILINK_END+++ (passthrough for post-processing)
  */
+
+/**
+ * Harden `link:url[label]` so AsciiDoctor accepts URLs with `&` and labels with quotes.
+ * Also drops empty bullet lines left by stripped Wikipedia reference lists.
+ */
+export function hardenAsciidocLinkMacros(content: string): string {
+  let s = content.replace(/link:(https?:\/\/[^\s\[]+)\[([^\]]*)\]/g, (_m, url: string, label: string) => {
+    const safeLabel = String(label)
+      .replace(/\\"/g, '')
+      .replace(/"/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return `link:++${url}++[${safeLabel || url}]`
+  })
+  // Empty list markers from stripped wiki reference stubs (`*\n*\n*`).
+  s = s.replace(/^\*+\s*$/gm, '')
+  return s
+}
+
 export function preprocessAsciidocMediaLinks(content: string): string {
-  let processed = content
+  let processed = hardenAsciidocLinkMacros(content)
   
   // Note: Wikilinks are now processed in AsciidocArticle.tsx BEFORE this function is called
   // to prevent AsciiDoc from converting them to regular links. We skip wikilink processing here.
@@ -206,12 +225,11 @@ export function preprocessAsciidocMediaLinks(content: string): string {
       // Audio: convert to audio::url[]
       replacement = `audio::${url}[]`
     } else if (isYouTube) {
-      // YouTube URLs: convert to link:url[url] (will be handled in post-processing)
-      // This allows AsciiDoc to process it as a link, then we'll replace it with YouTube player
-      replacement = `link:${url}[${url}]`
+      // YouTube URLs: convert to link:++url++[url] (will be handled in post-processing)
+      replacement = `link:++${url}++[${url}]`
     } else {
-      // Regular hyperlinks: convert to link:url[url]
-      replacement = `link:${url}[${url}]`
+      // Regular hyperlinks: convert to link:++url++[url]
+      replacement = `link:++${url}++[${url}]`
     }
     
     // Replace the URL

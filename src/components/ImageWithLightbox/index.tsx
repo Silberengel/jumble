@@ -137,7 +137,7 @@ export default function ImageWithLightbox({
             className="absolute inset-0 m-0 size-full max-w-none object-cover object-center"
             loading="eager"
             decoding="async"
-            referrerPolicy="no-referrer-when-downgrade"
+            referrerPolicy="no-referrer"
             draggable={false}
           />
         </button>

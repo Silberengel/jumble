@@ -26,6 +26,7 @@ import {
 import logger from '@/lib/logger'
 import { buildPaytoUri } from '@/lib/payto'
 import { getCanonicalPaytoType, getPaytoEditorTypeLabel } from '@/lib/payto-registry'
+import { expandIdentifier } from '@/lib/identifier-expander'
 
 const emptyHttpRelayListFields = {
   httpRead: [] as string[],
@@ -691,7 +692,7 @@ export type PublicationAuthor = {
 export type PublicationIdentifier = {
   /** Raw `i` tag value, e.g. `isbn:0879801220` or `openlibrary:OL45883W`. */
   value: string
-  scheme: 'openlibrary' | 'isbn' | 'wikidata' | 'overdrive' | 'other'
+  scheme: 'openlibrary' | 'isbn' | 'wikidata' | 'overdrive' | 'wikipedia' | 'gutenberg' | 'other'
   /** Scheme-specific id (without prefix). */
   id: string
   label: string
@@ -739,6 +740,19 @@ export function resolveExternalIdentifierUrl(value: string): string | undefined 
       return `https://www.wikidata.org/wiki/${id}`
     case 'overdrive':
       return `https://share.libbyapp.com/title/${encodeURIComponent(id)}`
+    case 'gutenberg': {
+      const ebookId = id.replace(/[^\d]/g, '')
+      return ebookId ? `https://www.gutenberg.org/ebooks/${ebookId}` : undefined
+    }
+    case 'wikipedia': {
+      // wikipedia:en:Aardvark or wikipedia:en:Albert_Einstein
+      const m = /^([a-z]{2,3}):(.+)$/i.exec(id)
+      if (!m) return undefined
+      const lang = m[1].toLowerCase()
+      const page = m[2].trim().replace(/ /g, '_')
+      if (!page) return undefined
+      return `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(page).replace(/%2F/gi, '/')}`
+    }
     default:
       return undefined
   }
@@ -756,7 +770,9 @@ function parsePublicationIdentifier(raw: string): PublicationIdentifier | null {
     schemeRaw === 'openlibrary' ||
     schemeRaw === 'isbn' ||
     schemeRaw === 'wikidata' ||
-    schemeRaw === 'overdrive'
+    schemeRaw === 'overdrive' ||
+    schemeRaw === 'wikipedia' ||
+    schemeRaw === 'gutenberg'
       ? schemeRaw
       : 'other'
 
@@ -769,7 +785,16 @@ function parsePublicationIdentifier(raw: string): PublicationIdentifier | null {
           ? 'Wikidata'
           : scheme === 'overdrive'
             ? 'Borrow in Libby'
-            : value
+            : scheme === 'wikipedia'
+              ? (() => {
+                  const m = /^([a-z]{2,3}):(.+)$/i.exec(id)
+                  if (!m) return value
+                  const page = m[2].replace(/_/g, ' ')
+                  return `Wikipedia (${m[1].toLowerCase()}): ${page}`
+                })()
+              : scheme === 'gutenberg'
+                ? `Gutenberg #${id.replace(/[^\d]/g, '')}`
+                : value
 
   return {
     value,
@@ -785,7 +810,8 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
   const base = getLongFormArticleMetadataFromEvent(event)
   const authors: PublicationAuthor[] = []
   const identifiers: PublicationIdentifier[] = []
-  let source: string | undefined
+  let sourceS: string | undefined
+  let sourceLegacy: string | undefined
   let type: string | undefined
   let version: string | undefined
   let releaseDate: string | undefined
@@ -800,8 +826,10 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
     if (name === 'author') {
       const role = tag[2]?.trim()
       authors.push({ name: value, role: role || undefined })
+    } else if (name === 's') {
+      if (!sourceS) sourceS = value
     } else if (name === 'source') {
-      source = value
+      if (!sourceLegacy) sourceLegacy = value
     } else if (name === 'type') {
       type = value
     } else if (name === 'version') {
@@ -844,6 +872,7 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
 
   const dTag = event.tags.find((tag) => tag[0] === 'd')?.[1]?.trim()
   const gutenbergIdFromDTag = dTag ? parseGutenbergEbookIdFromDTag(dTag) : null
+  let source = sourceS || sourceLegacy
   if (!source && gutenbergIdFromDTag) {
     source = gutenbergEbookPageUrl(gutenbergIdFromDTag)
   }
@@ -870,6 +899,27 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
     sectionCount: sections.length,
     sections
   }
+}
+
+/**
+ * Source URL (`s`, else `source`) plus `i` identifier chips for wiki / publication chrome.
+ * When the event has a source URL but no `i` tags, derives identifiers from the URL
+ * (e.g. Wikipedia → `wikipedia:en:Page`) for interlinking.
+ */
+export function getContentProvenanceFromEvent(event: Event): {
+  source?: string
+  identifiers: PublicationIdentifier[]
+} {
+  const meta = getPublicationIndexMetadataFromEvent(event)
+  const identifiers = [...meta.identifiers]
+  if (identifiers.length === 0 && meta.source) {
+    const derived = expandIdentifier(meta.source)
+    for (const raw of derived.i ?? []) {
+      const parsed = parsePublicationIdentifier(raw)
+      if (parsed) identifiers.push(parsed)
+    }
+  }
+  return { source: meta.source, identifiers }
 }
 
 export function getLiveEventMetadataFromEvent(event: Event) {

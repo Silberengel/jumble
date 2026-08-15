@@ -31,3 +31,15 @@ export function parseWikilinkInner(inner: string): { dTag: string; displayText: 
 export function isCitationWikilink(inner: string): boolean {
   return inner.trim().startsWith('citation::')
 }
+
+/**
+ * Replace `[[target]]` / `[[target|label]]` with display text for card/preview blurbs.
+ * Citation markers (`[[citation::…]]`) are removed (not useful as plaintext teasers).
+ */
+export function wikilinksToPlaintext(s: string): string {
+  return s.replace(new RegExp(WIKILINK_INLINE_REGEX.source, 'g'), (_m, inner: string) => {
+    if (isCitationWikilink(inner)) return ' '
+    const { displayText } = parseWikilinkInner(inner)
+    return displayText.trim() || ' '
+  })
+}

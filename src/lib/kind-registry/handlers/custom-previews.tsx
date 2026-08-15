@@ -13,6 +13,7 @@ import StandardTextNoteEmbedCard from '@/components/Note/StandardTextNoteEmbedCa
 import HighlightPreview from '@/components/ContentPreview/HighlightPreview'
 import PollPreview from '@/components/ContentPreview/PollPreview'
 import LongFormCard from '@/components/Note/LongFormCard'
+import WikiCard from '@/components/Note/WikiCard'
 import VideoNotePreview from '@/components/ContentPreview/VideoNotePreview'
 import MusicTrackNotePreview from '@/components/ContentPreview/MusicTrackNotePreview'
 import PictureNotePreview from '@/components/ContentPreview/PictureNotePreview'
@@ -69,7 +70,7 @@ export function renderWebBookmarkPreview(ctx: RenderCtx) {
 
 export const renderWikiPreviews = {
   article(ctx: RenderCtx) {
-    return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />
+    return <WikiCard event={ctx.displayEvent} />
   },
   mergeRequest(ctx: RenderCtx) {
     return <LongFormCard event={ctx.displayEvent} interactive={false} autoLoadMedia={ctx.autoLoadMedia} />

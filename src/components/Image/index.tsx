@@ -450,7 +450,7 @@ export default function Image({
           ref={imgRef}
           src={imageUrl}
           alt={finalAlt}
-          referrerPolicy="no-referrer-when-downgrade"
+          referrerPolicy="no-referrer"
           decoding="async"
           loading={loading}
           {...(fetchPriority ? { fetchpriority: fetchPriority } : {})}

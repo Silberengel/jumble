@@ -641,8 +641,18 @@ export default defineConfig(({ mode }) => {
             handler: 'NetworkOnly'
           },
           {
-            // Generic cross-origin images by file extension (covers hosts not matched above)
-            urlPattern: /^https?:\/\/.+\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico)(?:\?.*)?$/i,
+            // Generic cross-origin images by file extension (hosts not matched above).
+            // Skip flaky cover CDNs: Workbox CacheFirst rejects with Firefox "no-response"
+            // when Open Library / GitHub assets rate-limit or fail — leave those to the browser.
+            urlPattern: ({ url }: { url: URL }) => {
+              if (!/\.(?:png|jpg|jpeg|gif|webp|avif|svg|ico)(?:\?.*)?$/i.test(`${url.pathname}${url.search}`)) {
+                return false
+              }
+              const host = url.hostname.toLowerCase()
+              if (host === 'covers.openlibrary.org' || host.endsWith('.openlibrary.org')) return false
+              if (host === 'opengraph.githubassets.com' || host.endsWith('.githubassets.com')) return false
+              return true
+            },
             handler: 'CacheFirst',
             options: {
               cacheName: 'external-images',

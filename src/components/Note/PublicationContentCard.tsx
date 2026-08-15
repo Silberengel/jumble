@@ -1,4 +1,5 @@
 import Collapsible from '@/components/Collapsible'
+import ContentProvenanceBar from '@/components/Note/ContentProvenanceBar'
 import { getLongFormArticleMetadataFromEvent } from '@/lib/event-metadata'
 import { toNote } from '@/lib/link'
 import { cn } from '@/lib/utils'
@@ -52,7 +53,7 @@ export default function PublicationContentCard({
     const author = getTagValue(event, 'author')
     const publishedBy = getTagValue(event, 'published_by')
     const publishedOn = formatCitationDate(getTagValue(event, 'published_on'))
-    const source = getTagValue(event, 'source')
+    const source = getTagValue(event, 's') || getTagValue(event, 'source')
 
     const parts: string[] = []
     if (author) parts.push(author)
@@ -100,6 +101,7 @@ export default function PublicationContentCard({
           {headerMeta}
         </div>
       ) : null}
+      {isFull ? <ContentProvenanceBar event={event} className="mt-2 mb-0" /> : null}
     </div>
   )
 

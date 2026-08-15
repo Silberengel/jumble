@@ -11,6 +11,7 @@ import { tagNameEquals } from '@/lib/tag'
 import { formatNip32LabelSnippet } from '@/lib/nip32-label'
 import { stripTrailingStringifiedNostrEvent } from '@/lib/nostr-event-json'
 import { getWebBookmarkArticleUrl } from '@/lib/rss-article'
+import { wikilinksToPlaintext } from '@/lib/wikilink'
 import { Event, kinds } from 'nostr-tools'
 
 export const PARENT_REPLY_BLURB_MAX = 150
@@ -18,6 +19,7 @@ export const PARENT_REPLY_BLURB_MAX = 150
 /** Strip common markdown / asciidoc / HTML so parent reply strips stay one line (matches NotePage preview). */
 export function stripMarkupForPreview(content: string): string {
   let text = stripTrailingStringifiedNostrEvent(content)
+  text = wikilinksToPlaintext(text)
   text = text.replace(/^#{1,6}\s+/gm, '')
   text = text.replace(/\*\*([^*]+)\*\*/g, '$1')
   text = text.replace(/\*([^*]+)\*/g, '$1')

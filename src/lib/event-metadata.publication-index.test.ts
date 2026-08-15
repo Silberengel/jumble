@@ -178,4 +178,39 @@ describe('getPublicationIndexMetadataFromEvent', () => {
       'de693a7a093f87dc8dcacd78d50bb8bdc9c96430822ea53a4705237668f3ede4'
     ])
   })
+
+  it('prefers s over source and resolves wikipedia i tags', () => {
+    const event = indexEvent([
+      ['d', 'aardvark'],
+      ['title', 'Aardvark'],
+      ['source', 'https://example.com/legacy'],
+      ['s', 'https://en.wikipedia.org/wiki/Aardvark'],
+      ['i', 'wikipedia:en:Aardvark']
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.source).toBe('https://en.wikipedia.org/wiki/Aardvark')
+    expect(meta.identifiers).toEqual([
+      {
+        value: 'wikipedia:en:Aardvark',
+        scheme: 'wikipedia',
+        id: 'en:Aardvark',
+        label: 'Wikipedia (en): Aardvark',
+        url: 'https://en.wikipedia.org/wiki/Aardvark'
+      }
+    ])
+  })
+})
+
+describe('getContentProvenanceFromEvent', () => {
+  it('derives wikipedia i from source when i tags are absent', async () => {
+    const { getContentProvenanceFromEvent } = await import('@/lib/event-metadata')
+    const event = indexEvent([
+      ['d', 'aardvark'],
+      ['title', 'Aardvark'],
+      ['source', 'https://en.wikipedia.org/wiki/Aardvark']
+    ])
+    const prov = getContentProvenanceFromEvent(event)
+    expect(prov.source).toBe('https://en.wikipedia.org/wiki/Aardvark')
+    expect(prov.identifiers.some((i) => i.value === 'wikipedia:en:Aardvark')).toBe(true)
+  })
 })

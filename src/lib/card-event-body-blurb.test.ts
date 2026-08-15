@@ -47,6 +47,14 @@ describe('cardEventBodyBlurb', () => {
     )
   })
 
+  it('replaces wiki links with display text and drops citations', () => {
+    const content =
+      'Madagascar is an **[[island country]]** in the **[[Indian Ocean]]** that includes the [[Geography of Madagascar|island of Madagascar]]. [[citation::web::nevent1qq…]]'
+    expect(cardEventBodyBlurb(content, { markup: 'asciidoc' })).toBe(
+      'Madagascar is an island country in the Indian Ocean that includes the island of Madagascar.'
+    )
+  })
+
   it('respects a custom max length', () => {
     expect(cardEventBodyBlurb('one two three four', { max: 7 })).toBe('one two…')
   })
