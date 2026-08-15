@@ -1013,5 +1013,13 @@
   "Interests": "Interessen",
   "Bookmarks": "Lesezeichen",
   "Nostr specs": "Nostr-Spezifikationen",
-  "New post": "Neuer Beitrag"
+  "New post": "Neuer Beitrag",
+  "Library search field subject": "Thema",
+  "Library search field subject placeholder": "z. B. Mythologie",
+  "Library search field language": "Sprache",
+  "Library search field language placeholder": "z. B. en, de",
+  "Library search field identifier": "Kennung",
+  "Library search field identifier placeholder": "z. B. isbn:…",
+  "Library search field published from": "Veröffentlicht ab",
+  "Library search field until": "Bis"
 }

@@ -11,6 +11,8 @@ import {
 } from '@/lib/index-relay-http'
 import { normalizeToDTag } from '@/lib/search-parser'
 import {
+  localDateInputToUnixEnd,
+  localDateInputToUnixStart,
   shouldSearchPublicationContentOnRelays,
   type LibraryPublicationFilterMode,
   type LibraryStructuredSearchQuery
@@ -57,6 +59,8 @@ export default function LibrarySearchBar({
   const [identifier, setIdentifier] = useState('')
   const [dTag, setDTag] = useState('')
   const [fullText, setFullText] = useState('')
+  const [publishedFrom, setPublishedFrom] = useState('')
+  const [publishedUntil, setPublishedUntil] = useState('')
   const [suggestions, setSuggestions] = useState<IndexRelaySuggestRow[]>([])
   const [suggestOpen, setSuggestOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -134,18 +138,21 @@ export default function LibrarySearchBar({
     }
   }, [advanced, disabled, searchQuery])
 
-  const structuredQuery = useMemo<LibraryStructuredSearchQuery>(
-    () => ({
+  const structuredQuery = useMemo<LibraryStructuredSearchQuery>(() => {
+    const since = publishedFrom ? localDateInputToUnixStart(publishedFrom) : undefined
+    const until = publishedUntil ? localDateInputToUnixEnd(publishedUntil) : undefined
+    return {
       title: title.trim() || undefined,
       author: author.trim() || undefined,
       language: language.trim() || undefined,
       subject: subject.trim() || undefined,
       identifier: identifier.trim() || undefined,
       dTag: dTag.trim() ? normalizeToDTag(dTag) : undefined,
-      fullText: fullText.trim() || undefined
-    }),
-    [author, dTag, fullText, identifier, language, subject, title]
-  )
+      fullText: fullText.trim() || undefined,
+      since,
+      until
+    }
+  }, [author, dTag, fullText, identifier, language, publishedFrom, publishedUntil, subject, title])
 
   const hasStructuredInput = !!(
     title.trim() ||
@@ -154,7 +161,9 @@ export default function LibrarySearchBar({
     subject.trim() ||
     identifier.trim() ||
     dTag.trim() ||
-    fullText.trim()
+    fullText.trim() ||
+    publishedFrom ||
+    publishedUntil
   )
 
   const canStructuredSearch =
@@ -166,7 +175,9 @@ export default function LibrarySearchBar({
       structuredQuery.subject ||
       structuredQuery.identifier ||
       structuredQuery.dTag ||
-      structuredQuery.fullText
+      structuredQuery.fullText ||
+      typeof structuredQuery.since === 'number' ||
+      typeof structuredQuery.until === 'number'
     )
 
   const runStructuredSearch = useCallback(() => {
@@ -184,6 +195,8 @@ export default function LibrarySearchBar({
     setIdentifier('')
     setDTag('')
     setFullText('')
+    setPublishedFrom('')
+    setPublishedUntil('')
     setAdvanced(false)
     setSuggestions([])
     setSuggestOpen(false)
@@ -316,51 +329,62 @@ export default function LibrarySearchBar({
         </div>
       ) : (
         <div className="space-y-3 rounded-lg border border-border/80 bg-surface-background p-3">
-          <StructuredField label={t('Library search field title')}>
-            <Input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={handleStructuredKeyDown}
-              placeholder={t('Library search field title placeholder')}
-              disabled={disabled}
-            />
-          </StructuredField>
-          <StructuredField label={t('Library search field author')}>
-            <Input
-              value={author}
-              onChange={(e) => setAuthor(e.target.value)}
-              onKeyDown={handleStructuredKeyDown}
-              placeholder={t('Library search field author placeholder')}
-              disabled={disabled}
-            />
-          </StructuredField>
-          <StructuredField label={t('Library search field language')}>
-            <Input
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              onKeyDown={handleStructuredKeyDown}
-              placeholder={t('Library search field language placeholder')}
-              disabled={disabled}
-            />
-          </StructuredField>
-          <StructuredField label={t('Library search field subject')}>
-            <Input
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              onKeyDown={handleStructuredKeyDown}
-              placeholder={t('Library search field subject placeholder')}
-              disabled={disabled}
-            />
-          </StructuredField>
-          <StructuredField label={t('Library search field identifier')}>
-            <Input
-              value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
-              onKeyDown={handleStructuredKeyDown}
-              placeholder={t('Library search field identifier placeholder')}
-              disabled={disabled}
-            />
-          </StructuredField>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <StructuredField label={t('Library search field title')}>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                placeholder={t('Library search field title placeholder')}
+                disabled={disabled}
+              />
+            </StructuredField>
+            <StructuredField label={t('Library search field author')}>
+              <Input
+                value={author}
+                onChange={(e) => setAuthor(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                placeholder={t('Library search field author placeholder')}
+                disabled={disabled}
+              />
+            </StructuredField>
+            <StructuredField label={t('Library search field subject')}>
+              <Input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                placeholder={t('Library search field subject placeholder')}
+                disabled={disabled}
+              />
+            </StructuredField>
+            <StructuredField label={t('Library search field language')}>
+              <Input
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                placeholder={t('Library search field language placeholder')}
+                disabled={disabled}
+              />
+            </StructuredField>
+            <StructuredField label={t('Library search field identifier')}>
+              <Input
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                placeholder={t('Library search field identifier placeholder')}
+                disabled={disabled}
+              />
+            </StructuredField>
+            <StructuredField label={t('Library search field dtag')}>
+              <Input
+                value={dTag}
+                onChange={(e) => setDTag(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                placeholder={t('Library search field dtag placeholder')}
+                disabled={disabled}
+              />
+            </StructuredField>
+          </div>
           <StructuredField label={t('Library search field fulltext')}>
             <Textarea
               value={fullText}
@@ -370,15 +394,26 @@ export default function LibrarySearchBar({
               disabled={disabled}
             />
           </StructuredField>
-          <StructuredField label={t('Library search field dtag')}>
-            <Input
-              value={dTag}
-              onChange={(e) => setDTag(e.target.value)}
-              onKeyDown={handleStructuredKeyDown}
-              placeholder={t('Library search field dtag placeholder')}
-              disabled={disabled}
-            />
-          </StructuredField>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <StructuredField label={t('Library search field published from')}>
+              <Input
+                type="date"
+                value={publishedFrom}
+                onChange={(e) => setPublishedFrom(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                disabled={disabled}
+              />
+            </StructuredField>
+            <StructuredField label={t('Library search field until')}>
+              <Input
+                type="date"
+                value={publishedUntil}
+                onChange={(e) => setPublishedUntil(e.target.value)}
+                onKeyDown={handleStructuredKeyDown}
+                disabled={disabled}
+              />
+            </StructuredField>
+          </div>
           <div className="flex justify-end gap-2">
             <Button
               type="button"
@@ -455,7 +490,7 @@ export default function LibrarySearchBar({
 function StructuredField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <Label className="text-xs font-medium text-muted-foreground">{label}</Label>
+      <Label className="text-xs font-medium text-foreground">{label}</Label>
       {children}
     </div>
   )

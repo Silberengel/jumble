@@ -682,6 +682,10 @@ export type FetchLibraryIndexEventsOptions = {
   onProgress?: (events: Event[]) => void
   /** Skip deep pagination — only fetch the first page from each relay (enough to top up a short local cache). */
   firstPageOnly?: boolean
+  /** Inclusive lower bound on event `created_at` (unix seconds), for `/api/events/filter` / WS REQ. */
+  since?: number
+  /** Inclusive upper bound on event `created_at` (unix seconds), for `/api/events/filter` / WS REQ. */
+  until?: number
 }
 
 async function filterValidNewIndexEvents(
@@ -730,6 +734,8 @@ export async function fetchLibraryIndexEvents(
   emitProgress()
 
   const filter: Filter = { kinds: [ExtendedKind.PUBLICATION], limit: INDEX_WS_PAGE_LIMIT }
+  if (typeof options?.since === 'number') filter.since = options.since
+  if (typeof options?.until === 'number') filter.until = options.until
   const { wsRelays: rawWsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
   const wsRelays = stripLocalNetworkRelaysForWssReq(rawWsRelays)
 
@@ -2535,6 +2541,7 @@ export const LIBRARY_PUBLICATION_RELAY_SEARCH_AXES: LibraryPublicationRelaySearc
  * Structured (multi-field) library search. Each field is optional; empty/whitespace fields are
  * ignored. `fullText` runs the no-axis content path (kind-30041 body); the rest map to their axis
  * (language/subject/identifier use Mercury structured search + `#l`/`#t`/`#i`/`#s` tag filters).
+ * `since`/`until` are unix-second bounds on index `created_at` (client post-filter + events/filter).
  */
 export type LibraryStructuredSearchQuery = {
   title?: string
@@ -2544,16 +2551,116 @@ export type LibraryStructuredSearchQuery = {
   identifier?: string
   dTag?: string
   fullText?: string
+  /** Inclusive lower bound on publication index `created_at` (unix seconds). */
+  since?: number
+  /** Inclusive upper bound on publication index `created_at` (unix seconds). */
+  until?: number
 }
+
+/** Text axes of a structured query (excludes since/until date bounds). */
+export type LibraryStructuredSearchTextField =
+  | 'title'
+  | 'author'
+  | 'language'
+  | 'subject'
+  | 'identifier'
+  | 'dTag'
+  | 'fullText'
 
 /** A filled field of a structured query, with the relay-search axis it maps to (null = content / tag-only). */
 export type LibraryStructuredSearchField = {
-  field: keyof LibraryStructuredSearchQuery
+  field: LibraryStructuredSearchTextField
   axis: LibraryPublicationRelaySearchAxis | null
   value: string
 }
 
-/** Non-empty fields of a structured query, in a stable order, with their search axis. */
+/** Parse `YYYY-MM-DD` to unix seconds at local midnight (start of day). */
+export function localDateInputToUnixStart(dateStr: string): number | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim())
+  if (!m) return undefined
+  const y = Number(m[1])
+  const mo = Number(m[2]) - 1
+  const d = Number(m[3])
+  const dt = new Date(y, mo, d, 0, 0, 0, 0)
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo || dt.getDate() !== d) return undefined
+  return Math.floor(dt.getTime() / 1000)
+}
+
+/** Parse `YYYY-MM-DD` to unix seconds at local end of day (23:59:59). */
+export function localDateInputToUnixEnd(dateStr: string): number | undefined {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim())
+  if (!m) return undefined
+  const y = Number(m[1])
+  const mo = Number(m[2]) - 1
+  const d = Number(m[3])
+  const dt = new Date(y, mo, d, 23, 59, 59, 999)
+  if (dt.getFullYear() !== y || dt.getMonth() !== mo || dt.getDate() !== d) return undefined
+  return Math.floor(dt.getTime() / 1000)
+}
+
+/** Format unix seconds as local `YYYY-MM-DD` for `<input type="date">`. */
+export function unixSecondsToLocalDateInput(unix?: number): string {
+  if (typeof unix !== 'number' || !Number.isFinite(unix)) return ''
+  const dt = new Date(unix * 1000)
+  const y = dt.getFullYear()
+  const mo = String(dt.getMonth() + 1).padStart(2, '0')
+  const d = String(dt.getDate()).padStart(2, '0')
+  return `${y}-${mo}-${d}`
+}
+
+/** Whether a structured query has since and/or until bounds. */
+export function structuredQueryHasDateBounds(query: LibraryStructuredSearchQuery): boolean {
+  return typeof query.since === 'number' || typeof query.until === 'number'
+}
+
+/** Keep library search entries whose index `created_at` falls within optional since/until. */
+export function filterLibraryEntriesByCreatedAt(
+  entries: LibraryPublicationEntry[],
+  since?: number,
+  until?: number
+): LibraryPublicationEntry[] {
+  if (typeof since !== 'number' && typeof until !== 'number') return entries
+  return entries.filter((entry) => {
+    const t = entry.event.created_at
+    if (typeof since === 'number' && t < since) return false
+    if (typeof until === 'number' && t > until) return false
+    return true
+  })
+}
+
+/** Apply optional created_at bounds onto a NIP-01 filter (for events/filter / WS REQ). */
+export function applyCreatedAtBoundsToFilter(
+  filter: Filter,
+  bounds?: { since?: number; until?: number } | null
+): Filter {
+  if (!bounds) return filter
+  const out: Filter = { ...filter }
+  if (typeof bounds.since === 'number') out.since = bounds.since
+  if (typeof bounds.until === 'number') out.until = bounds.until
+  return out
+}
+
+/**
+ * Build library grid entries for top-level indexes in an optional created_at range
+ * (date-only structured search / local browse filter).
+ */
+export function libraryEntriesMatchingCreatedAt(
+  indexEvents: Event[],
+  engagement: PublicationEngagementMaps,
+  since?: number,
+  until?: number
+): LibraryPublicationEntry[] {
+  if (indexEvents.length === 0) return []
+  const indexByAddress = buildIndexByAddress(indexEvents)
+  const roots = getTopLevelIndexEvents(indexEvents).filter((ev) => {
+    if (typeof since === 'number' && ev.created_at < since) return false
+    if (typeof until === 'number' && ev.created_at > until) return false
+    return true
+  })
+  return buildRecentPublicationEntries(roots, indexByAddress, engagement, roots.length)
+}
+
+/** Non-empty text fields of a structured query, in UI order, with their search axis. */
 export function structuredQueryFilledFields(
   query: LibraryStructuredSearchQuery
 ): LibraryStructuredSearchField[] {
@@ -2562,10 +2669,10 @@ export function structuredQueryFilledFields(
   if (title) fields.push({ field: 'title', axis: 'title', value: title })
   const author = query.author?.trim()
   if (author) fields.push({ field: 'author', axis: 'author', value: author })
-  const language = query.language?.trim()
-  if (language) fields.push({ field: 'language', axis: null, value: language })
   const subject = query.subject?.trim()
   if (subject) fields.push({ field: 'subject', axis: null, value: subject })
+  const language = query.language?.trim()
+  if (language) fields.push({ field: 'language', axis: null, value: language })
   const identifier = query.identifier?.trim()
   if (identifier) fields.push({ field: 'identifier', axis: null, value: identifier })
   const dTag = query.dTag?.trim()
@@ -2611,9 +2718,10 @@ export function structuredQueryToMercurySearchBody(
 
 /** Compact display string for a structured query (used for cache keys, status, and empty-state checks). */
 export function structuredQueryToString(query: LibraryStructuredSearchQuery): string {
-  return structuredQueryFilledFields(query)
-    .map(({ field, value }) => `${field}:${value}`)
-    .join(' ')
+  const parts = structuredQueryFilledFields(query).map(({ field, value }) => `${field}:${value}`)
+  if (typeof query.since === 'number') parts.push(`since:${query.since}`)
+  if (typeof query.until === 'number') parts.push(`until:${query.until}`)
+  return parts.join(' ')
 }
 
 /** d-tag filter values: hyphenated slug variants for relay `#d` REQ. */
@@ -3797,6 +3905,8 @@ export async function searchLibraryPublicationsOnRelays(
     forceRefresh?: boolean
     axis?: LibraryPublicationRelaySearchAxis | null
     blockedRelays?: readonly string[]
+    /** Optional created_at bounds forwarded to NIP-01 events/filter / WS REQ. */
+    createdAt?: { since?: number; until?: number }
     onProgress?: (progress: LibrarySearchProgress) => void
   }
 ): Promise<{
@@ -4004,7 +4114,9 @@ export async function searchLibraryPublicationsOnRelays(
       )
     }
 
-    const axisFilters = buildLibraryPublicationRelaySearchFiltersForAxis(axis, { query: q })
+    const axisFilters = buildLibraryPublicationRelaySearchFiltersForAxis(axis, { query: q }).map(
+      (filter) => applyCreatedAtBoundsToFilter(filter, options?.createdAt)
+    )
     const hasNip01Filters = axisFilters.length > 0
     const hasMetadataSearch =
       axis === 'title' || axis === 'd-tag' || (axis === 'author' && !npubQuery)

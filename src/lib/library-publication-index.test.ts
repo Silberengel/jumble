@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
+  applyCreatedAtBoundsToFilter,
   buildEngagementMapsFromEvents,
   buildLibraryPublicationEntry,
   buildDocumentRelayPublicationFilters,
@@ -12,11 +13,14 @@ import {
   filterPublicationContentEventsForQuery,
   filterEngagedPublications,
   filterEventsForPublicationRelaySearchAxis,
+  filterLibraryEntriesByCreatedAt,
   filterLibraryPublicationsBySearch,
   filterLibraryPublicationsByUser,
   libraryDefaultFeedSlice,
   libraryPublicationEntriesForUserFromIndex,
   LIBRARY_PAGE_SIZE,
+  localDateInputToUnixEnd,
+  localDateInputToUnixStart,
   pickLibraryPublicationEntries,
   publicationMetadataTagMatchesQuery,
   publicationRootBelongsToUser,
@@ -33,7 +37,9 @@ import {
   LIBRARY_GC_PUBLISHING_PUBKEY,
   shouldSearchPublicationContentOnRelays,
   searchLibraryPublicationIndex,
-  searchLibraryPublications
+  searchLibraryPublications,
+  structuredQueryFilledFields,
+  unixSecondsToLocalDateInput
 } from '@/lib/library-publication-index'
 import { buildIndexByAddress } from '@/lib/publication-index'
 import type { Event, Filter } from 'nostr-tools'
@@ -994,5 +1000,76 @@ describe('library-publication-index', () => {
       sk
     )
     expect(filterPublicationContentEventsForQuery([exact, weak], quote)).toEqual([exact])
+  })
+
+  it('structuredQueryFilledFields follows bibliographic UI order and ignores date bounds', () => {
+    const fields = structuredQueryFilledFields({
+      fullText: 'passage',
+      dTag: 'divine-comedy',
+      identifier: 'isbn:123',
+      language: 'en',
+      subject: 'poetry',
+      author: 'dante',
+      title: 'inferno',
+      since: 100,
+      until: 200
+    })
+    expect(fields.map((f) => f.field)).toEqual([
+      'title',
+      'author',
+      'subject',
+      'language',
+      'identifier',
+      'dTag',
+      'fullText'
+    ])
+  })
+
+  it('filterLibraryEntriesByCreatedAt keeps entries inside since/until', () => {
+    const older = indexEvent('older', [], { created_at: 10 })
+    const mid = indexEvent('mid', [], { created_at: 50 })
+    const newer = indexEvent('newer', [], { created_at: 100 })
+    const indexByAddress = buildIndexByAddress([older, mid, newer])
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    const entries = [older, mid, newer].map((event) =>
+      buildLibraryPublicationEntry(event, indexByAddress, engagement)
+    )
+
+    expect(filterLibraryEntriesByCreatedAt(entries).map((e) => e.event.id)).toEqual([
+      older.id,
+      mid.id,
+      newer.id
+    ])
+    expect(filterLibraryEntriesByCreatedAt(entries, 40, 80).map((e) => e.event.id)).toEqual([
+      mid.id
+    ])
+    expect(filterLibraryEntriesByCreatedAt(entries, 50).map((e) => e.event.id)).toEqual([
+      mid.id,
+      newer.id
+    ])
+    expect(filterLibraryEntriesByCreatedAt(entries, undefined, 50).map((e) => e.event.id)).toEqual([
+      older.id,
+      mid.id
+    ])
+  })
+
+  it('applyCreatedAtBoundsToFilter sets since/until on NIP-01 filters', () => {
+    expect(applyCreatedAtBoundsToFilter({ kinds: [30040], limit: 10 }, { since: 1, until: 9 })).toEqual({
+      kinds: [30040],
+      limit: 10,
+      since: 1,
+      until: 9
+    })
+    expect(applyCreatedAtBoundsToFilter({ kinds: [30040] }, null)).toEqual({ kinds: [30040] })
+  })
+
+  it('localDateInputToUnixStart/End use local calendar day bounds', () => {
+    const start = localDateInputToUnixStart('2024-06-15')
+    const end = localDateInputToUnixEnd('2024-06-15')
+    expect(start).toBeDefined()
+    expect(end).toBeDefined()
+    expect(end!).toBeGreaterThan(start!)
+    expect(unixSecondsToLocalDateInput(start)).toBe('2024-06-15')
+    expect(localDateInputToUnixStart('not-a-date')).toBeUndefined()
   })
 })

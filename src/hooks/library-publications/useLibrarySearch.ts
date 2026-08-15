@@ -1,10 +1,14 @@
 import {
   buildLibraryRelayUrls,
+  fetchLibraryIndexEvents,
+  filterLibraryEntriesByCreatedAt,
+  libraryEntriesMatchingCreatedAt,
   peekLibrarySearchResults,
   searchLibraryPublications,
   searchLibraryPublicationsOnRelays,
   sortLibrarySearchPublications,
   structuredQueryFilledFields,
+  structuredQueryHasDateBounds,
   structuredQueryToString,
   type LibraryPublicationEntry,
   type LibraryPublicationFilterMode,
@@ -193,7 +197,7 @@ export function useLibrarySearch(params: {
 
   const commitStructuredSearch = useCallback((query: LibraryStructuredSearchQuery) => {
     const fields = structuredQueryFilledFields(query)
-    if (fields.length === 0) {
+    if (fields.length === 0 && !structuredQueryHasDateBounds(query)) {
       setStructuredSearch(null)
       return
     }
@@ -340,10 +344,20 @@ export function useLibrarySearch(params: {
 
   // Structured (multi-field) search: local-first per field, ranked by how many fields each publication
   // matched, with an early stop that cancels the remote pass once a strong-enough local match is found.
+  // Optional since/until post-filter on created_at; date-only queries browse the local index (+ events/filter).
   useEffect(() => {
     if (!structuredSearch) return
     const fields = structuredQueryFilledFields(structuredSearch)
-    if (fields.length === 0) {
+    const hasDates = structuredQueryHasDateBounds(structuredSearch)
+    const createdAt =
+      hasDates
+        ? {
+            since: structuredSearch.since,
+            until: structuredSearch.until
+          }
+        : undefined
+
+    if (fields.length === 0 && !hasDates) {
       setSearchResults(null)
       setSearchLoading(false)
       setError(null)
@@ -371,7 +385,13 @@ export function useLibrarySearch(params: {
 
     const flush = () => {
       if (cancelled) return
-      setSearchResults(selectStructuredResults([...resultMap.values()], fieldHits, fields.length))
+      const ranked =
+        fields.length === 0
+          ? sortLibrarySearchPublications([...resultMap.values()])
+          : selectStructuredResults([...resultMap.values()], fieldHits, fields.length)
+      setSearchResults(
+        filterLibraryEntriesByCreatedAt(ranked, structuredSearch.since, structuredSearch.until)
+      )
     }
 
     const scheduleFlush = () => {
@@ -411,13 +431,72 @@ export function useLibrarySearch(params: {
     }
 
     const hasEarlyStopMatch = () => {
-      for (const hits of fieldHits.values()) {
-        if (hits.size >= requiredFieldCount) return true
-      }
-      return false
+      if (requiredFieldCount === 0) return false
+      const ranked = selectStructuredResults([...resultMap.values()], fieldHits, fields.length)
+      const dated = filterLibraryEntriesByCreatedAt(
+        ranked,
+        structuredSearch.since,
+        structuredSearch.until
+      )
+      return dated.some((entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) >= requiredFieldCount)
     }
 
     void (async () => {
+      // Date-only: filter already-loaded top-level indexes, then top up via events/filter with since/until.
+      if (fields.length === 0 && createdAt) {
+        for (const entry of libraryEntriesMatchingCreatedAt(
+          indexEventsRef.current,
+          EMPTY_ENGAGEMENT,
+          createdAt.since,
+          createdAt.until
+        )) {
+          mergeEntryIntoMap(resultMap, entry)
+        }
+        flush()
+
+        try {
+          const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
+          const merged = await fetchLibraryIndexEvents(relays, {
+            firstPageOnly: true,
+            since: createdAt.since,
+            until: createdAt.until,
+            onProgress: (events) => {
+              if (cancelled) return
+              applyMergedIndex(events)
+              for (const entry of libraryEntriesMatchingCreatedAt(
+                events,
+                EMPTY_ENGAGEMENT,
+                createdAt.since,
+                createdAt.until
+              )) {
+                mergeEntryIntoMap(resultMap, entry)
+              }
+              scheduleFlush()
+            }
+          })
+          if (cancelled) return
+          applyMergedIndex(merged)
+          for (const entry of libraryEntriesMatchingCreatedAt(
+            merged,
+            EMPTY_ENGAGEMENT,
+            createdAt.since,
+            createdAt.until
+          )) {
+            mergeEntryIntoMap(resultMap, entry)
+          }
+        } catch (e) {
+          if (import.meta.env.DEV) {
+            logger.warn('[Library] date-only index fetch failed', {
+              message: e instanceof Error ? e.message : String(e)
+            })
+          }
+        }
+        if (cancelled) return
+        flush()
+        setSearchLoading(false)
+        return
+      }
+
       // Phase A: local search for each filled field, ranked by matched-field count.
       await Promise.all(
         fields.map(async (f) => {
@@ -464,6 +543,7 @@ export function useLibrarySearch(params: {
                 {
                   axis: f.axis,
                   blockedRelays: blockedRelays ?? [],
+                  createdAt,
                   onProgress: ({ entries, mergedIndexEvents }) =>
                     mergeFieldEntries(f.field, entries, mergedIndexEvents)
                 }
