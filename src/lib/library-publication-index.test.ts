@@ -30,6 +30,7 @@ import {
   publicationIndexMatchesSearchQuery,
   dTagSlugContainsHyphenNeedle,
   publicationQueryDTagVariants,
+  publicationAxisDTagFilterValues,
   libraryPublicationRootsForContentEvents,
   rankPublicationContentEventsForQuery,
   sortLibrarySearchPublications,
@@ -293,14 +294,21 @@ describe('library-publication-index', () => {
     expect(docAuthor.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.includes('Jane Austen'))).toBe(
       true
     )
+    expect(docAuthor.some((f) => f['#d']?.includes('jane-austen'))).toBe(true)
     expect(docAuthor.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)
     expect(docAuthor.every((f) => f.search == null)).toBe(true)
 
     const authorFilters = buildLibraryPublicationRelaySearchFiltersForAxis('author', {
-      query: 'Village Life in China'
+      query: 'Jane Austen'
     })
     expect(authorFilters.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.length)).toBe(true)
+    expect(authorFilters.some((f) => f['#d']?.includes('jane-austen'))).toBe(true)
     expect(authorFilters.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)
+
+    const titleFiltersWithD = buildLibraryPublicationRelaySearchFiltersForAxis('title', {
+      query: 'Jane Eyre'
+    })
+    expect(titleFiltersWithD.some((f) => f['#d']?.includes('jane-eyre'))).toBe(true)
 
     const merged = buildLibraryPublicationRelaySearchFilters({ query: 'Village Life in China' })
     expect(merged.some((f) => f['#d']?.includes('village-life-in-china'))).toBe(true)
@@ -339,22 +347,22 @@ describe('library-publication-index', () => {
     expect(publicationMetadataTagMatchesQuery(root, 'author', 'Brontë')).toBe(true)
   })
 
-  it('author and title axes match partial metadata text; d-tags match slug prefixes and segments', () => {
-    const root = indexEvent('faust', [`30041:${PK}:intro`])
+  it('title and author axes match when only the d-tag embeds the slug', () => {
+    const root = indexEvent('pg-only', [`30041:${PK}:intro`])
     root.tags = [
-      ['d', 'faust-part-one'],
-      ['title', 'Faust: Der Tragödie erster Teil'],
-      ['author', 'Johann Wolfgang von Goethe'],
+      ['d', 'pg12345-jane-eyre-charlotte-bronte'],
+      ['T', 'historical-thinking'], // unrelated title slug
+      ['N', 'other-author'],
       ['a', `30041:${PK}:intro`]
     ]
 
-    expect(publicationMetadataTagMatchesQuery(root, 'author', 'goethe')).toBe(true)
-    expect(publicationMetadataTagMatchesQuery(root, 'title', 'tragödie')).toBe(true)
-    expect(publicationMetadataTagMatchesQuery(root, 'd', 'faust')).toBe(true)
-    expect(publicationMetadataTagMatchesQuery(root, 'd', 'faust-part-one')).toBe(true)
-    expect(dTagSlugContainsHyphenNeedle('faust-part-one', 'faust')).toBe(true)
-    expect(dTagSlugContainsHyphenNeedle('pg25732-the-faust-legend-and-goethes-faust', 'faust')).toBe(
-      true
+    expect(filterEventsForPublicationRelaySearchAxis([root], 'title', 'jane eyre')).toHaveLength(1)
+    expect(filterEventsForPublicationRelaySearchAxis([root], 'author', 'charlotte bronte')).toHaveLength(
+      1
+    )
+    expect(publicationAxisDTagFilterValues('title', 'Jane Eyre')).toContain('jane-eyre')
+    expect(publicationAxisDTagFilterValues('author', 'Charlotte Bronte')).toContain(
+      'charlotte-bronte'
     )
   })
 
@@ -443,9 +451,10 @@ describe('library-publication-index', () => {
     expect(broad.map((e) => e.event.id).sort()).toEqual([about.id, fromAuthor.id].sort())
 
     const byAuthor = await searchLibraryPublications('aristotle', { indexEvents, engagement }, 'author')
-    expect(byAuthor.map((e) => e.event.id)).toEqual([fromAuthor.id])
+    // Author axis also matches `d` (e.g. `about-aristotle`), not only `#N` / author tags.
+    expect(byAuthor.map((e) => e.event.id).sort()).toEqual([about.id, fromAuthor.id].sort())
 
-    expect(peekLibrarySearchResults('aristotle', { indexEvents, engagement }, 'author')).toHaveLength(1)
+    expect(peekLibrarySearchResults('aristotle', { indexEvents, engagement }, 'author')).toHaveLength(2)
     expect(peekLibrarySearchResults('aristotle', { indexEvents, engagement })).toHaveLength(2)
   })
 

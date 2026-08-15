@@ -23,7 +23,14 @@ import {
   expandIdentifier,
   identifierExpansionIsEmpty
 } from '@/lib/identifier-expander'
-import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationContentSearch, queryIndexRelayPublicationMetadataSearch } from '@/lib/index-relay-http'
+import {
+  clearDevIndexRelayUnavailableThisSession,
+  queryIndexRelay,
+  queryIndexRelayForLibrary,
+  queryIndexRelayPublicationContentSearch,
+  queryIndexRelayPublicationMetadataSearch,
+  type IndexRelayPublicationSearchBody
+} from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
   buildStructuralPublicationIndexMap,
@@ -2734,6 +2741,9 @@ export function structuredQueryToString(query: LibraryStructuredSearchQuery): st
   return parts.join(' ')
 }
 
+/** Cap `#d` values per filter — Mercury indexes `#d`; huge OR lists add little recall. */
+const PUBLICATION_AXIS_DTAG_FILTER_CAP = 12
+
 /** d-tag filter values: hyphenated slug variants for relay `#d` REQ. */
 export function publicationQueryDTagVariants(query: string): string[] {
   const raw = query.trim()
@@ -2747,6 +2757,45 @@ export function publicationQueryDTagVariants(query: string): string[] {
   add(normalizePublicationDTag(raw))
   add(raw.toLowerCase().replace(/\s+/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, ''))
   return [...seen]
+}
+
+/**
+ * Hyphen slug variants for title/author queries that often appear inside publication `d` tags
+ * (e.g. `pg123-jane-eyre`, `opa-olid-the-prince`).
+ */
+export function publicationAxisDTagFilterValues(
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string
+): string[] {
+  const searchRaw = query.trim()
+  if (!searchRaw) return []
+  const terms = new Set<string>([searchRaw])
+  for (const term of publicationRelaySearchTermsForAxis(axis, searchRaw)) {
+    terms.add(term)
+  }
+  if (axis === 'title' || axis === 'author') {
+    for (const term of publicationMetadataSearchTermsForHttpRelay(axis, searchRaw)) {
+      terms.add(term)
+    }
+  }
+  const out = new Set<string>()
+  for (const term of terms) {
+    for (const d of publicationQueryDTagVariants(term)) out.add(d)
+  }
+  return [...out].slice(0, PUBLICATION_AXIS_DTAG_FILTER_CAP)
+}
+
+function addPublicationAxisDTagFilter(
+  add: (filter: Filter) => void,
+  kind: number,
+  limit: number,
+  axis: LibraryPublicationRelaySearchAxis,
+  query: string
+) {
+  const dTags = publicationAxisDTagFilterValues(axis, query)
+  if (dTags.length > 0) {
+    add({ kinds: [kind], '#d': dTags, limit })
+  }
 }
 
 /** Normalized needles for publication metadata tag match (d / title / author). */
@@ -2946,6 +2995,8 @@ export function buildDocumentRelayPublicationFilters(
       // Catalog author slug tag is `#N` (Mercury accepts single-letter tag filters only).
       add({ kinds: [kind], '#N': authors, limit } as Filter)
     }
+    // Author names frequently appear in `d` (e.g. `pg-…-jane-austen`).
+    addPublicationAxisDTagFilter(add, kind, limit, 'author', searchRaw)
     return filters
   }
 
@@ -2955,13 +3006,7 @@ export function buildDocumentRelayPublicationFilters(
       // Catalog title slug tag is `#T`.
       add({ kinds: [kind], '#T': titles, limit } as Filter)
     }
-    const dTags = new Set<string>()
-    for (const term of [...publicationRelaySearchTermsForAxis('title', searchRaw), searchRaw]) {
-      for (const d of publicationQueryDTagVariants(term)) dTags.add(d)
-    }
-    if (dTags.size > 0) {
-      add({ kinds: [kind], '#d': [...dTags], limit })
-    }
+    addPublicationAxisDTagFilter(add, kind, limit, 'title', searchRaw)
     addIdentifierFilters(searchRaw)
     return filters
   }
@@ -3149,6 +3194,8 @@ export async function searchLibraryPublicationsOnRelaysByStructuredTagField(
   if (!q) {
     return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
   }
+
+  clearDevIndexRelayUnavailableThisSession()
 
   const blockedRelays = options?.blockedRelays ?? []
   const indexRelays = libraryIndexRelayUrls(relayUrls)
@@ -3888,6 +3935,13 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
     if (authors.length > 0) {
       addPublicationKindFilter(out, seen, { kinds: [kind], '#N': authors, limit } as Filter)
     }
+    addPublicationAxisDTagFilter(
+      (filter) => addPublicationKindFilter(out, seen, filter),
+      kind,
+      limit,
+      'author',
+      searchRaw
+    )
     return out
   }
 
@@ -3896,13 +3950,13 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
     if (titles.length > 0) {
       addPublicationKindFilter(out, seen, { kinds: [kind], '#T': titles, limit } as Filter)
     }
-    const dTags = new Set<string>()
-    for (const term of [...publicationRelaySearchTermsForAxis('title', searchRaw), searchRaw]) {
-      for (const d of publicationQueryDTagVariants(term)) dTags.add(d)
-    }
-    if (dTags.size > 0) {
-      addPublicationKindFilter(out, seen, { kinds: [kind], '#d': [...dTags], limit })
-    }
+    addPublicationAxisDTagFilter(
+      (filter) => addPublicationKindFilter(out, seen, filter),
+      kind,
+      limit,
+      'title',
+      searchRaw
+    )
     const expanded = expandIdentifier(searchRaw)
     for (const filter of buildIdentifierSearchFilters(expanded, kind, limit)) {
       addPublicationKindFilter(out, seen, filter)
@@ -3967,12 +4021,20 @@ export function filterEventsForPublicationRelaySearchAxis(
     if (axis === 'author') {
       const npub = tryNpubFromQuery(query.trim())
       if (npub && event.pubkey.toLowerCase() === npub) return true
-      // Prefer Mercury `#N` slug; legacy multi-letter `author` is display-only on reminted events.
-      return terms.some((term) => publicationMetadataTagMatchesQuery(event, 'N', term))
+      // `#N` slug and/or `d` (author often embedded in the replaceable id).
+      return terms.some(
+        (term) =>
+          publicationMetadataTagMatchesQuery(event, 'N', term) ||
+          publicationMetadataTagMatchesQuery(event, 'd', term)
+      )
     }
     if (axis === 'title') {
-      // Prefer Mercury `#T` slug; legacy multi-letter `title` is display-only on reminted events.
-      return terms.some((term) => publicationMetadataTagMatchesQuery(event, 'T', term))
+      // `#T` slug and/or `d` (title words often embedded in the replaceable id).
+      return terms.some(
+        (term) =>
+          publicationMetadataTagMatchesQuery(event, 'T', term) ||
+          publicationMetadataTagMatchesQuery(event, 'd', term)
+      )
     }
     return terms.some((term) => publicationMetadataTagMatchesQuery(event, 'd', term))
   })
@@ -4071,6 +4133,7 @@ async function searchHttpIndexRelayPublicationAxis(
     onPartialEvents?: (events: Event[]) => void
   }
 ): Promise<Event[]> {
+  const q = query.trim()
   const terms = publicationMetadataSearchTermsForHttpRelay(axis, query)
   const matched: Event[] = []
   const seen = new Set<string>()
@@ -4087,16 +4150,40 @@ async function searchHttpIndexRelayPublicationAxis(
     if (fresh.length > 0) options?.onPartialEvents?.(fresh)
   }
 
+  // Structured Mercury axes (title→T, author→N) plus dedicated `d` queries — titles/authors
+  // are often embedded in the replaceable id. Do not AND title+d in one body (intersect).
+  const structuredBodies: IndexRelayPublicationSearchBody[] = []
+  if (axis === 'title') {
+    for (const term of terms.slice(0, 4)) {
+      structuredBodies.push({ title: term, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+    }
+  } else if (axis === 'author') {
+    for (const term of terms.slice(0, 4)) {
+      structuredBodies.push({ author: term, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+    }
+  } else if (axis === 'd-tag') {
+    for (const term of terms.slice(0, 4)) {
+      structuredBodies.push({ d: term, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+    }
+  }
+  for (const d of publicationAxisDTagFilterValues(axis, q).slice(0, 4)) {
+    structuredBodies.push({ d, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+  }
+  // Free-text fallback covers remaining tag channels in one request.
+  if (q) structuredBodies.push({ q, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+
+  const seenBody = new Set<string>()
   await Promise.all(
-    terms.map((term) =>
-      queryIndexRelayPublicationMetadataSearch(httpRelay, term, {
-        limit: LIBRARY_RELAY_SEARCH_LIMIT
-      })
+    structuredBodies.map((body) => {
+      const key = JSON.stringify(body)
+      if (seenBody.has(key)) return Promise.resolve()
+      seenBody.add(key)
+      return queryIndexRelayPublicationMetadataSearch(httpRelay, body)
         .then((page) => {
           addFiltered(page.events as Event[])
         })
         .catch(() => undefined)
-    )
+    })
   )
   if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) {
     return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
@@ -4207,6 +4294,9 @@ export async function searchLibraryPublicationsOnRelays(
   if (!q) {
     return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
   }
+
+  // Each library search must hit Mercury/WS; don't let a prior filter 5xx skip this attempt.
+  clearDevIndexRelayUnavailableThisSession()
 
   const contentPrimary = isContentPrimarySearch(q, options?.axis)
   if (!options?.forceRefresh) {
@@ -4464,7 +4554,7 @@ export async function searchLibraryPublicationsOnRelays(
     const npubQuery = tryNpubFromQuery(q)
     if (npubQuery && axis !== 'author') continue
 
-    if (axis === 'd-tag' || axis === 'title' || (axis === 'author' && npubQuery)) {
+    if (axis === 'd-tag' || axis === 'title' || axis === 'author') {
       batches.push(
         fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays, {
           onPartialEvents: reportBatch
@@ -4508,29 +4598,28 @@ export async function searchLibraryPublicationsOnRelays(
     }
 
     for (const httpRelay of httpRelays) {
-      if (hasNip01Filters) {
-        for (const filter of axisFilters) {
-          batches.push(
-            queryIndexRelayForLibrary(httpRelay, filter)
-              .then((page) =>
-                filterEventsForPublicationRelaySearchAxis(page.events as Event[], axis, q)
-              )
-              .then((events) => {
-                reportBatch(events)
-                return events
-              })
-              .catch((e) => {
-                if (import.meta.env.DEV) {
-                  logger.warn('[Library] HTTP publication filter search failed', {
-                    relay: httpRelay,
-                    axis,
-                    message: e instanceof Error ? e.message : String(e)
-                  })
-                }
-                return [] as Event[]
-              })
-          )
-        }
+      // Mercury HTTP: send every NIP-01 filter (`#d`, `#T`, `#N`, authors, …) plus publications/search.
+      for (const filter of axisFilters) {
+        batches.push(
+          queryIndexRelayForLibrary(httpRelay, filter)
+            .then((page) =>
+              filterEventsForPublicationRelaySearchAxis(page.events as Event[], axis, q)
+            )
+            .then((events) => {
+              reportBatch(events)
+              return events
+            })
+            .catch((e) => {
+              if (import.meta.env.DEV) {
+                logger.warn('[Library] HTTP publication filter search failed', {
+                  relay: httpRelay,
+                  axis,
+                  message: e instanceof Error ? e.message : String(e)
+                })
+              }
+              return [] as Event[]
+            })
+        )
       }
 
       if (!hasMetadataSearch) continue

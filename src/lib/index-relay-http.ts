@@ -167,8 +167,9 @@ function isDevViteIndexRelayProxyPath(endpoint: string): boolean {
 }
 
 /**
- * When the Vite `/dev-index-relay` proxy returns 5xx, skip further dev index HTTP fetches for this tab
- * (same pattern as optional `/sites/` and translate proxies). Cleared on a successful filter response.
+ * When the Vite `/dev-index-relay` proxy is unreachable (connection refused), skip further filter
+ * fetches for this tab. A single HTTP 5xx on one filter must not disable other filters or
+ * publications/search — those endpoints stay available via {@link shouldSkipDevIndexRelayFetch}.
  */
 let devIndexRelayUnavailableThisSession = false
 let devIndexRelaySkipLogged = false
@@ -182,15 +183,14 @@ export function clearDevIndexRelayUnavailableThisSession(): void {
   devIndexRelaySkipLogged = false
 }
 
-function markDevIndexRelayUnavailableFromHttpStatus(status: number, endpoint: string): void {
+function markDevIndexRelayUnavailableFromTransport(endpoint: string): void {
   if (!isDevViteIndexRelayProxyPath(endpoint)) return
-  if (status < 500 || status > 599) return
   if (devIndexRelayUnavailableThisSession) return
   devIndexRelayUnavailableThisSession = true
   if (!devIndexRelaySkipLogged) {
     devIndexRelaySkipLogged = true
     logger.debug(
-      `[IndexRelayHttp] Dev index relay returned HTTP ${status}; skipping further dev-index-relay fetches this session (other relays continue).`
+      '[IndexRelayHttp] Dev index relay unreachable; skipping further filter fetches this session (search APIs continue).'
     )
   }
 }
@@ -243,6 +243,7 @@ function maybeLogDevIndexRelayHttpErrorHint(status: number, detail?: string): vo
 
 function handleFilterTransportFailure(endpoint: string, err?: unknown): void {
   if (import.meta.env.DEV && isDevViteIndexRelayProxyPath(endpoint)) {
+    markDevIndexRelayUnavailableFromTransport(endpoint)
     logger.debug('[IndexRelayHttp] filter unreachable', { endpoint })
     maybeLogDevIndexRelayUnreachableHint()
     return
@@ -380,7 +381,6 @@ export async function queryIndexRelay(
             /* ignore */
           }
           if (res.status >= 500 && res.status <= 599) {
-            markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
             maybeLogDevIndexRelayHttpErrorHint(res.status, detail || undefined)
           } else {
             logger.debug('[IndexRelayHttp] filter HTTP response', {
@@ -399,7 +399,6 @@ export async function queryIndexRelay(
           })
         }
         if (res.status >= 500) {
-          markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
           throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
         }
         continue
@@ -458,7 +457,6 @@ export async function queryIndexRelayForLibrary(
     })
     if (!res.ok) {
       if (res.status >= 500) {
-        markDevIndexRelayUnavailableFromHttpStatus(res.status, endpoint)
         throw new IndexRelayTransportError(new Error(`HTTP ${res.status}`))
       }
       return { events: [], apiRowCount: 0 }
@@ -587,7 +585,7 @@ export async function queryIndexRelayPublicationMetadataSearch(
       },
       body: JSON.stringify(payload),
       signal: options?.signal,
-      timeoutMs: 25_000
+      timeoutMs: 60_000
     })
     if (!res.ok) {
       if (res.status === 404 || res.status === 405) return { events: [], apiRowCount: 0 }

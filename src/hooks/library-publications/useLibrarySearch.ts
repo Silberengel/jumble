@@ -306,6 +306,7 @@ export function useLibrarySearch(params: {
           relays,
           { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
           {
+            forceRefresh: true,
             axis: searchAxis,
             blockedRelays: blockedRelays ?? [],
             onProgress: ({ entries, mergedIndexEvents }) => mergeEntries(entries, mergedIndexEvents)
@@ -348,8 +349,8 @@ export function useLibrarySearch(params: {
     t
   ])
 
-  // Structured (multi-field) search: local-first per field, ranked by how many fields each publication
-  // matched, with an early stop that cancels the remote pass once a strong-enough local match is found.
+  // Structured (multi-field) search: local-first per field (instant UI), then always Mercury + WS
+  // remotes — never skip the network pass because of a local AND hit.
   // Optional since/until post-filter on created_at; date-only queries browse the local index (+ events/filter).
   useEffect(() => {
     if (!structuredSearch) return
@@ -380,8 +381,6 @@ export function useLibrarySearch(params: {
     const resultMap = new Map<string, LibraryPublicationEntry>()
     // entryKey -> set of structured field names that matched the publication.
     const fieldHits = new Map<string, Set<string>>()
-    // Skip the remote pass once one publication matches every filled field locally (a complete AND hit).
-    const requiredFieldCount = fields.length
     setSearchLoading(true)
     setError(null)
     if (progressThrottleRef.current !== null) {
@@ -434,17 +433,6 @@ export function useLibrarySearch(params: {
       }
       applyMergedIndex(mergedIndexEvents)
       scheduleFlush()
-    }
-
-    const hasEarlyStopMatch = () => {
-      if (requiredFieldCount === 0) return false
-      const ranked = selectStructuredResults([...resultMap.values()], fieldHits, fields.length)
-      const dated = filterLibraryEntriesByCreatedAt(
-        ranked,
-        structuredSearch.since,
-        structuredSearch.until
-      )
-      return dated.some((entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) >= requiredFieldCount)
     }
 
     void (async () => {
@@ -543,13 +531,7 @@ export function useLibrarySearch(params: {
       if (cancelled) return
       flush()
 
-      // Early stop: a strong-enough local match means we skip the remote pass entirely.
-      if (hasEarlyStopMatch()) {
-        setSearchLoading(false)
-        return
-      }
-
-      // Phase B: remote search per field, merged into the same map (full-text uses the content path).
+      // Phase B: always remote — Mercury HTTP + WS per field (never skip for local AND hits).
       try {
         const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
         await Promise.all(
@@ -575,6 +557,7 @@ export function useLibrarySearch(params: {
                 relays,
                 { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
                 {
+                  forceRefresh: true,
                   axis: f.axis,
                   blockedRelays: blockedRelays ?? [],
                   createdAt,
