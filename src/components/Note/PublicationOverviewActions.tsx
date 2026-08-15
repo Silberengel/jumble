@@ -9,8 +9,8 @@ import {
 import { persistLibraryPublicationForReading } from '@/lib/library-publication-index'
 import { markPublicationReadingStarted } from '@/lib/library-publication-reading-session'
 import {
-  exportPublicationDownload,
   exportPublicationFromMercuryEvents,
+  fetchPublicationTreeForExport,
   type PublicationDownloadFormat
 } from '@/lib/publication-export'
 import indexedDb from '@/services/indexed-db.service'
@@ -74,8 +74,18 @@ export default function PublicationOverviewActions({
 
   useEffect(() => {
     let cancelled = false
-    setMeta(null)
     setError(null)
+    const hasContentRef = event.tags.some((tag) => {
+      if (tag[0] === 'e' && typeof tag[1] === 'string' && tag[1].length > 0) return true
+      if (tag[0] !== 'a' || typeof tag[1] !== 'string') return false
+      return tag[1].startsWith('30041:') || tag[1].startsWith('30040:')
+    })
+    setMeta({
+      readable: hasContentRef,
+      event_count: 0,
+      index_count: 0,
+      content_count: hasContentRef ? 1 : 0
+    })
     if (!naddr) return
     void (async () => {
       for (const base of MERCURY_HTTP_BASES) {
@@ -87,19 +97,8 @@ export default function PublicationOverviewActions({
             return
           }
         } catch {
-          // try next base
+          // try next base; local a/e heuristic already applied
         }
-      }
-      const hasContentRef = event.tags.some(
-        (tag) => tag[0] === 'a' && typeof tag[1] === 'string' && tag[1].startsWith('30041:')
-      )
-      if (!cancelled) {
-        setMeta({
-          readable: hasContentRef,
-          event_count: 0,
-          index_count: 0,
-          content_count: hasContentRef ? 1 : 0
-        })
       }
     })()
     return () => {
@@ -117,30 +116,41 @@ export default function PublicationOverviewActions({
 
   const runExport = useCallback(
     async (format: 'save' | PublicationDownloadFormat) => {
-      if (!naddr) throw new Error('Missing naddr')
-      let items: Awaited<ReturnType<typeof queryIndexRelayPublicationExport>>['items'] = []
-      let eventCount = 0
-      for (const base of MERCURY_HTTP_BASES) {
-        try {
-          const page = await queryIndexRelayPublicationExport(base, naddr)
-          if (page.items.length > 0) {
-            items = page.items
-            eventCount = page.meta.event_count || page.items.length
-            break
-          }
-        } catch {
-          // try next
+      const mercuryTask = naddr
+        ? (async () => {
+            for (const base of MERCURY_HTTP_BASES) {
+              try {
+                const page = await queryIndexRelayPublicationExport(base, naddr)
+                if (page.items.length > 0) return page
+              } catch {
+                // try next base
+              }
+            }
+            return null
+          })()
+        : Promise.resolve(null)
+      const relayTask = fetchPublicationTreeForExport(event, [...LIBRARY_RELAY_URLS])
+
+      const nestedFromMercury = mercuryTask.then((page) => {
+        const events = (page?.items ?? [])
+          .map(streamItemToEvent)
+          .filter((ev): ev is Event => Boolean(ev))
+        if (events.length === 0) throw new Error('empty mercury export')
+        const eventCount = page?.meta.event_count || events.length
+        if (eventCount > 5_000) {
+          console.warn('[Publication] large export', { eventCount, naddr })
         }
+        return events
+      })
+      const nestedFromRelays = relayTask.then((fetched) => {
+        const events = [...fetched.values()].filter((ev) => ev.id !== event.id)
+        if (events.length === 0) throw new Error('empty relay export')
+        return events
+      })
+      const nested = await Promise.any([nestedFromMercury, nestedFromRelays]).catch(() => [])
+      if (nested.length === 0) {
+        throw new Error('Publication export unavailable')
       }
-      if (items.length === 0) {
-        throw new Error('Mercury export unavailable')
-      }
-      if (eventCount > 5_000) {
-        console.warn('[Publication] large export', { eventCount, naddr })
-      }
-      const nested = items
-        .map(streamItemToEvent)
-        .filter((ev): ev is Event => Boolean(ev))
       if (format === 'save') {
         await indexedDb.putPublicationWithNestedEvents(event, nested)
         persistLibraryPublicationForReading(event)
@@ -165,20 +175,11 @@ export default function PublicationOverviewActions({
       }
       if (action === 'save') {
         if (saved) return
-        try {
-          await runExport('save')
-        } catch {
-          persistLibraryPublicationForReading(event)
-          setSaved(true)
-        }
+        await runExport('save')
         return
       }
       if (action === 'epub') {
-        try {
-          await runExport('epub')
-        } catch {
-          await exportPublicationDownload(event, 'epub', [...LIBRARY_RELAY_URLS])
-        }
+        await runExport('epub')
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
