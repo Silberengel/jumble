@@ -432,7 +432,7 @@ export async function queryIndexRelay(
 export async function queryIndexRelayForLibrary(
   baseUrl: string,
   filter: Filter,
-  options?: { signal?: AbortSignal }
+  options?: { signal?: AbortSignal; timeoutMs?: number }
 ): Promise<TIndexRelayLibraryPage> {
   const base = devHttpIndexRelayBaseForFetch(baseUrl)
   const endpoint = indexRelayFilterUrl(base)
@@ -453,7 +453,7 @@ export async function queryIndexRelayForLibrary(
       },
       body: JSON.stringify(body),
       signal: options?.signal,
-      timeoutMs: 25_000
+      timeoutMs: options?.timeoutMs ?? 25_000
     })
     if (!res.ok) {
       if (res.status >= 500) {
@@ -556,7 +556,7 @@ function parseIndexRelayEventPage(json: { data?: unknown }): TIndexRelayLibraryP
 export async function queryIndexRelayPublicationMetadataSearch(
   baseUrl: string,
   query: string | IndexRelayPublicationSearchBody,
-  options?: { limit?: number; signal?: AbortSignal }
+  options?: { limit?: number; signal?: AbortSignal; timeoutMs?: number }
 ): Promise<TIndexRelayLibraryPage> {
   const body: IndexRelayPublicationSearchBody =
     typeof query === 'string'
@@ -585,7 +585,7 @@ export async function queryIndexRelayPublicationMetadataSearch(
       },
       body: JSON.stringify(payload),
       signal: options?.signal,
-      timeoutMs: 60_000
+      timeoutMs: options?.timeoutMs ?? 35_000
     })
     if (!res.ok) {
       if (res.status === 404 || res.status === 405) return { events: [], apiRowCount: 0 }

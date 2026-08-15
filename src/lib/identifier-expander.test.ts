@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildIdentifierSearchFilters,
   eventMatchesExpandedIdentifier,
-  expandIdentifier
+  expandIdentifier,
+  queryLooksLikePastedIdentifier
 } from '@/lib/identifier-expander'
 import { ExtendedKind } from '@/constants'
 
@@ -228,5 +229,20 @@ describe('expandIdentifier', () => {
 
   it('expands hyphenated ISBN to i', () => {
     expect(expandIdentifier('978-0141439512')).toEqual({ i: ['isbn:9780141439512'] })
+  })
+})
+
+describe('queryLooksLikePastedIdentifier', () => {
+  it('is false for free-text titles that still expand to d/wikipedia i', () => {
+    expect(queryLooksLikePastedIdentifier('Mansfield Park')).toBe(false)
+    expect(queryLooksLikePastedIdentifier('Jane Austen')).toBe(false)
+    expect(expandIdentifier('Mansfield Park').d?.length).toBeGreaterThan(0)
+  })
+
+  it('is true for URLs and scheme/catalog ids', () => {
+    expect(queryLooksLikePastedIdentifier('https://www.gutenberg.org/ebooks/141')).toBe(true)
+    expect(queryLooksLikePastedIdentifier('gutenberg:141')).toBe(true)
+    expect(queryLooksLikePastedIdentifier('pg141')).toBe(true)
+    expect(queryLooksLikePastedIdentifier('9780141439512')).toBe(true)
   })
 })

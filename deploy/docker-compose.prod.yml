@@ -105,6 +105,7 @@ services:
     memswap_limit: 128m
     logging: *default-logging
 
+  # Without NIP66_MONITOR_NSEC the process idles (does not exit) to avoid a restart loop.
   jumble-nip66-monitor:
     image: silberengel/imwald-jumble-nip66-monitor:latest
     container_name: imwald-jumble-nip66-monitor

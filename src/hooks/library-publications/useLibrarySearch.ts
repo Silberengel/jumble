@@ -9,6 +9,8 @@ import {
   searchLibraryPublicationsByStructuredTagField,
   searchLibraryPublicationsOnRelays,
   searchLibraryPublicationsOnRelaysByStructuredTagField,
+  publicationIndexMatchesSearchQueryWithAxis,
+  searchLibraryPublicationsViaMercuryStructuredQuery,
   sortLibrarySearchPublications,
   structuredQueryFilledFields,
   structuredQueryHasDateBounds,
@@ -16,6 +18,7 @@ import {
   type LibraryPublicationEntry,
   type LibraryPublicationFilterMode,
   type LibraryPublicationRelaySearchAxis,
+  type LibraryStructuredSearchField,
   type LibraryStructuredSearchQuery
 } from '@/lib/library-publication-index'
 import { eventTagAddress, getTopLevelIndexEvents } from '@/lib/publication-index'
@@ -25,6 +28,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { SEARCH_PROGRESS_THROTTLE_MS } from './config'
 import { EMPTY_ENGAGEMENT } from './constants'
+
+/** How often search progress may rewrite the full library index (heavy; engagement re-fetches follow). */
+const SEARCH_INDEX_COMMIT_THROTTLE_MS = 2_000
 
 /** Stable key matching the grid: replaceable address when present, else the event id. */
 function entryKey(entry: LibraryPublicationEntry): string {
@@ -90,10 +96,9 @@ function sortByFieldMatchCount(
 }
 
 /**
- * Strict cross-field AND with a soft-AND fallback: when at least one publication matches every filled
- * field, return only those (true AND). Otherwise fall back to the soft-AND ranking (best partial matches
- * first) so the user still sees the closest results instead of an empty list.
- * Never surface entries that matched zero structured fields (e.g. browse bleed).
+ * Prefer publications that match every filled field. If none do, still show partial
+ * (single-field) hits ranked by how many fields they matched — an empty grid is worse
+ * than Mansfield Park without a confirmed author hit.
  */
 function selectStructuredResults(
   entries: LibraryPublicationEntry[],
@@ -106,7 +111,19 @@ function selectStructuredResults(
   const strict = ranked.filter(
     (entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) >= filledFieldCount
   )
-  return strict.length > 0 ? strict : ranked
+  if (strict.length > 0) return strict
+  return ranked
+}
+
+/** Keep a combined Mercury hit on only the structured fields it actually matched. */
+function entriesMatchingStructuredField(
+  entries: LibraryPublicationEntry[],
+  field: LibraryStructuredSearchField
+): LibraryPublicationEntry[] {
+  if (!field.axis) return entries
+  return entries.filter((entry) =>
+    publicationIndexMatchesSearchQueryWithAxis(entry.event, field.value, field.axis)
+  )
 }
 
 export function useLibrarySearch(params: {
@@ -239,6 +256,33 @@ export function useLibrarySearch(params: {
       progressThrottleRef.current = null
     }
 
+    let pendingMergedIndex: Event[] | undefined
+    let indexCommitTimer: number | null = null
+    let loadingCleared = false
+
+    const commitMergedIndex = (mergedIndexEvents?: Event[]) => {
+      if (cancelled || !mergedIndexEvents) return
+      setIndexEvents(mergedIndexEvents)
+      setAllIndexCount(mergedIndexEvents.length)
+      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
+    }
+
+    const scheduleMergedIndex = (mergedIndexEvents?: Event[]) => {
+      if (cancelled || !mergedIndexEvents) return
+      pendingMergedIndex = mergedIndexEvents
+      if (indexCommitTimer !== null) return
+      indexCommitTimer = window.setTimeout(() => {
+        indexCommitTimer = null
+        commitMergedIndex(pendingMergedIndex)
+      }, SEARCH_INDEX_COMMIT_THROTTLE_MS)
+    }
+
+    const clearLoadingSoon = () => {
+      if (cancelled || loadingCleared) return
+      loadingCleared = true
+      setSearchLoading(false)
+    }
+
     const flush = () => {
       if (cancelled) return
       setSearchResults(sortLibrarySearchPublications([...resultMap.values()]))
@@ -253,18 +297,12 @@ export function useLibrarySearch(params: {
       }, SEARCH_PROGRESS_THROTTLE_MS)
     }
 
-    const applyMergedIndex = (mergedIndexEvents?: Event[]) => {
-      if (cancelled || !mergedIndexEvents) return
-      setIndexEvents(mergedIndexEvents)
-      setAllIndexCount(mergedIndexEvents.length)
-      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
-    }
-
     const mergeEntries = (entries: LibraryPublicationEntry[], mergedIndexEvents?: Event[]) => {
       if (cancelled) return
       for (const entry of entries) mergeEntryIntoMap(resultMap, entry)
-      applyMergedIndex(mergedIndexEvents)
+      scheduleMergedIndex(mergedIndexEvents)
       scheduleFlush()
+      if (resultMap.size > 0) clearLoadingSoon()
     }
 
     // Instant: render any session-cached results synchronously before the async passes run.
@@ -276,6 +314,7 @@ export function useLibrarySearch(params: {
     if (cached) {
       for (const entry of cached) mergeEntryIntoMap(resultMap, entry)
       flush()
+      if (cached.length > 0) clearLoadingSoon()
     }
 
     void (async () => {
@@ -297,8 +336,7 @@ export function useLibrarySearch(params: {
       }
       if (cancelled) return
 
-      // 2) Mercury API + remote relay search in parallel — both stream into the same merge map as
-      // their results arrive (the orchestrator runs HTTP index relays and WS relays concurrently).
+      // 2) Mercury API + remote relay search in parallel — stream into the merge map as hits arrive.
       try {
         const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
         await searchLibraryPublicationsOnRelays(
@@ -323,6 +361,11 @@ export function useLibrarySearch(params: {
         }
       }
       if (cancelled) return
+      if (indexCommitTimer !== null) {
+        window.clearTimeout(indexCommitTimer)
+        indexCommitTimer = null
+      }
+      commitMergedIndex(pendingMergedIndex)
       flush()
       setSearchLoading(false)
     })()
@@ -332,6 +375,10 @@ export function useLibrarySearch(params: {
       if (progressThrottleRef.current !== null) {
         window.clearTimeout(progressThrottleRef.current)
         progressThrottleRef.current = null
+      }
+      if (indexCommitTimer !== null) {
+        window.clearTimeout(indexCommitTimer)
+        indexCommitTimer = null
       }
     }
   }, [
@@ -388,6 +435,51 @@ export function useLibrarySearch(params: {
       progressThrottleRef.current = null
     }
 
+    let pendingMergedIndex: Event[] | undefined
+    let indexCommitTimer: number | null = null
+    let loadingCleared = false
+
+    const commitMergedIndex = (mergedIndexEvents?: Event[]) => {
+      if (cancelled || !mergedIndexEvents) return
+      setIndexEvents(mergedIndexEvents)
+      setAllIndexCount(mergedIndexEvents.length)
+      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
+    }
+
+    const scheduleMergedIndex = (mergedIndexEvents?: Event[]) => {
+      if (cancelled || !mergedIndexEvents) return
+      pendingMergedIndex = mergedIndexEvents
+      if (indexCommitTimer !== null) return
+      indexCommitTimer = window.setTimeout(() => {
+        indexCommitTimer = null
+        commitMergedIndex(pendingMergedIndex)
+      }, SEARCH_INDEX_COMMIT_THROTTLE_MS)
+    }
+
+    const hasStrictAndMatch = () => {
+      if (fields.length === 0) return false
+      for (const hits of fieldHits.values()) {
+        if (hits.size >= fields.length) return true
+      }
+      return false
+    }
+
+    const hasAnyFieldHit = () => {
+      for (const hits of fieldHits.values()) {
+        if (hits.size > 0) return true
+      }
+      return false
+    }
+
+    const clearLoadingSoon = () => {
+      if (cancelled || loadingCleared) return
+      // Drop the spinner once there is something to render (AND or a single-field fallback).
+      // Search continues in the background; later AND hits still re-rank via flush.
+      if (fields.length > 0 && !hasStrictAndMatch() && !hasAnyFieldHit()) return
+      loadingCleared = true
+      setSearchLoading(false)
+    }
+
     const flush = () => {
       if (cancelled) return
       const ranked =
@@ -408,13 +500,6 @@ export function useLibrarySearch(params: {
       }, SEARCH_PROGRESS_THROTTLE_MS)
     }
 
-    const applyMergedIndex = (mergedIndexEvents?: Event[]) => {
-      if (cancelled || !mergedIndexEvents) return
-      setIndexEvents(mergedIndexEvents)
-      setAllIndexCount(mergedIndexEvents.length)
-      setTopLevelCount(getTopLevelIndexEvents(mergedIndexEvents).length)
-    }
-
     const mergeFieldEntries = (
       fieldName: string,
       entries: LibraryPublicationEntry[],
@@ -431,8 +516,9 @@ export function useLibrarySearch(params: {
         }
         hits.add(fieldName)
       }
-      applyMergedIndex(mergedIndexEvents)
+      scheduleMergedIndex(mergedIndexEvents)
       scheduleFlush()
+      clearLoadingSoon()
     }
 
     void (async () => {
@@ -447,6 +533,7 @@ export function useLibrarySearch(params: {
           mergeEntryIntoMap(resultMap, entry)
         }
         flush()
+        clearLoadingSoon()
 
         try {
           const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
@@ -456,7 +543,7 @@ export function useLibrarySearch(params: {
             until: createdAt.until,
             onProgress: (events) => {
               if (cancelled) return
-              applyMergedIndex(events)
+              scheduleMergedIndex(events)
               for (const entry of libraryEntriesMatchingCreatedAt(
                 events,
                 EMPTY_ENGAGEMENT,
@@ -469,7 +556,7 @@ export function useLibrarySearch(params: {
             }
           })
           if (cancelled) return
-          applyMergedIndex(merged)
+          scheduleMergedIndex(merged)
           for (const entry of libraryEntriesMatchingCreatedAt(
             merged,
             EMPTY_ENGAGEMENT,
@@ -486,6 +573,11 @@ export function useLibrarySearch(params: {
           }
         }
         if (cancelled) return
+        if (indexCommitTimer !== null) {
+          window.clearTimeout(indexCommitTimer)
+          indexCommitTimer = null
+        }
+        commitMergedIndex(pendingMergedIndex)
         flush()
         setSearchLoading(false)
         return
@@ -531,50 +623,96 @@ export function useLibrarySearch(params: {
       if (cancelled) return
       flush()
 
-      // Phase B: always remote — Mercury HTTP + WS per field (never skip for local AND hits).
+      // Phase B: Mercury + per-field WS/`#d` in parallel so hits trickle in as each source returns.
       try {
         const relays = await buildLibraryRelayUrls(pubkey || undefined, blockedRelays ?? [])
-        await Promise.all(
-          fields.map(async (f) => {
-            try {
-              if (isLibraryStructuredTagField(f.field)) {
-                await searchLibraryPublicationsOnRelaysByStructuredTagField(
-                  f.field,
-                  f.value,
+        const metadataFields = fields.filter(
+          (f) => f.field === 'title' || f.field === 'author' || f.field === 'dTag'
+        )
+        const remoteTasks: Promise<void>[] = []
+        if (metadataFields.length > 0) {
+          remoteTasks.push(
+            (async () => {
+              try {
+                const mercury = await searchLibraryPublicationsViaMercuryStructuredQuery(
+                  structuredSearch,
                   relays,
                   { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
                   {
                     blockedRelays: blockedRelays ?? [],
+                    onProgress: ({ entries, mergedIndexEvents }) => {
+                      for (const f of metadataFields) {
+                        mergeFieldEntries(
+                          f.field,
+                          entriesMatchingStructuredField(entries, f),
+                          mergedIndexEvents
+                        )
+                      }
+                    }
+                  }
+                )
+                for (const f of metadataFields) {
+                  mergeFieldEntries(
+                    f.field,
+                    entriesMatchingStructuredField(mercury.entries, f),
+                    mercury.mergedIndexEvents
+                  )
+                }
+              } catch (e) {
+                if (import.meta.env.DEV) {
+                  logger.warn('[Library] structured Mercury search failed', {
+                    message: e instanceof Error ? e.message : String(e)
+                  })
+                }
+              }
+            })()
+          )
+        }
+        for (const f of fields) {
+          remoteTasks.push(
+            (async () => {
+              try {
+                if (isLibraryStructuredTagField(f.field)) {
+                  await searchLibraryPublicationsOnRelaysByStructuredTagField(
+                    f.field,
+                    f.value,
+                    relays,
+                    { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+                    {
+                      blockedRelays: blockedRelays ?? [],
+                      createdAt,
+                      onProgress: ({ entries, mergedIndexEvents }) =>
+                        mergeFieldEntries(f.field, entries, mergedIndexEvents)
+                    }
+                  )
+                  return
+                }
+                await searchLibraryPublicationsOnRelays(
+                  f.value,
+                  relays,
+                  { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+                  {
+                    forceRefresh: true,
+                    axis: f.axis,
+                    blockedRelays: blockedRelays ?? [],
                     createdAt,
+                    skipHttpMetadataSearch: metadataFields.some((m) => f.field === m.field),
                     onProgress: ({ entries, mergedIndexEvents }) =>
                       mergeFieldEntries(f.field, entries, mergedIndexEvents)
                   }
                 )
-                return
-              }
-              await searchLibraryPublicationsOnRelays(
-                f.value,
-                relays,
-                { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
-                {
-                  forceRefresh: true,
-                  axis: f.axis,
-                  blockedRelays: blockedRelays ?? [],
-                  createdAt,
-                  onProgress: ({ entries, mergedIndexEvents }) =>
-                    mergeFieldEntries(f.field, entries, mergedIndexEvents)
+              } catch (e) {
+                if (import.meta.env.DEV) {
+                  logger.warn('[Library] structured relay search failed', {
+                    field: f.field,
+                    message: e instanceof Error ? e.message : String(e)
+                  })
                 }
-              )
-            } catch (e) {
-              if (import.meta.env.DEV) {
-                logger.warn('[Library] structured relay search failed', {
-                  field: f.field,
-                  message: e instanceof Error ? e.message : String(e)
-                })
               }
-            }
-          })
-        )
+            })()
+          )
+        }
+        await Promise.all(remoteTasks)
       } catch (e) {
         const message = e instanceof Error ? e.message : 'Relay search failed'
         if (import.meta.env.DEV) {
@@ -585,6 +723,11 @@ export function useLibrarySearch(params: {
         }
       }
       if (cancelled) return
+      if (indexCommitTimer !== null) {
+        window.clearTimeout(indexCommitTimer)
+        indexCommitTimer = null
+      }
+      commitMergedIndex(pendingMergedIndex)
       flush()
       setSearchLoading(false)
     })()
@@ -594,6 +737,10 @@ export function useLibrarySearch(params: {
       if (progressThrottleRef.current !== null) {
         window.clearTimeout(progressThrottleRef.current)
         progressThrottleRef.current = null
+      }
+      if (indexCommitTimer !== null) {
+        window.clearTimeout(indexCommitTimer)
+        indexCommitTimer = null
       }
     }
   }, [

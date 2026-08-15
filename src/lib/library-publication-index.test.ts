@@ -283,10 +283,10 @@ describe('library-publication-index', () => {
     expect(docDTagSingle.every((f) => f.search == null)).toBe(true)
 
     const docTitle = buildDocumentRelayPublicationFilters('title', 'Redacted Science')
-    expect(docTitle.some((f) => f['#d']?.includes('redacted-science'))).toBe(true)
     expect(docTitle.some((f) => (f as Filter & { '#T'?: string[] })['#T']?.includes('Redacted Science'))).toBe(
       true
     )
+    expect(docTitle.every((f) => !f['#d']?.length)).toBe(true)
     expect(docTitle.every((f) => !(f as Filter & { '#title'?: string[] })['#title'])).toBe(true)
     expect(docTitle.every((f) => f.search == null)).toBe(true)
 
@@ -294,7 +294,7 @@ describe('library-publication-index', () => {
     expect(docAuthor.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.includes('Jane Austen'))).toBe(
       true
     )
-    expect(docAuthor.some((f) => f['#d']?.includes('jane-austen'))).toBe(true)
+    expect(docAuthor.every((f) => !f['#d']?.length)).toBe(true)
     expect(docAuthor.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)
     expect(docAuthor.every((f) => f.search == null)).toBe(true)
 
@@ -302,15 +302,17 @@ describe('library-publication-index', () => {
       query: 'Jane Austen'
     })
     expect(authorFilters.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.length)).toBe(true)
-    expect(authorFilters.some((f) => f['#d']?.includes('jane-austen'))).toBe(true)
+    expect(authorFilters.every((f) => !f['#d']?.length)).toBe(true)
     expect(authorFilters.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)
 
     const titleFiltersWithD = buildLibraryPublicationRelaySearchFiltersForAxis('title', {
       query: 'Jane Eyre'
     })
-    expect(titleFiltersWithD.some((f) => f['#d']?.includes('jane-eyre'))).toBe(true)
+    expect(titleFiltersWithD.every((f) => !f['#d']?.length)).toBe(true)
+    expect(titleFiltersWithD.some((f) => (f as Filter & { '#T'?: string[] })['#T']?.length)).toBe(true)
 
     const merged = buildLibraryPublicationRelaySearchFilters({ query: 'Village Life in China' })
+    // d-tag axis still emits exact `#d` for explicit slug queries; title/author do not.
     expect(merged.some((f) => f['#d']?.includes('village-life-in-china'))).toBe(true)
     expect(merged.every((f) => f.search == null)).toBe(true)
     expect(merged.every((f) => !(f as Filter & { '#title'?: string[] })['#title'])).toBe(true)

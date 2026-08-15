@@ -14,12 +14,13 @@
  * fails from this container are skipped — check logs for "NIP-11 fetch failed" / "Skipping relay".
  *
  * Env:
- *   NIP66_MONITOR_NSEC        - required; nsec for signing 30166/10166 (also used to find kind 10002 author)
+ *   NIP66_MONITOR_NSEC        - required to monitor; if missing/invalid, process idles (no exit/restart loop)
  *   RELAYS_TO_MONITOR         - optional; if set, replaces merged list (static URLs only)
  *   RELAY_LIST_SKIP_KIND10002 - optional; "1"/"true" = do not fetch kind 10002; defaults only
  *   PUBLISH_RELAYS            - optional; comma-separated relays to publish/query / REQ 10002
  *   MAX_RELAYS_TO_MONITOR     - optional; cap after merge (default 500)
  *   INTERVAL_MS               - optional; ms pause between monitor runs (default 900000 = 15m)
+ *   NIP11_FETCH_TIMEOUT_MS    - optional; NIP-11 HTTP timeout per relay (default 10000)
  */
 
 import { finalizeEvent, getPublicKey, nip19 } from 'nostr-tools'
@@ -55,6 +56,12 @@ function parseOptionalNumberEnv (name, defaultValue) {
 }
 
 const INTERVAL_MS = parseOptionalNumberEnv('INTERVAL_MS', 900000)
+
+/** Per-relay NIP-11 HTTPS budget — must not hang forever or Promise.all stalls the round. */
+const NIP11_FETCH_TIMEOUT_MS = Math.max(
+  1000,
+  parseOptionalNumberEnv('NIP11_FETCH_TIMEOUT_MS', 10000)
+)
 
 const MAX_RELAYS_TO_MONITOR = Math.min(
   2000,
@@ -92,13 +99,24 @@ function getSecretKey () {
 
 async function fetchNip11 (relayUrl) {
   const httpUrl = relayUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://')
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), NIP11_FETCH_TIMEOUT_MS)
   try {
-    const res = await fetch(httpUrl, { headers: { Accept: 'application/nostr+json' } })
+    const res = await fetch(httpUrl, {
+      headers: { Accept: 'application/nostr+json' },
+      signal: controller.signal
+    })
     if (!res.ok) return null
     return await res.json()
   } catch (err) {
-    log('NIP-11 fetch failed', { url: relayUrl, err: err.message })
+    const aborted = err?.name === 'AbortError' || controller.signal.aborted
+    log('NIP-11 fetch failed', {
+      url: relayUrl,
+      err: aborted ? `timeout after ${NIP11_FETCH_TIMEOUT_MS}ms` : err.message
+    })
     return null
+  } finally {
+    clearTimeout(timeoutId)
   }
 }
 
@@ -432,8 +450,10 @@ async function loopMonitorRounds (sk, publishRelays) {
 async function main () {
   const sk = getSecretKey()
   if (!sk) {
-    log('No NIP66_MONITOR_NSEC set; exiting')
-    process.exit(0)
+    // Do not process.exit: compose uses restart: unless-stopped, so exit(0) crash-loops.
+    log('No valid NIP66_MONITOR_NSEC; idle until the container is recreated with a secret')
+    await new Promise(() => {})
+    return
   }
   log('NIP-66 monitor cron started (nsec configured)')
 

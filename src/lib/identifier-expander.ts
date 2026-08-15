@@ -43,6 +43,24 @@ export function isIdentifierUrl(value: string): boolean {
   )
 }
 
+/**
+ * True for a pasted URL / scheme id / Gutenberg / ISBN / Wikidata id.
+ * Free-text titles (`Mansfield Park`) also expand to `d`/`wikipedia:…` — do not treat those
+ * as identifier searches (they fan out `#d`/`#i` that miss Gutenberg `pgNNN-…` slugs).
+ */
+export function queryLooksLikePastedIdentifier(raw: string): boolean {
+  const trimmed = raw.trim()
+  if (!trimmed) return false
+  if (isIdentifierUrl(trimmed)) return true
+  if (/^(gutenberg|openlibrary|isbn|wikidata|wikipedia|overdrive):/i.test(trimmed)) return true
+  if (/^pg\d+$/i.test(trimmed)) return true
+  if (/^\d{1,7}$/.test(trimmed)) return true
+  if (/^OL\d+[A-Za-z]?$/i.test(trimmed)) return true
+  if (/^Q\d+$/i.test(trimmed)) return true
+  const isbnDigits = trimmed.replace(/[\s\-]/g, '')
+  return /^978\d{10}$/.test(isbnDigits) || /^\d{9}[\dXx]$/.test(isbnDigits)
+}
+
 function normalizeUrl(raw: string): string {
   return /^https?:\/\//i.test(raw) ? raw : `https://${raw}`
 }

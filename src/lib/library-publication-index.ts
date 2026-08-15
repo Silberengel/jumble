@@ -21,7 +21,8 @@ import {
   buildIdentifierSearchFilters,
   eventMatchesExpandedIdentifier,
   expandIdentifier,
-  identifierExpansionIsEmpty
+  identifierExpansionIsEmpty,
+  queryLooksLikePastedIdentifier
 } from '@/lib/identifier-expander'
 import {
   clearDevIndexRelayUnavailableThisSession,
@@ -94,6 +95,13 @@ const LIBRARY_SEARCH_READING_CACHE_LIMIT = 200
 const LIBRARY_CONTENT_ROOT_INDEX_SCAN_LIMIT = 4000
 export const LIBRARY_RELAY_SEARCH_LIMIT = 100
 const LIBRARY_RELAY_SEARCH_TIMEOUT_MS = 28_000
+/** Unindexed Mercury tag filters (`#T`/`#N`) — needed when `d` is `pgNNN-slug` (exact `#d` misses). */
+const LIBRARY_SLOW_HTTP_FILTER_BUDGET_MS = 32_000
+const LIBRARY_SLOW_HTTP_FILTER_TIMEOUT_MS = 35_000
+/** Indexed `#d` / authors filters on Mercury (typically <200ms). */
+const LIBRARY_FAST_HTTP_FILTER_TIMEOUT_MS = 8_000
+/** `#T`/`#N` slug lookup when exact `#d` misses (often ~10–15s idle, longer under ingest). */
+const LIBRARY_METADATA_TAG_FILTER_TIMEOUT_MS = 35_000
 
 /** Max paginated WS pages per document relay when tag filters miss (no NIP-50 on document relays). */
 const LIBRARY_DOCUMENT_RELAY_SCAN_MAX_PAGES = 15
@@ -120,7 +128,7 @@ const LIBRARY_CONTENT_RELAY_SEARCH_OPTS = {
 const LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES = 1
 /** Title/author/d-tag: at most one HTTP page when metadata API is unavailable. */
 const LIBRARY_TITLE_HTTP_SCAN_MAX_PAGES = 1
-/** Cap parallel POST /api/publications/search needles per query. */
+/** Cap needles used when building `#T`/`#N` filter values (not search body count). */
 const LIBRARY_HTTP_METADATA_SEARCH_TERM_CAP = 10
 /** NIP-51 pin list (kind 10001). */
 const PIN_LIST_KIND = 10001
@@ -2785,17 +2793,27 @@ export function publicationAxisDTagFilterValues(
   return [...out].slice(0, PUBLICATION_AXIS_DTAG_FILTER_CAP)
 }
 
-function addPublicationAxisDTagFilter(
-  add: (filter: Filter) => void,
-  kind: number,
-  limit: number,
-  axis: LibraryPublicationRelaySearchAxis,
-  query: string
-) {
-  const dTags = publicationAxisDTagFilterValues(axis, query)
-  if (dTags.length > 0) {
-    add({ kinds: [kind], '#d': dTags, limit })
+/**
+ * Mercury indexes `#d` (and pubkey `authors`) well; `#T`/`#N`/`#i`/`#s` work but are slow and
+ * often abort under load. Still send them — just don't block the search on them.
+ */
+function isMercuryFastPublicationFilter(filter: Filter): boolean {
+  const f = filter as Filter & {
+    '#d'?: string[]
+    '#T'?: string[]
+    '#N'?: string[]
+    '#i'?: string[]
+    '#s'?: string[]
   }
+  if (filter.authors?.length) return true
+  if (f['#d']?.length) return true
+  return false
+}
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms)
+  })
 }
 
 /** Normalized needles for publication metadata tag match (d / title / author). */
@@ -2995,8 +3013,7 @@ export function buildDocumentRelayPublicationFilters(
       // Catalog author slug tag is `#N` (Mercury accepts single-letter tag filters only).
       add({ kinds: [kind], '#N': authors, limit } as Filter)
     }
-    // Author names frequently appear in `d` (e.g. `pg-…-jane-austen`).
-    addPublicationAxisDTagFilter(add, kind, limit, 'author', searchRaw)
+    // Do not emit exact `#d` for author — Gutenberg ids are `pgNNN-…`; use `#N` + publications/search.
     return filters
   }
 
@@ -3006,8 +3023,11 @@ export function buildDocumentRelayPublicationFilters(
       // Catalog title slug tag is `#T`.
       add({ kinds: [kind], '#T': titles, limit } as Filter)
     }
-    addPublicationAxisDTagFilter(add, kind, limit, 'title', searchRaw)
-    addIdentifierFilters(searchRaw)
+    // Exact `#d` is useless for title slugs embedded in `pg141-mansfield-park`.
+    // Only expand real identifiers (URL / scheme id), not free-text titles.
+    if (queryLooksLikePastedIdentifier(searchRaw)) {
+      addIdentifierFilters(searchRaw)
+    }
     return filters
   }
 
@@ -3935,13 +3955,7 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
     if (authors.length > 0) {
       addPublicationKindFilter(out, seen, { kinds: [kind], '#N': authors, limit } as Filter)
     }
-    addPublicationAxisDTagFilter(
-      (filter) => addPublicationKindFilter(out, seen, filter),
-      kind,
-      limit,
-      'author',
-      searchRaw
-    )
+    // Substring `d` matching is via publications/search, not exact NIP-01 `#d`.
     return out
   }
 
@@ -3950,16 +3964,11 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
     if (titles.length > 0) {
       addPublicationKindFilter(out, seen, { kinds: [kind], '#T': titles, limit } as Filter)
     }
-    addPublicationAxisDTagFilter(
-      (filter) => addPublicationKindFilter(out, seen, filter),
-      kind,
-      limit,
-      'title',
-      searchRaw
-    )
     const expanded = expandIdentifier(searchRaw)
-    for (const filter of buildIdentifierSearchFilters(expanded, kind, limit)) {
-      addPublicationKindFilter(out, seen, filter)
+    if (queryLooksLikePastedIdentifier(searchRaw) && (expanded.s?.length || expanded.i?.length)) {
+      for (const filter of buildIdentifierSearchFilters(expanded, kind, limit)) {
+        addPublicationKindFilter(out, seen, filter)
+      }
     }
     return out
   }
@@ -4150,41 +4159,55 @@ async function searchHttpIndexRelayPublicationAxis(
     if (fresh.length > 0) options?.onPartialEvents?.(fresh)
   }
 
-  // Structured Mercury axes (title→T, author→N) plus dedicated `d` queries — titles/authors
-  // are often embedded in the replaceable id. Do not AND title+d in one body (intersect).
-  const structuredBodies: IndexRelayPublicationSearchBody[] = []
-  if (axis === 'title') {
-    for (const term of terms.slice(0, 4)) {
-      structuredBodies.push({ title: term, limit: LIBRARY_RELAY_SEARCH_LIMIT })
-    }
-  } else if (axis === 'author') {
-    for (const term of terms.slice(0, 4)) {
-      structuredBodies.push({ author: term, limit: LIBRARY_RELAY_SEARCH_LIMIT })
-    }
-  } else if (axis === 'd-tag') {
-    for (const term of terms.slice(0, 4)) {
-      structuredBodies.push({ d: term, limit: LIBRARY_RELAY_SEARCH_LIMIT })
-    }
-  }
-  for (const d of publicationAxisDTagFilterValues(axis, q).slice(0, 4)) {
-    structuredBodies.push({ d, limit: LIBRARY_RELAY_SEARCH_LIMIT })
-  }
-  // Free-text fallback covers remaining tag channels in one request.
-  if (q) structuredBodies.push({ q, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+  // `#T`/`#N` first; `{title}`/`{author}` only if the tag filter misses (they contend on Mercury).
+  const catalogSlugs = [
+    ...new Set(
+      [...publicationQueryDTagVariants(q), q.toLowerCase().replace(/\s+/g, '-')].filter(Boolean)
+    )
+  ].slice(0, 4)
 
-  const seenBody = new Set<string>()
-  await Promise.all(
-    structuredBodies.map((body) => {
-      const key = JSON.stringify(body)
-      if (seenBody.has(key)) return Promise.resolve()
-      seenBody.add(key)
-      return queryIndexRelayPublicationMetadataSearch(httpRelay, body)
-        .then((page) => {
-          addFiltered(page.events as Event[])
+  if (axis === 'title' || axis === 'author') {
+    const tagName = axis === 'title' ? '#T' : '#N'
+    if (catalogSlugs.length > 0) {
+      try {
+        const page = await queryIndexRelayForLibrary(
+          httpRelay,
+          {
+            kinds: [ExtendedKind.PUBLICATION],
+            [tagName]: catalogSlugs,
+            limit: LIBRARY_RELAY_SEARCH_LIMIT
+          } as Filter,
+          { timeoutMs: LIBRARY_METADATA_TAG_FILTER_TIMEOUT_MS }
+        )
+        addFiltered(page.events as Event[])
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+
+  if (matched.length === 0) {
+    const primaryTerm = terms[0]
+    const body: IndexRelayPublicationSearchBody | null =
+      axis === 'title' && primaryTerm
+        ? { title: primaryTerm, limit: LIBRARY_RELAY_SEARCH_LIMIT }
+        : axis === 'author' && primaryTerm
+          ? { author: primaryTerm, limit: LIBRARY_RELAY_SEARCH_LIMIT }
+          : axis === 'd-tag' && (publicationQueryDTagVariants(q)[0] || primaryTerm)
+            ? { d: publicationQueryDTagVariants(q)[0] || primaryTerm, limit: LIBRARY_RELAY_SEARCH_LIMIT }
+            : null
+    if (body) {
+      try {
+        const page = await queryIndexRelayPublicationMetadataSearch(httpRelay, body, {
+          timeoutMs: LIBRARY_METADATA_TAG_FILTER_TIMEOUT_MS
         })
-        .catch(() => undefined)
-    })
-  )
+        addFiltered(page.events as Event[])
+      } catch {
+        /* fall through */
+      }
+    }
+  }
+
   if (matched.length >= LIBRARY_RELAY_SEARCH_LIMIT) {
     return matched.slice(0, LIBRARY_RELAY_SEARCH_LIMIT)
   }
@@ -4271,6 +4294,164 @@ export async function searchLibraryPublicationsViaDocumentRelays(
   return { events: valid, entries, mergedIndexEvents: mergedIndex }
 }
 
+/** Query Mercury with `{d}`, `#T`/`#N`, and publications/search in parallel. */
+export async function searchLibraryPublicationsViaMercuryStructuredQuery(
+  query: LibraryStructuredSearchQuery,
+  relayUrls: string[],
+  context: LibrarySearchContext,
+  options?: {
+    blockedRelays?: readonly string[]
+    onProgress?: (progress: LibrarySearchProgress) => void
+  }
+): Promise<{
+  events: Event[]
+  entries: LibraryPublicationEntry[]
+  mergedIndexEvents: Event[]
+}> {
+  const body = structuredQueryToMercurySearchBody(query, LIBRARY_RELAY_SEARCH_LIMIT)
+  const hasStructured =
+    !!(body.title || body.author || body.language || body.subject || body.d || body.identifier || body.q)
+  if (!hasStructured) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
+  }
+
+  clearDevIndexRelayUnavailableThisSession()
+
+  const blockedRelays = options?.blockedRelays ?? []
+  const { httpRelays } = splitWsAndHttpRelays(libraryIndexRelayUrls(relayUrls, blockedRelays))
+  if (httpRelays.length === 0) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
+  }
+
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+  let structuralMap = buildStructuralPublicationIndexMap(context.indexEvents ?? [])
+  const accumulated = new Map<string, Event>()
+
+  const matchesStructuredFields = (ev: Event): boolean => {
+    if (ev.kind !== ExtendedKind.PUBLICATION) return false
+    const title = query.title?.trim()
+    const author = query.author?.trim()
+    const dTag = query.dTag?.trim()
+    // Title/author/d are OR so a #T hit still renders when author has not confirmed yet.
+    // Language/subject/identifier stay AND — those are filters, not recall axes.
+    if (title || author || dTag) {
+      const hitTitle = !!(title && publicationIndexMatchesSearchQueryWithAxis(ev, title, 'title'))
+      const hitAuthor = !!(author && publicationIndexMatchesSearchQueryWithAxis(ev, author, 'author'))
+      const hitD = !!(dTag && publicationIndexMatchesSearchQueryWithAxis(ev, dTag, 'd-tag'))
+      if (!hitTitle && !hitAuthor && !hitD) return false
+    }
+    const language = query.language?.trim()
+    if (language && !publicationIndexMatchesLanguageQuery(ev, language)) return false
+    const subject = query.subject?.trim()
+    if (subject && !publicationIndexMatchesSubjectQuery(ev, subject)) return false
+    const identifier = query.identifier?.trim()
+    if (identifier && !eventMatchesExpandedIdentifier(ev, expandIdentifier(identifier))) return false
+    return true
+  }
+
+  const emitProgress = (): LibrarySearchProgress => {
+    const mergedIndex = publicationIndexMapValues(structuralMap)
+    const indexByAddress = buildIndexByAddressMemo(mergedIndex)
+    const entries = sortLibrarySearchPublications(
+      libraryEntriesFromRoots([...accumulated.values()], indexByAddress, engagement)
+    )
+    const progress = { entries, mergedIndexEvents: mergedIndex, networkEventCount: accumulated.size }
+    options?.onProgress?.(progress)
+    return progress
+  }
+
+  const ingest = (events: Event[]) => {
+    const valid = filterValidIndexEvents(events).filter(matchesStructuredFields)
+    if (valid.length === 0) return
+    for (const ev of valid) accumulated.set(ev.id, ev)
+    structuralMap = mergePublicationIndexMaps(structuralMap, valid)
+    emitProgress()
+  }
+
+  // `#T`/`#N` first (one filter). `{title}`/`{author}` is a heavy trgm scan — only if the tag
+  // filter misses. Running both at once queues them behind each other on Mercury under ingest.
+  const title = query.title?.trim()
+  const author = query.author?.trim()
+  const dTag = query.dTag?.trim()
+
+  const runTagFilter = async (tagName: '#T' | '#N', raw: string, warnLabel: string) => {
+    const unique = [
+      ...new Set(
+        [...publicationQueryDTagVariants(raw), raw.toLowerCase().replace(/\s+/g, '-')].filter(Boolean)
+      )
+    ].slice(0, 4)
+    if (unique.length === 0) return
+    const filter = {
+      kinds: [ExtendedKind.PUBLICATION],
+      [tagName]: unique,
+      limit: LIBRARY_RELAY_SEARCH_LIMIT
+    } as Filter
+    await Promise.all(
+      httpRelays.map((httpRelay) =>
+        queryIndexRelayForLibrary(httpRelay, filter, {
+          timeoutMs: LIBRARY_METADATA_TAG_FILTER_TIMEOUT_MS
+        })
+          .then((page) => {
+            ingest(page.events as Event[])
+          })
+          .catch((e) => {
+            if (import.meta.env.DEV) {
+              logger.warn(`[Library] structured Mercury ${warnLabel} filter failed`, {
+                relay: httpRelay,
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+          })
+      )
+    )
+  }
+
+  const runMetadata = async (searchBody: IndexRelayPublicationSearchBody) => {
+    await Promise.all(
+      httpRelays.map((httpRelay) =>
+        queryIndexRelayPublicationMetadataSearch(httpRelay, searchBody, {
+          timeoutMs: LIBRARY_METADATA_TAG_FILTER_TIMEOUT_MS
+        })
+          .then((page) => {
+            ingest(page.events as Event[])
+          })
+          .catch((e) => {
+            if (import.meta.env.DEV) {
+              logger.warn('[Library] structured Mercury search failed', {
+                relay: httpRelay,
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+          })
+      )
+    )
+  }
+
+  if (title) {
+    await runTagFilter('#T', title, '#T')
+    if (accumulated.size === 0) await runMetadata({ title, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+  } else if (author) {
+    await runTagFilter('#N', author, '#N')
+    if (accumulated.size === 0) await runMetadata({ author, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+  } else if (dTag) {
+    const d = publicationQueryDTagVariants(dTag)[0] || dTag
+    await runMetadata({ d, limit: LIBRARY_RELAY_SEARCH_LIMIT })
+  } else {
+    await runMetadata(body)
+  }
+
+  const valid = [...accumulated.values()]
+  if (valid.length > 0) {
+    await persistRelayDiscoveredLibraryIndexes(valid)
+  }
+  const finalProgress = emitProgress()
+  return {
+    events: valid,
+    entries: finalProgress.entries,
+    mergedIndexEvents: finalProgress.mergedIndexEvents ?? publicationIndexMapValues(structuralMap)
+  }
+}
+
 /** Query document relays for kind-30040 indexes matching {@link buildLibraryPublicationRelaySearchFilters}. */
 export async function searchLibraryPublicationsOnRelays(
   query: string,
@@ -4282,6 +4463,8 @@ export async function searchLibraryPublicationsOnRelays(
     blockedRelays?: readonly string[]
     /** Optional created_at bounds forwarded to NIP-01 events/filter / WS REQ. */
     createdAt?: { since?: number; until?: number }
+    /** When true, skip POST /api/publications/search (caller already ran a combined Mercury query). */
+    skipHttpMetadataSearch?: boolean
     onProgress?: (progress: LibrarySearchProgress) => void
   }
 ): Promise<{
@@ -4457,6 +4640,7 @@ export async function searchLibraryPublicationsOnRelays(
   }
 
   const batches: Promise<Event[]>[] = []
+  const slowBatches: Promise<Event[]>[] = []
   let filterCount = 0
   const axes = options?.axis
     ? [options.axis]
@@ -4464,9 +4648,14 @@ export async function searchLibraryPublicationsOnRelays(
       ? []
       : LIBRARY_PUBLICATION_RELAY_SEARCH_AXES
 
-  // Pasted identifiers / URLs / d-tags: query `#i`/`#s`/`#d` and Mercury `identifier`.
+  // Pasted identifiers / URLs only — free-text titles expand to `d`/`wikipedia:i` and would
+  // fire exact `#d` + `#i` that miss Gutenberg ids and crowd out `#T`.
   const expandedId = expandIdentifier(q)
-  if (!identifierExpansionIsEmpty(expandedId) && !preferContentRelaySearch) {
+  if (
+    queryLooksLikePastedIdentifier(q) &&
+    !identifierExpansionIsEmpty(expandedId) &&
+    !preferContentRelaySearch
+  ) {
     const idLimit = Math.min(LIBRARY_RELAY_SEARCH_LIMIT, 100)
     const idFilters = buildIdentifierSearchFilters(expandedId, ExtendedKind.PUBLICATION, idLimit).map(
       (filter) => applyCreatedAtBoundsToFilter(filter, options?.createdAt)
@@ -4498,8 +4687,13 @@ export async function searchLibraryPublicationsOnRelays(
 
     for (const httpRelay of httpRelays) {
       for (const filter of idFilters) {
-        batches.push(
-          queryIndexRelayForLibrary(httpRelay, filter)
+        const fast = isMercuryFastPublicationFilter(filter)
+        const run = () =>
+          queryIndexRelayForLibrary(httpRelay, filter, {
+            timeoutMs: fast
+              ? LIBRARY_FAST_HTTP_FILTER_TIMEOUT_MS
+              : LIBRARY_SLOW_HTTP_FILTER_TIMEOUT_MS
+          })
             .then((page) => {
               reportBatch(page.events as Event[])
               return page.events as Event[]
@@ -4513,7 +4707,8 @@ export async function searchLibraryPublicationsOnRelays(
               }
               return [] as Event[]
             })
-        )
+        if (fast) batches.push(run())
+        else slowBatches.push(run())
       }
       batches.push(
         queryIndexRelayPublicationMetadataSearch(httpRelay, { identifier: q, limit: idLimit })
@@ -4554,7 +4749,10 @@ export async function searchLibraryPublicationsOnRelays(
     const npubQuery = tryNpubFromQuery(q)
     if (npubQuery && axis !== 'author') continue
 
-    if (axis === 'd-tag' || axis === 'title' || axis === 'author') {
+    if (
+      !options?.skipHttpMetadataSearch &&
+      (axis === 'd-tag' || axis === 'title' || axis === 'author')
+    ) {
       batches.push(
         fetchPublicationIndexesFromDocumentRelays(axis, q, blockedRelays, {
           onPartialEvents: reportBatch
@@ -4567,17 +4765,21 @@ export async function searchLibraryPublicationsOnRelays(
     )
     const hasNip01Filters = axisFilters.length > 0
     const hasMetadataSearch =
-      axis === 'title' || axis === 'd-tag' || (axis === 'author' && !npubQuery)
+      !options?.skipHttpMetadataSearch &&
+      (axis === 'title' || axis === 'd-tag' || (axis === 'author' && !npubQuery))
     if (!hasNip01Filters && !hasMetadataSearch) continue
 
     filterCount += axisFilters.length
 
     if (wsRelays.length > 0 && hasNip01Filters) {
+      const wsTimeoutMs = options?.skipHttpMetadataSearch
+        ? 12_000
+        : LIBRARY_RELAY_SEARCH_TIMEOUT_MS
       batches.push(
         queryService
           .fetchEvents(wsRelays, axisFilters, {
-            globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
-            eoseTimeout: axis === 'd-tag' ? 5_000 : 8_000,
+            globalTimeout: wsTimeoutMs,
+            eoseTimeout: axis === 'd-tag' ? 5_000 : options?.skipHttpMetadataSearch ? 4_000 : 8_000,
             firstRelayResultGraceMs: axis === 'd-tag' ? 2_000 : false
           })
           .then((events) => filterEventsForPublicationRelaySearchAxis(events, axis, q))
@@ -4598,38 +4800,46 @@ export async function searchLibraryPublicationsOnRelays(
     }
 
     for (const httpRelay of httpRelays) {
-      // Mercury HTTP: send every NIP-01 filter (`#d`, `#T`, `#N`, authors, …) plus publications/search.
-      for (const filter of axisFilters) {
-        batches.push(
-          queryIndexRelayForLibrary(httpRelay, filter)
-            .then((page) =>
-              filterEventsForPublicationRelaySearchAxis(page.events as Event[], axis, q)
-            )
-            .then((events) => {
-              reportBatch(events)
-              return events
+      if (options?.skipHttpMetadataSearch) continue
+      // Combined structured Mercury query already sent `#T`/`{title}`. For a simple search,
+      // `searchHttpIndexRelayPublicationAxis` posts `#T`/`{title}` itself — don't queue a
+      // second copy of the same slow filter.
+      if (!hasMetadataSearch) {
+        for (const filter of axisFilters) {
+          const fast = isMercuryFastPublicationFilter(filter)
+          const run = () =>
+            queryIndexRelayForLibrary(httpRelay, filter, {
+              timeoutMs: fast
+                ? LIBRARY_FAST_HTTP_FILTER_TIMEOUT_MS
+                : LIBRARY_SLOW_HTTP_FILTER_TIMEOUT_MS
             })
-            .catch((e) => {
-              if (import.meta.env.DEV) {
-                logger.warn('[Library] HTTP publication filter search failed', {
-                  relay: httpRelay,
-                  axis,
-                  message: e instanceof Error ? e.message : String(e)
-                })
-              }
-              return [] as Event[]
-            })
-        )
+              .then((page) =>
+                filterEventsForPublicationRelaySearchAxis(page.events as Event[], axis, q)
+              )
+              .then((events) => {
+                reportBatch(events)
+                return events
+              })
+              .catch((e) => {
+                if (import.meta.env.DEV) {
+                  logger.warn('[Library] HTTP publication filter search failed', {
+                    relay: httpRelay,
+                    axis,
+                    message: e instanceof Error ? e.message : String(e)
+                  })
+                }
+                return [] as Event[]
+              })
+          if (fast) batches.push(run())
+          else slowBatches.push(run())
+        }
+        continue
       }
-
-      if (!hasMetadataSearch) continue
 
       filterCount += 1
       batches.push(
         searchHttpIndexRelayPublicationAxis(httpRelay, axis, q, {
-          // Always run Mercury metadata search in parallel with WS/document tag filters.
-          // Do not bulk-scan the catalog when metadata misses — one page max.
-          allowFullScan: true,
+          allowFullScan: false,
           fullScanMaxPages:
             axis === 'title' ? LIBRARY_TITLE_HTTP_SCAN_MAX_PAGES : LIBRARY_RELAY_SEARCH_SCAN_MAX_PAGES,
           onPartialEvents: reportBatch
@@ -4647,7 +4857,7 @@ export async function searchLibraryPublicationsOnRelays(
     }
   }
 
-  if (batches.length === 0) {
+  if (batches.length === 0 && slowBatches.length === 0) {
     options?.onProgress?.(buildProgress())
     return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [], fromCache: false }
   }
@@ -4655,6 +4865,9 @@ export async function searchLibraryPublicationsOnRelays(
   options?.onProgress?.(buildProgress())
 
   await Promise.all(batches)
+  if (slowBatches.length > 0) {
+    await Promise.race([Promise.all(slowBatches), sleepMs(LIBRARY_SLOW_HTTP_FILTER_BUDGET_MS)])
+  }
 
   if (contentRootResolveTimer !== null) {
     window.clearTimeout(contentRootResolveTimer)
