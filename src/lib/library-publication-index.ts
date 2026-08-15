@@ -17,7 +17,12 @@ import { scoreContentEventsForSearch } from '@/lib/library-search-worker-client'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
 import logger from '@/lib/logger'
 import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label'
-import { expandIdentifier } from '@/lib/identifier-expander'
+import {
+  buildIdentifierSearchFilters,
+  eventMatchesExpandedIdentifier,
+  expandIdentifier,
+  identifierExpansionIsEmpty
+} from '@/lib/identifier-expander'
 import { queryIndexRelay, queryIndexRelayForLibrary, queryIndexRelayPublicationContentSearch, queryIndexRelayPublicationMetadataSearch } from '@/lib/index-relay-http'
 import {
   buildIndexByAddress,
@@ -1963,6 +1968,11 @@ export function publicationIndexMatchesSearchQuery(event: Event, query: string):
   const eventId = tryParseCitationEventIdFromQuery(raw)
   if (eventId && event.id.toLowerCase() === eventId) return true
 
+  // Pasted identifiers (Gutenberg /files/… URLs, isbn:…, etc.) must match `i`/`s`/`source`, not only
+  // substring haystack — chapter anchors and HTML paths diverge from the catalog ebook URL.
+  const expandedId = expandIdentifier(raw)
+  if (eventMatchesExpandedIdentifier(event, expandedId)) return true
+
   const haystack = publicationIndexSearchHaystack(event)
   if (isQuotedSearchQuery(raw)) {
     return haystackMatchesPhraseQuery(haystack, raw)
@@ -2899,7 +2909,7 @@ function addPublicationKindFilter(
   out.push(filter)
 }
 
-/** NIP-01 `#d` / `#T` / `#N` / `#i` / `#s` filters for document relays (no NIP-50). Never `#title`. */
+/** NIP-01 `#d` / `#T` / `#N` / `#i` / `#s` filters for document relays (no NIP-50). Single-letter tags only. */
 export function buildDocumentRelayPublicationFilters(
   axis: LibraryPublicationRelaySearchAxis,
   query: string
@@ -2919,9 +2929,13 @@ export function buildDocumentRelayPublicationFilters(
   }
 
   const addIdentifierFilters = (raw: string) => {
-    const expanded = expandIdentifier(raw)
-    if (expanded.i?.length) add({ kinds: [kind], '#i': expanded.i, limit } as Filter)
-    if (expanded.s?.length) add({ kinds: [kind], '#s': expanded.s, limit } as Filter)
+    for (const filter of buildIdentifierSearchFilters(
+      expandIdentifier(raw),
+      kind,
+      limit
+    )) {
+      add(filter)
+    }
   }
 
   if (axis === 'author') {
@@ -2929,9 +2943,8 @@ export function buildDocumentRelayPublicationFilters(
     if (npub) return [{ kinds: [kind], authors: [npub], limit }]
     const authors = publicationMetadataSearchTermsForHttpRelay('author', searchRaw)
     if (authors.length > 0) {
-      // Prefer catalog author slug tag `#N` (never rely on `#author` alone).
+      // Catalog author slug tag is `#N` (Mercury accepts single-letter tag filters only).
       add({ kinds: [kind], '#N': authors, limit } as Filter)
-      add({ kinds: [kind], '#author': authors, limit })
     }
     return filters
   }
@@ -2939,7 +2952,7 @@ export function buildDocumentRelayPublicationFilters(
   if (axis === 'title') {
     const titles = publicationMetadataSearchTermsForHttpRelay('title', searchRaw)
     if (titles.length > 0) {
-      // Catalog title slug tag is `#T`. Never send `#title` to relays / Mercury filter API.
+      // Catalog title slug tag is `#T`.
       add({ kinds: [kind], '#T': titles, limit } as Filter)
     }
     const dTags = new Set<string>()
@@ -2966,7 +2979,7 @@ export function buildDocumentRelayPublicationFilters(
 
 /**
  * Tag filters for language (`#l`), subject (`#t`), and identifier (`#i`/`#s`) structured fields.
- * Never emits `#title`.
+ * Single-letter tag keys only (Mercury / NIP-01).
  */
 export function buildDocumentRelayStructuredTagFilters(opts: {
   language?: string
@@ -2985,19 +2998,291 @@ export function buildDocumentRelayStructuredTagFilters(opts: {
     filters.push(filter)
   }
   const language = opts.language?.trim()
-  if (language) add({ kinds: [kind], '#l': [language], limit } as Filter)
+  if (language) {
+    // One filter with all code variants (NIP-01 OR). Separate POSTs per alias multiplied Mercury load.
+    const codes = publicationLanguageFilterValues(language)
+    if (codes.length > 0) {
+      add({ kinds: [kind], '#l': codes, limit } as Filter)
+    }
+  }
   const subject = opts.subject?.trim()
   if (subject) {
     const slug = subject.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
     add({ kinds: [kind], '#t': [slug || subject], limit } as Filter)
+    if (slug && slug !== subject) add({ kinds: [kind], '#t': [subject], limit } as Filter)
   }
   const identifier = opts.identifier?.trim()
   if (identifier) {
-    const expanded = expandIdentifier(identifier)
-    if (expanded.i?.length) add({ kinds: [kind], '#i': expanded.i, limit } as Filter)
-    if (expanded.s?.length) add({ kinds: [kind], '#s': expanded.s, limit } as Filter)
+    for (const filter of buildIdentifierSearchFilters(expandIdentifier(identifier), kind, limit)) {
+      add(filter)
+    }
   }
   return filters
+}
+
+/** `#l` filter values for a language search (lowercase ISO code + common aliases). */
+export function publicationLanguageFilterValues(raw: string): string[] {
+  const needle = raw.trim()
+  if (!needle) return []
+  const lower = needle.toLowerCase()
+  const out = new Set<string>([needle, lower])
+  // Accept bare codes and BCP-47 prefixes (de ↔ de-de).
+  const base = lower.split(/[-_]/)[0]
+  if (base) out.add(base)
+  return [...out]
+}
+
+function isPublicationLanguageNamespace(ns: string): boolean {
+  return /iso-639|bcp-?47|^language$/i.test(ns.trim())
+}
+
+function looksLikePublicationLanguageCode(value: string): boolean {
+  return /^[a-z]{2,3}(-[a-z0-9]+)*$/i.test(value.split(',')[0].trim())
+}
+
+/**
+ * Match a structured language query against kind-30040 `l` tags (ISO language codes),
+ * not free-text haystacks and not NIP-32 label `l` values like `booklist`.
+ */
+export function publicationIndexMatchesLanguageQuery(event: Event, query: string): boolean {
+  if (event.kind !== ExtendedKind.PUBLICATION) return false
+  const needles = new Set(publicationLanguageFilterValues(query).map((v) => v.toLowerCase()))
+  if (needles.size === 0) return false
+
+  for (const tag of event.tags ?? []) {
+    if ((tag[0] || '').toLowerCase() !== 'l') continue
+    const raw = tag[1]?.trim()
+    if (!raw) continue
+    const ns = (tag[2] || '').trim()
+    if (ns && !isPublicationLanguageNamespace(ns) && !looksLikePublicationLanguageCode(raw)) continue
+    if (!ns && !looksLikePublicationLanguageCode(raw)) continue
+    const code = raw.split(',')[0].trim().toLowerCase()
+    if (!code) continue
+    if (needles.has(code)) return true
+    const base = code.split(/[-_]/)[0]
+    if (base && needles.has(base)) return true
+    for (const needle of needles) {
+      if (code === needle || code.startsWith(`${needle}-`) || needle.startsWith(`${code}-`)) return true
+    }
+  }
+  return false
+}
+
+/** Match structured subject query against `#t` (and legacy `subject`) tags. */
+export function publicationIndexMatchesSubjectQuery(event: Event, query: string): boolean {
+  if (event.kind !== ExtendedKind.PUBLICATION) return false
+  const raw = query.trim()
+  if (!raw) return false
+  const slug = raw.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const needles = new Set(
+    [raw.toLowerCase(), slug].filter(Boolean)
+  )
+  for (const tag of event.tags ?? []) {
+    const name = (tag[0] || '').toLowerCase()
+    if (name !== 't' && name !== 'subject') continue
+    const value = tag[1]?.trim().toLowerCase()
+    if (!value) continue
+    if (needles.has(value)) return true
+    const valueSlug = value.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+    if (slug && (valueSlug === slug || value.includes(slug) || slug.includes(valueSlug))) return true
+  }
+  return false
+}
+
+export type LibraryStructuredTagField = 'language' | 'subject' | 'identifier'
+
+export function isLibraryStructuredTagField(
+  field: string
+): field is LibraryStructuredTagField {
+  return field === 'language' || field === 'subject' || field === 'identifier'
+}
+
+/** Local structured language / subject / identifier search (exact tag match, not free-text). */
+export function searchLibraryPublicationsByStructuredTagField(
+  field: LibraryStructuredTagField,
+  value: string,
+  context: LibrarySearchContext,
+  options?: { onProgress?: (progress: LibrarySearchProgress) => void }
+): LibraryPublicationEntry[] {
+  const q = value.trim()
+  if (!q) return []
+  const indexEvents = context.indexEvents ?? []
+  if (indexEvents.length === 0) {
+    options?.onProgress?.({ entries: [], mergedIndexEvents: indexEvents })
+    return []
+  }
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+  const indexByAddress = buildIndexByAddressMemo(indexEvents)
+  const expandedId = field === 'identifier' ? expandIdentifier(q) : undefined
+  const roots = getTopLevelIndexEventsMemo(indexEvents).filter((ev) => {
+    if (field === 'language') return publicationIndexMatchesLanguageQuery(ev, q)
+    if (field === 'subject') return publicationIndexMatchesSubjectQuery(ev, q)
+    return eventMatchesExpandedIdentifier(ev, expandedId!)
+  })
+  const entries = sortLibrarySearchPublications(
+    libraryEntriesFromRoots(roots, indexByAddress, engagement)
+  )
+  options?.onProgress?.({ entries, mergedIndexEvents: indexEvents })
+  return entries
+}
+
+/**
+ * Remote structured language / subject / identifier search via `#l`/`#t`/`#i`/`#s` and Mercury
+ * `/api/publications/search` (never free-text / title axes).
+ */
+export async function searchLibraryPublicationsOnRelaysByStructuredTagField(
+  field: LibraryStructuredTagField,
+  value: string,
+  relayUrls: string[],
+  context: LibrarySearchContext,
+  options?: {
+    blockedRelays?: readonly string[]
+    createdAt?: { since?: number; until?: number }
+    onProgress?: (progress: LibrarySearchProgress) => void
+  }
+): Promise<{
+  events: Event[]
+  entries: LibraryPublicationEntry[]
+  mergedIndexEvents: Event[]
+}> {
+  const q = value.trim()
+  if (!q) {
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
+  }
+
+  const blockedRelays = options?.blockedRelays ?? []
+  const indexRelays = libraryIndexRelayUrls(relayUrls)
+  const { wsRelays, httpRelays } = splitWsAndHttpRelays(indexRelays)
+  const engagement = context.engagement ?? EMPTY_ENGAGEMENT
+  let structuralMap = buildStructuralPublicationIndexMap(context.indexEvents ?? [])
+  const accumulatedValid = new Map<string, Event>()
+
+  const buildProgress = (): LibrarySearchProgress => {
+    const mergedIndex = publicationIndexMapValues(structuralMap)
+    const indexByAddress = buildIndexByAddressMemo(mergedIndex)
+    const roots = [...accumulatedValid.values()].filter((ev) => {
+      if (field === 'language') return publicationIndexMatchesLanguageQuery(ev, q)
+      if (field === 'subject') return publicationIndexMatchesSubjectQuery(ev, q)
+      return eventMatchesExpandedIdentifier(ev, expandIdentifier(q))
+    })
+    // Prefer top-level roots when present in the merged index.
+    const topLevel = getTopLevelIndexEventsMemo(mergedIndex)
+    const topLevelIds = new Set(topLevel.map((e) => e.id))
+    const addressToRoot = buildAddressToRootMapMemo(topLevel, indexByAddress)
+    const resolved = new Map<string, Event>()
+    for (const ev of roots) {
+      if (topLevelIds.has(ev.id)) {
+        resolved.set(ev.id, ev)
+        continue
+      }
+      const addr = eventTagAddress(ev)
+      const root = addr ? addressToRoot.get(addr) : undefined
+      resolved.set((root ?? ev).id, root ?? ev)
+    }
+    return {
+      entries: sortLibrarySearchPublications(
+        libraryEntriesFromRoots([...resolved.values()], indexByAddress, engagement)
+      ),
+      mergedIndexEvents: mergedIndex,
+      networkEventCount: accumulatedValid.size
+    }
+  }
+
+  const reportBatch = (batchEvents: Event[]) => {
+    const valid = filterValidIndexEvents(batchEvents)
+    if (valid.length === 0) return
+    for (const ev of valid) accumulatedValid.set(ev.id, ev)
+    structuralMap = mergePublicationIndexMaps(structuralMap, valid)
+    options?.onProgress?.(buildProgress())
+  }
+
+  const filters = buildDocumentRelayStructuredTagFilters({ [field]: q }).map((filter) =>
+    applyCreatedAtBoundsToFilter(filter, options?.createdAt)
+  )
+  const mercuryBody = structuredQueryToMercurySearchBody({ [field]: q })
+  // Mercury matches language exactly; prefer lowercase ISO base (nl not NL / nl-NL).
+  if (field === 'language' && mercuryBody.language) {
+    const base = q.trim().toLowerCase().split(/[-_]/)[0]
+    if (base) mercuryBody.language = base
+  }
+  const batches: Promise<Event[]>[] = []
+
+  if (wsRelays.length > 0 && filters.length > 0) {
+    batches.push(
+      queryService
+        .fetchEvents(wsRelays, filters, {
+          globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
+          eoseTimeout: 8_000,
+          firstRelayResultGraceMs: 2_000
+        })
+        .then((events) => {
+          reportBatch(events)
+          return events
+        })
+        .catch(() => [] as Event[])
+    )
+  }
+
+  for (const httpRelay of httpRelays) {
+    for (const filter of filters) {
+      batches.push(
+        queryIndexRelayForLibrary(httpRelay, filter)
+          .then((page) => {
+            reportBatch(page.events as Event[])
+            return page.events as Event[]
+          })
+          .catch(() => [] as Event[])
+      )
+    }
+    batches.push(
+      queryIndexRelayPublicationMetadataSearch(httpRelay, mercuryBody)
+        .then((page) => {
+          reportBatch(page.events as Event[])
+          return page.events as Event[]
+        })
+        .catch(() => [] as Event[])
+    )
+  }
+
+  // Also hit document relays with the same tag filters when language/subject/identifier apply.
+  const docRelays = documentRelayUrlsForSearch(blockedRelays)
+  if (filters.length > 0 && docRelays.length > 0) {
+    for (const relay of docRelays) {
+      batches.push(
+        queryService
+          .fetchEvents([relay], filters, {
+            globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
+            eoseTimeout: 8_000,
+            firstRelayResultGraceMs: false
+          })
+          .then((events) => {
+            reportBatch(events)
+            return events
+          })
+          .catch(() => [] as Event[])
+      )
+    }
+  }
+
+  if (batches.length === 0) {
+    options?.onProgress?.(buildProgress())
+    return { events: [], entries: [], mergedIndexEvents: context.indexEvents ?? [] }
+  }
+
+  options?.onProgress?.(buildProgress())
+  await Promise.all(batches)
+
+  const finalProgress = buildProgress()
+  const valid = [...accumulatedValid.values()]
+  if (valid.length > 0) {
+    await persistRelayDiscoveredLibraryIndexes(valid)
+  }
+
+  return {
+    events: valid,
+    entries: finalProgress.entries,
+    mergedIndexEvents: finalProgress.mergedIndexEvents ?? publicationIndexMapValues(structuralMap)
+  }
 }
 
 function documentRelayUrlsForSearch(blockedRelays: readonly string[] = []): string[] {
@@ -3602,7 +3887,6 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
     const authors = publicationMetadataSearchTermsForHttpRelay('author', searchRaw)
     if (authors.length > 0) {
       addPublicationKindFilter(out, seen, { kinds: [kind], '#N': authors, limit } as Filter)
-      addPublicationKindFilter(out, seen, { kinds: [kind], '#author': authors, limit })
     }
     return out
   }
@@ -3620,11 +3904,8 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
       addPublicationKindFilter(out, seen, { kinds: [kind], '#d': [...dTags], limit })
     }
     const expanded = expandIdentifier(searchRaw)
-    if (expanded.i?.length) {
-      addPublicationKindFilter(out, seen, { kinds: [kind], '#i': expanded.i, limit } as Filter)
-    }
-    if (expanded.s?.length) {
-      addPublicationKindFilter(out, seen, { kinds: [kind], '#s': expanded.s, limit } as Filter)
+    for (const filter of buildIdentifierSearchFilters(expanded, kind, limit)) {
+      addPublicationKindFilter(out, seen, filter)
     }
     return out
   }
@@ -3638,11 +3919,8 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
       addPublicationKindFilter(out, seen, { kinds: [kind], '#d': [...dTags], limit })
     }
     const expanded = expandIdentifier(searchRaw)
-    if (expanded.i?.length) {
-      addPublicationKindFilter(out, seen, { kinds: [kind], '#i': expanded.i, limit } as Filter)
-    }
-    if (expanded.s?.length) {
-      addPublicationKindFilter(out, seen, { kinds: [kind], '#s': expanded.s, limit } as Filter)
+    for (const filter of buildIdentifierSearchFilters(expanded, kind, limit)) {
+      addPublicationKindFilter(out, seen, filter)
     }
     return out
   }
@@ -3652,7 +3930,7 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
 
 /**
  * REQ filters for kind **30040** publication indexes, split by axis (d-tag, title, author).
- * Title uses `#T` (never `#title`); author prefers `#N`. Identifier paste expands to `#i`/`#s`.
+ * Title → `#T`, author → `#N` (single-letter only). Identifier paste expands to `#i`/`#s`.
  */
 export function buildLibraryPublicationRelaySearchFilters(opts: {
   query: string
@@ -3677,16 +3955,26 @@ export function filterEventsForPublicationRelaySearchAxis(
   query: string
 ): Event[] {
   const terms = publicationRelaySearchTermsForAxis(axis, query)
-  if (terms.length === 0) return []
+  const expandedId = expandIdentifier(query)
+  const hasIdentifierExpansion = !!(expandedId.i?.length || expandedId.s?.length)
+  if (terms.length === 0 && !hasIdentifierExpansion) return []
 
   return events.filter((event) => {
     if (event.kind !== ExtendedKind.PUBLICATION) return false
+    // `#i`/`#s` filters often surface hits for pasted URLs; keep them even when the axis is title/d-tag.
+    if (hasIdentifierExpansion && eventMatchesExpandedIdentifier(event, expandedId)) return true
+    if (terms.length === 0) return false
     if (axis === 'author') {
       const npub = tryNpubFromQuery(query.trim())
       if (npub && event.pubkey.toLowerCase() === npub) return true
+      // Prefer Mercury `#N` slug; legacy multi-letter `author` is display-only on reminted events.
+      return terms.some((term) => publicationMetadataTagMatchesQuery(event, 'N', term))
     }
-    const tagName = axis === 'd-tag' ? 'd' : axis
-    return terms.some((term) => publicationMetadataTagMatchesQuery(event, tagName, term))
+    if (axis === 'title') {
+      // Prefer Mercury `#T` slug; legacy multi-letter `title` is display-only on reminted events.
+      return terms.some((term) => publicationMetadataTagMatchesQuery(event, 'T', term))
+    }
+    return terms.some((term) => publicationMetadataTagMatchesQuery(event, 'd', term))
   })
 }
 
@@ -4085,6 +4373,76 @@ export async function searchLibraryPublicationsOnRelays(
     : preferContentRelaySearch
       ? []
       : LIBRARY_PUBLICATION_RELAY_SEARCH_AXES
+
+  // Pasted identifiers / URLs / d-tags: query `#i`/`#s`/`#d` and Mercury `identifier`.
+  const expandedId = expandIdentifier(q)
+  if (!identifierExpansionIsEmpty(expandedId) && !preferContentRelaySearch) {
+    const idLimit = Math.min(LIBRARY_RELAY_SEARCH_LIMIT, 100)
+    const idFilters = buildIdentifierSearchFilters(expandedId, ExtendedKind.PUBLICATION, idLimit).map(
+      (filter) => applyCreatedAtBoundsToFilter(filter, options?.createdAt)
+    )
+    filterCount += idFilters.length + httpRelays.length
+
+    if (wsRelays.length > 0 && idFilters.length > 0) {
+      batches.push(
+        queryService
+          .fetchEvents(wsRelays, idFilters, {
+            globalTimeout: LIBRARY_RELAY_SEARCH_TIMEOUT_MS,
+            eoseTimeout: 8_000,
+            firstRelayResultGraceMs: 2_000
+          })
+          .then((events) => {
+            reportBatch(events)
+            return events
+          })
+          .catch((e) => {
+            if (import.meta.env.DEV) {
+              logger.warn('[Library] WS identifier filter search failed', {
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+            return [] as Event[]
+          })
+      )
+    }
+
+    for (const httpRelay of httpRelays) {
+      for (const filter of idFilters) {
+        batches.push(
+          queryIndexRelayForLibrary(httpRelay, filter)
+            .then((page) => {
+              reportBatch(page.events as Event[])
+              return page.events as Event[]
+            })
+            .catch((e) => {
+              if (import.meta.env.DEV) {
+                logger.warn('[Library] HTTP identifier filter search failed', {
+                  relay: httpRelay,
+                  message: e instanceof Error ? e.message : String(e)
+                })
+              }
+              return [] as Event[]
+            })
+        )
+      }
+      batches.push(
+        queryIndexRelayPublicationMetadataSearch(httpRelay, { identifier: q, limit: idLimit })
+          .then((page) => {
+            reportBatch(page.events as Event[])
+            return page.events as Event[]
+          })
+          .catch((e) => {
+            if (import.meta.env.DEV) {
+              logger.warn('[Library] HTTP identifier metadata search failed', {
+                relay: httpRelay,
+                message: e instanceof Error ? e.message : String(e)
+              })
+            }
+            return [] as Event[]
+          })
+      )
+    }
+  }
 
   if (preferContentRelaySearch) {
     filterCount += 1

@@ -59,6 +59,13 @@ const SearchBar = forwardRef<
     if (!trimmed || looksLikeNostrBech32Identifier(trimmed) || !looksLikeRelayUrlInput(trimmed)) {
       return undefined
     }
+    // Content / catalog URLs are wiki/publication identifiers — never treat as relay hosts.
+    if (
+      /(?:^|\.)(?:wikipedia|gutenberg|openlibrary|wikidata)\.org(?:[/:]|$)/i.test(trimmed) ||
+      /\/wiki\//i.test(trimmed)
+    ) {
+      return undefined
+    }
     try {
       const n = normalizeAnyRelayUrl(trimmed) || normalizeHttpRelayUrl(trimmed)
       if (!n || (!isWebsocketUrl(n) && !isKind10243HttpRelayTagUrl(n))) return undefined

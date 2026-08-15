@@ -107,6 +107,14 @@ function nostrFilterToIndexRelayBody(f: Filter): Record<string, unknown> | null 
     if (vals.length === 0) continue
     body[k] = [...new Set(vals)]
   }
+
+  // Never widen a tag filter that Mercury rejected/stripped (e.g. `#source`) into kinds-only.
+  const hadTagKeys = Object.keys(f).some((key) => key.length >= 2 && key.startsWith('#'))
+  const keptTagKeys = Object.keys(body).some((key) => key.startsWith('#'))
+  if (hadTagKeys && !keptTagKeys && !body.ids && !body.authors) {
+    return null
+  }
+
   return body
 }
 

@@ -2,10 +2,13 @@ import {
   buildLibraryRelayUrls,
   fetchLibraryIndexEvents,
   filterLibraryEntriesByCreatedAt,
+  isLibraryStructuredTagField,
   libraryEntriesMatchingCreatedAt,
   peekLibrarySearchResults,
   searchLibraryPublications,
+  searchLibraryPublicationsByStructuredTagField,
   searchLibraryPublicationsOnRelays,
+  searchLibraryPublicationsOnRelaysByStructuredTagField,
   sortLibrarySearchPublications,
   structuredQueryFilledFields,
   structuredQueryHasDateBounds,
@@ -90,13 +93,16 @@ function sortByFieldMatchCount(
  * Strict cross-field AND with a soft-AND fallback: when at least one publication matches every filled
  * field, return only those (true AND). Otherwise fall back to the soft-AND ranking (best partial matches
  * first) so the user still sees the closest results instead of an empty list.
+ * Never surface entries that matched zero structured fields (e.g. browse bleed).
  */
 function selectStructuredResults(
   entries: LibraryPublicationEntry[],
   fieldHits: Map<string, Set<string>>,
   filledFieldCount: number
 ): LibraryPublicationEntry[] {
-  const ranked = sortByFieldMatchCount(entries, fieldHits)
+  const withHits = entries.filter((entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) > 0)
+  const ranked = sortByFieldMatchCount(withHits, fieldHits)
+  if (filledFieldCount <= 0) return ranked
   const strict = ranked.filter(
     (entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) >= filledFieldCount
   )
@@ -501,6 +507,19 @@ export function useLibrarySearch(params: {
       await Promise.all(
         fields.map(async (f) => {
           try {
+            if (isLibraryStructuredTagField(f.field)) {
+              const local = searchLibraryPublicationsByStructuredTagField(
+                f.field,
+                f.value,
+                { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+                {
+                  onProgress: ({ entries, mergedIndexEvents }) =>
+                    mergeFieldEntries(f.field, entries, mergedIndexEvents)
+                }
+              )
+              mergeFieldEntries(f.field, local)
+              return
+            }
             const local = await searchLibraryPublications(
               f.value,
               { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
@@ -536,6 +555,21 @@ export function useLibrarySearch(params: {
         await Promise.all(
           fields.map(async (f) => {
             try {
+              if (isLibraryStructuredTagField(f.field)) {
+                await searchLibraryPublicationsOnRelaysByStructuredTagField(
+                  f.field,
+                  f.value,
+                  relays,
+                  { indexEvents: indexEventsRef.current, engagement: EMPTY_ENGAGEMENT },
+                  {
+                    blockedRelays: blockedRelays ?? [],
+                    createdAt,
+                    onProgress: ({ entries, mergedIndexEvents }) =>
+                      mergeFieldEntries(f.field, entries, mergedIndexEvents)
+                  }
+                )
+                return
+              }
               await searchLibraryPublicationsOnRelays(
                 f.value,
                 relays,

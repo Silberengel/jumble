@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { ExtendedKind } from '@/constants'
 import {
   applyCreatedAtBoundsToFilter,
+  buildDocumentRelayStructuredTagFilters,
   buildEngagementMapsFromEvents,
   buildLibraryPublicationEntry,
   buildDocumentRelayPublicationFilters,
@@ -22,6 +23,7 @@ import {
   localDateInputToUnixEnd,
   localDateInputToUnixStart,
   pickLibraryPublicationEntries,
+  publicationIndexMatchesLanguageQuery,
   publicationMetadataTagMatchesQuery,
   publicationRootBelongsToUser,
   peekLibrarySearchResults,
@@ -291,17 +293,26 @@ describe('library-publication-index', () => {
     expect(docAuthor.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.includes('Jane Austen'))).toBe(
       true
     )
+    expect(docAuthor.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)
     expect(docAuthor.every((f) => f.search == null)).toBe(true)
 
     const authorFilters = buildLibraryPublicationRelaySearchFiltersForAxis('author', {
       query: 'Village Life in China'
     })
     expect(authorFilters.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.length)).toBe(true)
+    expect(authorFilters.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)
 
     const merged = buildLibraryPublicationRelaySearchFilters({ query: 'Village Life in China' })
     expect(merged.some((f) => f['#d']?.includes('village-life-in-china'))).toBe(true)
     expect(merged.every((f) => f.search == null)).toBe(true)
     expect(merged.every((f) => !(f as Filter & { '#title'?: string[] })['#title'])).toBe(true)
+    expect(merged.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)
+    // Mercury / NIP-01: only single-letter `#` filter keys
+    expect(
+      merged.every((f) =>
+        Object.keys(f).every((k) => !k.startsWith('#') || /^#[a-zA-Z]$/.test(k))
+      )
+    ).toBe(true)
   })
 
   it('filterEventsForPublicationRelaySearchAxis keeps axis-specific kind-30040 matches', () => {
@@ -1071,5 +1082,43 @@ describe('library-publication-index', () => {
     expect(end!).toBeGreaterThan(start!)
     expect(unixSecondsToLocalDateInput(start)).toBe('2024-06-15')
     expect(localDateInputToUnixStart('not-a-date')).toBeUndefined()
+  })
+
+  it('publicationIndexMatchesLanguageQuery matches ISO l tags, not free-text EN books', () => {
+    const de = indexEvent('pg-de', [], { created_at: 100 })
+    de.tags.push(['l', 'de', 'ISO-639-1'])
+    const en = indexEvent('pg-en', [], { created_at: 100 })
+    en.tags.push(['l', 'en', 'ISO-639-1'])
+    en.tags.push(['title', 'Der Name der Rose']) // free-text "de" must not count
+    const enOnly = indexEvent('pg-en-only', [], { created_at: 100 })
+    enOnly.tags.push(['l', 'en', 'ISO-639-1'])
+    enOnly.tags.push(['title', 'Historical thinking and other unnatural acts']) // contains "nl"
+    const booklistOnly = indexEvent('pg-label', [], { created_at: 100 })
+    booklistOnly.tags.push(['l', 'booklist', 'ugc'])
+    const nl = indexEvent('pg-nl', [], { created_at: 100 })
+    nl.tags.push(['l', 'nl', 'ISO-639-1'])
+
+    expect(publicationIndexMatchesLanguageQuery(de, 'de')).toBe(true)
+    expect(publicationIndexMatchesLanguageQuery(de, 'DE')).toBe(true)
+    expect(publicationIndexMatchesLanguageQuery(en, 'de')).toBe(false)
+    expect(publicationIndexMatchesLanguageQuery(booklistOnly, 'de')).toBe(false)
+    expect(publicationIndexMatchesLanguageQuery(enOnly, 'NL')).toBe(false)
+    expect(publicationIndexMatchesLanguageQuery(nl, 'NL')).toBe(true)
+  })
+
+  it('buildDocumentRelayStructuredTagFilters language uses #l codes', () => {
+    const filters = buildDocumentRelayStructuredTagFilters({ language: 'DE' })
+    expect(filters).toHaveLength(1)
+    expect((filters[0] as { '#l'?: string[] })['#l']).toEqual(
+      expect.arrayContaining(['DE', 'de'])
+    )
+  })
+
+  it('buildDocumentRelayStructuredTagFilters language is a single #l filter', () => {
+    const filters = buildDocumentRelayStructuredTagFilters({ language: 'NL' })
+    expect(filters).toHaveLength(1)
+    const codes = (filters[0] as { '#l'?: string[]; kinds?: number[] })['#l'] ?? []
+    expect(codes).toEqual(expect.arrayContaining(['NL', 'nl']))
+    expect(filters[0]?.kinds).toEqual([ExtendedKind.PUBLICATION])
   })
 })

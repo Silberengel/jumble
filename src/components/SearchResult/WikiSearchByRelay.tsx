@@ -9,11 +9,18 @@ import {
 import { compareEventsForDTagQuery } from '@/lib/dtag-search'
 import { userReadInboxUrls, userWriteOutboxUrls } from '@/lib/favorites-feed-relays'
 import { eventMatchesGeneralSearchQuery } from '@/lib/general-search-text-match'
-import { expandIdentifier } from '@/lib/identifier-expander'
-import { queryIndexRelayWikiSearch } from '@/lib/index-relay-http'
+import {
+  clearDevIndexRelayUnavailableThisSession,
+  queryIndexRelayForLibrary,
+  queryIndexRelayWikiSearch
+} from '@/lib/index-relay-http'
 import { collectLocalEventsForTextSearch } from '@/lib/local-nip50-search-merge'
-import { normalizeWikiDTag } from '@/lib/nip54'
 import { normalizeAnyRelayUrl } from '@/lib/url'
+import {
+  planWikiSearchQuery,
+  wikiEventMatchesSearchPlan,
+  wikiIdentifierFiltersFromPlan
+} from '@/lib/wiki-search-query'
 import { useNostr } from '@/providers/NostrProvider'
 import client, { queryService } from '@/services/client.service'
 import { nip66Service } from '@/services/nip66.service'
@@ -22,24 +29,21 @@ import { BookText, Loader2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-/** HTTP (Mercury-style) index relays from the library set that expose POST /api/wiki/search. */
+/** HTTP (Mercury-style) index relays: `/api/wiki/search` + `/api/events/filter`. */
 const WIKI_SEARCH_HTTP_BASES = LIBRARY_RELAY_URLS.filter((u) => /^https?:\/\//i.test(u))
 const WIKI_SEARCH_LIMIT = 50
-/** Coalesce streamed merges from the three sources into at most one render per window. */
+/** Coalesce streamed merges from the sources into at most one render per window. */
 const WIKI_SEARCH_FLUSH_MS = 180
 
 type Phase = 'idle' | 'loading' | 'done' | 'error'
 
 /**
- * Dedicated NIP-54 wiki (kind 30818) results section for the generic Search page's FULL TEXT mode.
+ * Dedicated NIP-54 wiki (kind 30818) results for Search (WIKI + FULL TEXT).
  *
- * Always runs Mercury HTTP and WS/document-relay tag filters in parallel (merge/dedupe) — never
- * Mercury-only-then-fallback:
- *   1. Local — session cache + IndexedDB stores
- *   2. Mercury HTTP — `POST /api/wiki/search`
- *   3. Relays — NIP-50 `search`, exact `#d`, plus `#T` / `#i` / `#s` from the identifier expander
- *
- * Opens articles with the event already in hand (WikiCard → note route).
+ * Always runs local + HTTP API + WS relays in parallel (merge/dedupe):
+ *   1. Local — session cache + IndexedDB
+ *   2. Mercury HTTP — `POST /api/wiki/search` (text) and `POST /api/events/filter` (`#d` only)
+ *   3. WS document/search relays — NIP-50 `search` + the same tag filters
  */
 export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string }) {
   const { t } = useTranslation()
@@ -59,12 +63,13 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
 
     setPhase('loading')
     setEvents([])
+    // A prior hanging `#T`/`#i` filter may have marked the dev CORS proxy "down" for the tab;
+    // give each wiki search a fresh chance at Mercury `#d` lookups.
+    clearDevIndexRelayUnavailableThisSession()
     const abort = new AbortController()
-    const dTag = normalizeWikiDTag(q)
-    const expanded = expandIdentifier(q)
+    const plan = planWikiSearchQuery(q)
+    const rankingQuery = plan.textQueries[0] || q
 
-    // WebSocket relays worth a NIP-50 / tag REQ for wiki articles: NIP-50-capable relays plus the
-    // document/library relays, the viewer's own inboxes/outboxes, and fast read defaults.
     const wsRelays = Array.from(
       new Set(
         [
@@ -79,14 +84,14 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
       )
     )
 
-    // Shared streaming merge map: every source folds its hits in here, deduped by id and re-sorted by
-    // relevance to the query, then flushed (throttled) so the list grows as sources resolve.
     const resultMap = new Map<string, Event>()
     let flushTimer: number | null = null
 
     const flush = () => {
       if (myRun !== runRef.current) return
-      setEvents([...resultMap.values()].sort((a, b) => compareEventsForDTagQuery(q, a, b)))
+      setEvents(
+        [...resultMap.values()].sort((a, b) => compareEventsForDTagQuery(rankingQuery, a, b))
+      )
     }
 
     const scheduleFlush = () => {
@@ -110,56 +115,23 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
       if (added) scheduleFlush()
     }
 
-    /** Local session cache + IndexedDB stores; renders before any network round-trip. */
-    const fetchLocal = async () => {
-      try {
-        const local = await collectLocalEventsForTextSearch({
-          query: q,
-          allowedKinds: [ExtendedKind.WIKI_ARTICLE],
-          sessionCap: 220,
-          idbMergedLimit: 120,
-          totalMaxMs: 8_000,
-          archiveScanMaxMs: 6_000,
-          publicationScanBudget: 6_000,
-          publicationScanMaxMs: 6_000,
-          fullTextScanMaxMs: 6_000,
-          includeOtherStoresFullText: true,
-          fullTextStoreHitCap: 200
-        })
-        merge(local)
-      } catch {
-        // best effort; remote sources still render
-      }
-    }
-
-    /** Mercury HTTP `/api/wiki/search` (body + metadata, server-ranked) — always in parallel with WS. */
-    const fetchHttp = async () => {
-      await Promise.all(
-        WIKI_SEARCH_HTTP_BASES.map(async (base) => {
-          try {
-            const { events: evs } = await queryIndexRelayWikiSearch(base, q, {
-              limit: WIKI_SEARCH_LIMIT,
-              signal: abort.signal
-            })
-            merge(evs)
-          } catch {
-            // per-base best effort; other bases / sources still render
-          }
-        })
+    const mergeFiltered = (incoming: Event[]) => {
+      merge(
+        incoming.filter((ev) => wikiEventMatchesSearchPlan(ev, plan, eventMatchesGeneralSearchQuery))
       )
     }
 
-    /**
-     * WS NIP-50 `search` + exact `#d` + catalog `#T` / `#i` / `#s` (never `#title`).
-     * Always runs alongside Mercury — merge/dedupe; never Mercury-only-then-fallback.
-     */
-    const fetchWs = async () => {
-      if (wsRelays.length === 0) return
-      const filters: Filter[] = [
-        { kinds: [ExtendedKind.WIKI_ARTICLE], search: q, limit: WIKI_SEARCH_LIMIT },
-        { kinds: [ExtendedKind.WIKI_ARTICLE], '#T': [q], limit: WIKI_SEARCH_LIMIT } as Filter
-      ]
-      if (dTag) {
+    /** WS tag filters (NIP-50 `search` added separately). `#T`/`#i` are useful on some relays. */
+    const buildWsTagFilters = (): Filter[] => {
+      const filters: Filter[] = []
+      for (const title of plan.titleNeedles) {
+        filters.push({
+          kinds: [ExtendedKind.WIKI_ARTICLE],
+          '#T': [title],
+          limit: WIKI_SEARCH_LIMIT
+        } as Filter)
+      }
+      for (const dTag of plan.dTags) {
         filters.push({ kinds: [ExtendedKind.WIKI_ARTICLE], '#d': [dTag], limit: WIKI_SEARCH_LIMIT })
         filters.push({
           kinds: [ExtendedKind.WIKI_ARTICLE],
@@ -167,58 +139,125 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
           limit: WIKI_SEARCH_LIMIT
         } as Filter)
       }
-      if (expanded.i?.length) {
+      for (const filter of wikiIdentifierFiltersFromPlan(plan, WIKI_SEARCH_LIMIT)) {
+        filters.push(filter)
+      }
+      return filters
+    }
+
+    /**
+     * Mercury HTTP `/api/events/filter`: `#d` only.
+     * `#T` / `#i` / `#s` often hang on this index (curl times out); a proxy 5xx then disables
+     * further filter fetches for the whole dev session.
+     */
+    const buildHttpDTagFilters = (): Filter[] => {
+      const dTags = new Set<string>(plan.dTags)
+      for (const filter of wikiIdentifierFiltersFromPlan(plan, WIKI_SEARCH_LIMIT)) {
+        const vals = (filter as { '#d'?: string[] })['#d']
+        if (!vals?.length) continue
+        for (const d of vals) dTags.add(d)
+      }
+      return [...dTags].map(
+        (dTag) =>
+          ({ kinds: [ExtendedKind.WIKI_ARTICLE], '#d': [dTag], limit: WIKI_SEARCH_LIMIT }) as Filter
+      )
+    }
+
+    const fetchLocal = async () => {
+      const queries = plan.textQueries.length > 0 ? plan.textQueries : [q]
+      try {
+        const batches = await Promise.all(
+          queries.map((query) =>
+            collectLocalEventsForTextSearch({
+              query,
+              allowedKinds: [ExtendedKind.WIKI_ARTICLE],
+              sessionCap: 220,
+              idbMergedLimit: 120,
+              totalMaxMs: 8_000,
+              archiveScanMaxMs: 6_000,
+              publicationScanBudget: 6_000,
+              publicationScanMaxMs: 6_000,
+              fullTextScanMaxMs: 6_000,
+              includeOtherStoresFullText: true,
+              fullTextStoreHitCap: 200
+            }).catch(() => [] as Event[])
+          )
+        )
+        mergeFiltered(batches.flat())
+      } catch {
+        // best effort
+      }
+    }
+
+    /** Mercury `POST /api/wiki/search` (full-text + metadata). Skip when `#d` can answer — search often hangs. */
+    const fetchHttpWikiSearch = async () => {
+      if (plan.dTags.length > 0) return
+      const queries = plan.textQueries.length > 0 ? plan.textQueries : [q]
+      await Promise.all(
+        WIKI_SEARCH_HTTP_BASES.flatMap((base) =>
+          queries.map(async (query) => {
+            try {
+              const { events: evs } = await queryIndexRelayWikiSearch(base, query, {
+                limit: WIKI_SEARCH_LIMIT,
+                signal: abort.signal
+              })
+              merge(evs)
+            } catch {
+              // per-base best effort
+            }
+          })
+        )
+      )
+    }
+
+    /** Mercury `POST /api/events/filter` — `#d` only (see {@link buildHttpDTagFilters}). */
+    const fetchHttpFilters = async () => {
+      const filters = buildHttpDTagFilters()
+      if (filters.length === 0 || WIKI_SEARCH_HTTP_BASES.length === 0) return
+      await Promise.all(
+        WIKI_SEARCH_HTTP_BASES.flatMap((base) =>
+          filters.map(async (filter) => {
+            try {
+              const page = await queryIndexRelayForLibrary(base, filter, { signal: abort.signal })
+              mergeFiltered((page.events as Event[]) ?? [])
+            } catch {
+              // per-filter best effort
+            }
+          })
+        )
+      )
+    }
+
+    /** WS relays: NIP-50 `search` + the same tag filters. */
+    const fetchWs = async () => {
+      if (wsRelays.length === 0) return
+      const filters: Filter[] = [...buildWsTagFilters()]
+      for (const text of plan.textQueries.length > 0 ? plan.textQueries : [q]) {
         filters.push({
           kinds: [ExtendedKind.WIKI_ARTICLE],
-          '#i': expanded.i,
+          search: text,
           limit: WIKI_SEARCH_LIMIT
-        } as Filter)
+        })
       }
-      if (expanded.s?.length) {
-        filters.push({
-          kinds: [ExtendedKind.WIKI_ARTICLE],
-          '#s': expanded.s,
-          limit: WIKI_SEARCH_LIMIT
-        } as Filter)
-      }
+      if (filters.length === 0) return
       try {
         const evs = await queryService.fetchEvents(wsRelays, filters, {
           firstRelayResultGraceMs: false,
           eoseTimeout: 4500,
           globalTimeout: 12_000
         })
-        // Relays that ignore NIP-50 `search` return recent articles instead — keep only true matches
-        // (exact `#d` / identifier / title-tag hits always count even if the body text differs).
-        merge(
-          (evs ?? []).filter((ev) => {
-            if (ev.kind !== ExtendedKind.WIKI_ARTICLE) return false
-            if (eventMatchesGeneralSearchQuery(ev, q)) return true
-            if (dTag && ev.tags.some((tg) => tg[0] === 'd' && tg[1] === dTag)) return true
-            if (expanded.i?.some((id) => ev.tags.some((tg) => tg[0] === 'i' && tg[1] === id))) {
-              return true
-            }
-            if (expanded.s?.some((src) => ev.tags.some((tg) => tg[0] === 's' && tg[1] === src))) {
-              return true
-            }
-            if (
-              ev.tags.some(
-                (tg) =>
-                  (tg[0] === 'T' || tg[0] === 'title') &&
-                  typeof tg[1] === 'string' &&
-                  tg[1].toLowerCase().includes(q.toLowerCase())
-              )
-            ) {
-              return true
-            }
-            return false
-          })
-        )
+        mergeFiltered(evs ?? [])
       } catch {
-        // best effort; local / http sources still render
+        // best effort
       }
     }
 
-    void Promise.allSettled([fetchLocal(), fetchHttp(), fetchWs()]).then(() => {
+    void Promise.allSettled([
+      fetchLocal(),
+      fetchHttpWikiSearch(),
+      fetchHttpFilters(),
+      fetchWs()
+    ]).then(() => {
       if (myRun !== runRef.current) return
       if (flushTimer !== null) {
         window.clearTimeout(flushTimer)
@@ -238,8 +277,6 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
   }, [q, relayList, cacheRelayListEvent])
 
   if (!q || phase === 'idle' || phase === 'error') return null
-  // Don't show an empty Wiki block while still loading with nothing yet, or after a no-hit search —
-  // the general full-text results cover the no-hit case.
   if (events.length === 0 && phase === 'done') return null
 
   return (

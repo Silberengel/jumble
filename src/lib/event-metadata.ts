@@ -647,7 +647,7 @@ export function getZapInfoFromEvent(receiptEvent: Event) {
   }
 }
 
-// Helper function to convert d-tag to title case
+// Helper function to convert d-tag / index slug to title case
 export function dTagToTitleCase(dTag: string): string {
   return dTag
     .split('-')
@@ -655,29 +655,50 @@ export function dTagToTitleCase(dTag: string): string {
     .join(' ')
 }
 
+/**
+ * Humanize a Mercury index slug (`T` / `N` / `d`) for UI when display tags are absent.
+ * Scripts emit single-letter index tags for NIP-01; multi-letter `title`/`author` may be omitted.
+ */
+export function indexSlugToDisplayLabel(slug: string): string {
+  return dTagToTitleCase(slug.trim())
+}
+
 export function getLongFormArticleMetadataFromEvent(event: Event) {
   let title: string | undefined
+  let titleFromT: string | undefined
   let summary: string | undefined
   let image: string | undefined
   const tags = new Set<string>()
 
+  // Tag names are case-sensitive for single-letter Mercury indexes: `T`≠`t`, `N`≠`n`.
   event.tags.forEach(([tagName, tagValue]) => {
-    const n = tagName?.toLowerCase()
-    if (n === 'title' && tagValue?.trim()) {
-      title = tagValue.trim()
-    } else if (n === 'summary' && tagValue?.trim()) {
-      summary = tagValue.trim()
-    } else if (n === 'image' && tagValue?.trim()) {
-      image = tagValue.trim()
-    } else if (n === 't' && tagValue?.trim() && tags.size < 6) {
-      tags.add(tagValue.trim().replace(/^#/, '').toLowerCase())
+    const raw = (tagName || '').trim()
+    const n = raw.toLowerCase()
+    const value = tagValue?.trim()
+    if (!value) return
+    if (raw === 'T') {
+      if (!titleFromT) titleFromT = value
+      return
+    }
+    if (n === 'title') {
+      title = value
+    } else if (n === 'summary') {
+      summary = value
+    } else if (n === 'image') {
+      image = value
+    } else if (raw === 't' && tags.size < 6) {
+      tags.add(value.replace(/^#/, '').toLowerCase())
     }
   })
 
   if (!title) {
-    const dTag = event.tags.find(tagNameEquals('d'))?.[1]
-    if (dTag) {
-      title = dTagToTitleCase(dTag)
+    if (titleFromT) {
+      title = indexSlugToDisplayLabel(titleFromT)
+    } else {
+      const dTag = event.tags.find(tagNameEquals('d'))?.[1]
+      if (dTag) {
+        title = dTagToTitleCase(dTag)
+      }
     }
   }
 
@@ -761,6 +782,26 @@ export function resolveExternalIdentifierUrl(value: string): string | undefined 
 function parsePublicationIdentifier(raw: string): PublicationIdentifier | null {
   const value = raw.trim()
   if (!value) return null
+
+  // Publishers sometimes put the page URL itself in `i` (or expanders do). Treat as a link,
+  // not as scheme `https` with the full URL as the chip label.
+  if (/^https?:\/\//i.test(value) || /^www\./i.test(value)) {
+    const href = /^https?:\/\//i.test(value) ? value : `https://${value}`
+    let label = href
+    try {
+      label = new URL(href).hostname.replace(/^www\./, '')
+    } catch {
+      // keep href
+    }
+    return {
+      value,
+      scheme: 'other',
+      id: value,
+      label,
+      url: href
+    }
+  }
+
   const colon = value.indexOf(':')
   const schemeRaw = colon > 0 ? value.slice(0, colon).toLowerCase() : 'other'
   const id = colon > 0 ? value.slice(colon + 1).trim() : value
@@ -809,6 +850,7 @@ function parsePublicationIdentifier(raw: string): PublicationIdentifier | null {
 export function getPublicationIndexMetadataFromEvent(event: Event): PublicationIndexMetadata {
   const base = getLongFormArticleMetadataFromEvent(event)
   const authors: PublicationAuthor[] = []
+  const authorsFromN: PublicationAuthor[] = []
   const identifiers: PublicationIdentifier[] = []
   let sourceS: string | undefined
   let sourceLegacy: string | undefined
@@ -819,14 +861,20 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
   const aTagLabels = new Map<string, string>()
 
   for (const tag of event.tags) {
-    const name = (tag[0] || '').trim().toLowerCase()
+    // Preserve case for single-letter Mercury tags (`T`/`N`/`s`/`i`/`l`/`t`).
+    const raw = (tag[0] || '').trim()
+    const name = raw.toLowerCase()
     const value = tag[1]?.trim()
     if (!value) continue
 
+    if (raw === 'N') {
+      authorsFromN.push({ name: indexSlugToDisplayLabel(value) })
+      continue
+    }
     if (name === 'author') {
       const role = tag[2]?.trim()
       authors.push({ name: value, role: role || undefined })
-    } else if (name === 's') {
+    } else if (raw === 's' || name === 's') {
       if (!sourceS) sourceS = value
     } else if (name === 'source') {
       if (!sourceLegacy) sourceLegacy = value
@@ -836,7 +884,7 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
       version = value
     } else if (name === 'release_date' || name === 'published_on') {
       if (!releaseDate) releaseDate = value
-    } else if (name === 'i') {
+    } else if (raw === 'i' || name === 'i') {
       const hint = tag[2]?.trim()
       const parsed = parsePublicationIdentifier(value)
       if (parsed) {
@@ -845,9 +893,9 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
         }
         identifiers.push(parsed)
       }
-    } else if (name === 'l' && !language) {
+    } else if ((raw === 'l' || name === 'l') && !language) {
       language = value
-    } else if (name === 'a') {
+    } else if (raw === 'a' || name === 'a') {
       const label = tag[3]?.trim()
       if (
         label &&
@@ -859,6 +907,8 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
       }
     }
   }
+
+  const resolvedAuthors = authors.length > 0 ? authors : authorsFromN
 
   const sections: PublicationSectionRef[] = orderedPublicationRefsFromIndex(event).map((ref) => {
     if (ref.type === 'a' && ref.coordinate) {
@@ -889,7 +939,7 @@ export function getPublicationIndexMetadataFromEvent(event: Event): PublicationI
   return {
     ...base,
     image,
-    authors,
+    authors: resolvedAuthors,
     source,
     type,
     version,
@@ -910,21 +960,34 @@ export type ContentProvenanceLink = {
   label: string
 }
 
-function normalizeProvenanceUrl(raw: string): string {
+/**
+ * Canonical key for provenance dedupe: scheme/host/path only.
+ * Collapses http↔https, www, default ports, trailing slashes, hash, and query.
+ */
+export function normalizeProvenanceUrl(raw: string): string {
+  const trimmed = raw.trim()
+  if (!trimmed) return ''
   try {
-    const u = new URL(raw.trim())
-    u.hash = ''
-    // Wikipedia / wiki paths: compare decoded path so Aardvark vs Aardvark%20 match.
+    const withScheme = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : /^\/\//.test(trimmed)
+        ? `https:${trimmed}`
+        : `https://${trimmed}`
+    const u = new URL(withScheme)
+    // Ignore scheme differences (http vs https) and fragments / tracking queries.
+    const host = u.hostname.toLowerCase().replace(/^www\./, '')
     let path = u.pathname
     try {
       path = decodeURIComponent(path)
     } catch {
       // keep encoded
     }
+    // Wiki titles use `_` in URLs and spaces in some tags — treat as the same page.
+    path = path.replace(/ /g, '_')
     path = path.replace(/\/+$/, '') || '/'
-    return `${u.protocol}//${u.hostname.toLowerCase().replace(/^www\./, '')}${path}${u.search}`.toLowerCase()
+    return `https://${host}${path}`.toLowerCase()
   } catch {
-    return raw.trim().toLowerCase()
+    return trimmed.toLowerCase().replace(/\/+$/, '')
   }
 }
 
@@ -962,15 +1025,24 @@ export function getContentProvenanceFromEvent(event: Event): ContentProvenanceLi
   }
 
   for (const identifier of identifiers) {
-    if (identifier.url) {
-      push(identifier.url, identifier.label)
-    } else if (identifier.label) {
-      // Non-URL chips: dedupe on label text.
-      const key = `label:${identifier.label.toLowerCase()}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      links.push({ href: '', label: identifier.label })
+    const href = identifier.url?.trim()
+    if (href) {
+      push(href, identifier.label || provenanceHostnameLabel(href))
+      continue
     }
+    if (!identifier.label) continue
+    // URL-shaped labels without a resolved href still collide with source / other links.
+    if (/^https?:\/\//i.test(identifier.label) || /^www\./i.test(identifier.label)) {
+      const asHref = /^https?:\/\//i.test(identifier.label)
+        ? identifier.label
+        : `https://${identifier.label}`
+      push(asHref, provenanceHostnameLabel(asHref))
+      continue
+    }
+    const key = `label:${identifier.label.toLowerCase()}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    links.push({ href: '', label: identifier.label })
   }
 
   return links

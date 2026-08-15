@@ -54,6 +54,37 @@ describe('getPublicationIndexMetadataFromEvent', () => {
     expect(meta.sections[1].label).toBeUndefined()
   })
 
+  it('falls back to Mercury single-letter T/N/s when display tags are absent', () => {
+    const event = indexEvent([
+      ['d', 'pg-nl-book'],
+      ['T', 'historical-thinking'],
+      ['N', 'samuel-s-wineburg'],
+      ['s', 'https://www.gutenberg.org/ebooks/21020'],
+      ['l', 'nl', 'ISO-639-1'],
+      ['t', 'history'],
+      ['i', 'gutenberg:21020'],
+      ['a', `30041:${PK}:chapter-1`]
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.title).toBe('Historical Thinking')
+    expect(meta.authors).toEqual([{ name: 'Samuel S Wineburg' }])
+    expect(meta.source).toBe('https://www.gutenberg.org/ebooks/21020')
+    expect(meta.language).toBe('nl')
+    expect(meta.tags).toEqual(['history'])
+    expect(meta.identifiers[0]?.scheme).toBe('gutenberg')
+  })
+
+  it('does not treat uppercase T as a subject t tag', () => {
+    const event = indexEvent([
+      ['d', 'book'],
+      ['T', 'the-prince'],
+      ['t', 'politics']
+    ])
+    const meta = getPublicationIndexMetadataFromEvent(event)
+    expect(meta.title).toBe('The Prince')
+    expect(meta.tags).toEqual(['politics'])
+  })
+
   it('parses i-tag identifiers into linkable chips', () => {
     const event = indexEvent([
       ['d', 'opa-OL45883W'],
@@ -231,6 +262,46 @@ describe('getContentProvenanceFromEvent', () => {
       'https://en.wikipedia.org/wiki/Aardvark',
       'https://www.wikidata.org/wiki/Q123'
     ])
+    expect(links[0].label).toBe('en.wikipedia.org')
+  })
+
+  it('dedupes source URL against the same URL stored in an i tag', async () => {
+    const { getContentProvenanceFromEvent } = await import('@/lib/event-metadata')
+    const event = indexEvent([
+      ['d', 'aardvark'],
+      ['title', 'Aardvark'],
+      ['source', 'https://en.wikipedia.org/wiki/Aardvark'],
+      ['i', 'https://en.wikipedia.org/wiki/Aardvark']
+    ])
+    const links = getContentProvenanceFromEvent(event)
+    expect(links).toEqual([
+      {
+        href: 'https://en.wikipedia.org/wiki/Aardvark',
+        label: 'en.wikipedia.org'
+      }
+    ])
+  })
+
+  it('dedupes after normalizing scheme, www, trailing slash, hash, and query', async () => {
+    const { getContentProvenanceFromEvent, normalizeProvenanceUrl } = await import(
+      '@/lib/event-metadata'
+    )
+    expect(normalizeProvenanceUrl('http://www.en.wikipedia.org/wiki/Aardvark/')).toBe(
+      normalizeProvenanceUrl('https://en.wikipedia.org/wiki/Aardvark?utm=1#Taxonomy')
+    )
+    expect(normalizeProvenanceUrl('https://en.wikipedia.org/wiki/Aardvark ')).toBe(
+      normalizeProvenanceUrl('https://en.wikipedia.org/wiki/Aardvark/')
+    )
+
+    const event = indexEvent([
+      ['d', 'aardvark'],
+      ['title', 'Aardvark'],
+      ['source', 'https://en.wikipedia.org/wiki/Aardvark/'],
+      ['i', 'http://www.en.wikipedia.org/wiki/Aardvark#Name'],
+      ['i', 'wikipedia:en:Aardvark']
+    ])
+    const links = getContentProvenanceFromEvent(event)
+    expect(links).toHaveLength(1)
     expect(links[0].label).toBe('en.wikipedia.org')
   })
 })
