@@ -879,27 +879,57 @@ describe('library-publication-index', () => {
     weakRoot.created_at = 999
     const indexByAddress = buildIndexByAddress([exactRoot, weakRoot])
     const engagement = buildEngagementMapsFromEvents([], [], [])
-    const entries = sortLibrarySearchPublications([
-      {
-        ...buildLibraryPublicationEntry(weakRoot, indexByAddress, engagement),
-        contentSearchMatch: {
-          sectionAddress: `30041:${PK}:other`,
-          highlightQuery: quote,
-          contentEvent: weakRoot,
-          matchScore: 5
+    const entries = sortLibrarySearchPublications(
+      [
+        {
+          ...buildLibraryPublicationEntry(weakRoot, indexByAddress, engagement),
+          contentSearchMatch: {
+            sectionAddress: `30041:${PK}:other`,
+            highlightQuery: quote,
+            contentEvent: weakRoot,
+            matchScore: 5
+          }
+        },
+        {
+          ...buildLibraryPublicationEntry(exactRoot, indexByAddress, engagement),
+          contentSearchMatch: {
+            sectionAddress: `30041:${PK}:ch`,
+            highlightQuery: quote,
+            contentEvent: exactRoot,
+            matchScore: 10_000 + quote.length
+          }
         }
-      },
-      {
-        ...buildLibraryPublicationEntry(exactRoot, indexByAddress, engagement),
-        contentSearchMatch: {
-          sectionAddress: `30041:${PK}:ch`,
-          highlightQuery: quote,
-          contentEvent: exactRoot,
-          matchScore: 10_000 + quote.length
-        }
-      }
-    ])
+      ],
+      quote
+    )
     expect(entries[0].event.id).toBe(exactRoot.id)
+  })
+
+  it('sortLibrarySearchPublications ranks exact T/N above newer content-only fuzzy hits', () => {
+    const pride = indexEvent('pride-and-prejudice', [])
+    pride.tags.push(['T', 'pride-and-prejudice'], ['N', 'jane-austen'], ['title', 'Pride and Prejudice'])
+    pride.created_at = 100
+    const unrelated = indexEvent('other-pg', [])
+    unrelated.tags.push(['T', 'village-life'], ['N', 'other-author'])
+    unrelated.created_at = 999
+    const indexByAddress = buildIndexByAddress([pride, unrelated])
+    const engagement = buildEngagementMapsFromEvents([], [], [])
+    const entries = sortLibrarySearchPublications(
+      [
+        {
+          ...buildLibraryPublicationEntry(unrelated, indexByAddress, engagement),
+          contentSearchMatch: {
+            sectionAddress: `30041:${PK}:noise`,
+            highlightQuery: 'Jane Austen',
+            contentEvent: unrelated,
+            matchScore: 220
+          }
+        },
+        buildLibraryPublicationEntry(pride, indexByAddress, engagement)
+      ],
+      'Jane Austen'
+    )
+    expect(entries[0].event.id).toBe(pride.id)
   })
 
   it('sortLibrarySearchPublicationsByLabelRank prioritizes viewer, follow, then GC Publishing labels', () => {

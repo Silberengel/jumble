@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  compareEventsForDTagQuery,
   compareEventsForDTagQueryWithPriorityKind,
   compareMergedGeneralSearchHits,
   eventMatchesDTagQuery
@@ -88,5 +89,48 @@ describe('compareEventsForDTagQueryWithPriorityKind', () => {
     const exact = ev('1'.repeat(64), 100, 'april', wiki)
     const loose = ev('2'.repeat(64), 200, 'april-notes', wiki)
     expect(compareEventsForDTagQueryWithPriorityKind('april', wiki, exact, loose)).toBeLessThan(0)
+  })
+})
+
+describe('compareEventsForDTagQuery', () => {
+  it('ranks spaced query exact d/T above a newer content-only wiki hit', () => {
+    const halle = {
+      id: 'e'.repeat(64),
+      kind: ExtendedKind.WIKI_ARTICLE,
+      pubkey: 'a'.repeat(64),
+      created_at: 1_786_614_997,
+      tags: [
+        ['d', 'halle-berry'],
+        ['title', 'Halle Berry'],
+        ['T', 'halle-berry']
+      ],
+      content: 'Halle Maria Berry is an American actress.',
+      sig: 'b'.repeat(128)
+    } satisfies Event
+    const april = {
+      id: 'f'.repeat(64),
+      kind: ExtendedKind.WIKI_ARTICLE,
+      pubkey: 'a'.repeat(64),
+      created_at: 1_786_616_499,
+      tags: [
+        ['d', 'april-10'],
+        ['title', 'April 10'],
+        ['T', 'april-10']
+      ],
+      content: "Halley's Comet · Kevin Berry",
+      sig: 'b'.repeat(128)
+    } satisfies Event
+
+    expect(compareEventsForDTagQuery('Halle Berry', halle, april)).toBeLessThan(0)
+    expect(compareEventsForDTagQuery('Halle Berry', april, halle)).toBeGreaterThan(0)
+    expect(compareEventsForDTagQuery('halle-berry', halle, april)).toBeLessThan(0)
+  })
+
+  it('ranks exact T match when d is unrelated', () => {
+    const byT = dEvent('other-slug', { tags: [['T', 'halle-berry']] })
+    const unrelated = dEvent('april-10')
+    unrelated.created_at = 99
+    byT.created_at = 1
+    expect(compareEventsForDTagQuery('Halle Berry', byT, unrelated)).toBeLessThan(0)
   })
 })

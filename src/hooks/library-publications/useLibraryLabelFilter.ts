@@ -62,12 +62,19 @@ export function useLibraryLabelFilter(params: {
 
   const applySearchLabelRanking = useCallback(
     (entries: LibraryPublicationEntry[], engagement: PublicationEngagementMaps) => {
+      const q = debouncedSearch.trim()
       if (filterMode === 'recommended') {
         return filterAndSortLibraryRecommendedPublications(entries, indexEvents, engagement, labelRankContext)
       }
-      return sortLibrarySearchPublicationsByLabelRank(entries, indexEvents, engagement, labelRankContext)
+      return sortLibrarySearchPublicationsByLabelRank(
+        entries,
+        indexEvents,
+        engagement,
+        labelRankContext,
+        q
+      )
     },
-    [filterMode, indexEvents, labelRankContext]
+    [filterMode, indexEvents, labelRankContext, debouncedSearch]
   )
 
   // Recommended feed (no active search): labels from follows + GC Publishing.

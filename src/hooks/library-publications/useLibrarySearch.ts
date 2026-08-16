@@ -86,12 +86,13 @@ function mergeEntryIntoMap(
  */
 function sortByFieldMatchCount(
   entries: LibraryPublicationEntry[],
-  fieldHits: Map<string, Set<string>>
+  fieldHits: Map<string, Set<string>>,
+  query?: string
 ): LibraryPublicationEntry[] {
   const matchCount = (entry: LibraryPublicationEntry) => fieldHits.get(entryKey(entry))?.size ?? 0
   // sortLibrarySearchPublications gives the per-entry relevance order; Array.sort is stable, so equal
   // field counts keep that order.
-  const base = sortLibrarySearchPublications(entries)
+  const base = sortLibrarySearchPublications(entries, query)
   return base.sort((a, b) => matchCount(b) - matchCount(a))
 }
 
@@ -103,10 +104,11 @@ function sortByFieldMatchCount(
 function selectStructuredResults(
   entries: LibraryPublicationEntry[],
   fieldHits: Map<string, Set<string>>,
-  filledFieldCount: number
+  filledFieldCount: number,
+  query?: string
 ): LibraryPublicationEntry[] {
   const withHits = entries.filter((entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) > 0)
-  const ranked = sortByFieldMatchCount(withHits, fieldHits)
+  const ranked = sortByFieldMatchCount(withHits, fieldHits, query)
   if (filledFieldCount <= 0) return ranked
   const strict = ranked.filter(
     (entry) => (fieldHits.get(entryKey(entry))?.size ?? 0) >= filledFieldCount
@@ -285,7 +287,7 @@ export function useLibrarySearch(params: {
 
     const flush = () => {
       if (cancelled) return
-      setSearchResults(sortLibrarySearchPublications([...resultMap.values()]))
+      setSearchResults(sortLibrarySearchPublications([...resultMap.values()], q))
     }
 
     const scheduleFlush = () => {
@@ -482,10 +484,22 @@ export function useLibrarySearch(params: {
 
     const flush = () => {
       if (cancelled) return
+      const rankingQuery =
+        structuredSearch.title?.trim() ||
+        structuredSearch.author?.trim() ||
+        structuredSearch.dTag?.trim() ||
+        structuredSearch.fullText?.trim() ||
+        structuredSearch.identifier?.trim() ||
+        ''
       const ranked =
         fields.length === 0
-          ? sortLibrarySearchPublications([...resultMap.values()])
-          : selectStructuredResults([...resultMap.values()], fieldHits, fields.length)
+          ? sortLibrarySearchPublications([...resultMap.values()], rankingQuery)
+          : selectStructuredResults(
+              [...resultMap.values()],
+              fieldHits,
+              fields.length,
+              rankingQuery
+            )
       setSearchResults(
         filterLibraryEntriesByCreatedAt(ranked, structuredSearch.since, structuredSearch.until)
       )

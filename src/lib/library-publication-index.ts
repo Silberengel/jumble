@@ -15,6 +15,7 @@ import {
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { scoreContentEventsForSearch } from '@/lib/library-search-worker-client'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
+import { bestIndexSlugMatchRank } from '@/lib/dtag-search'
 import { indexSlug } from '@/lib/nip54'
 import logger from '@/lib/logger'
 import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label'
@@ -1510,9 +1511,22 @@ export function sortLibraryPublications(entries: LibraryPublicationEntry[]): Lib
   return [...entries].sort((a, b) => b.event.created_at - a.event.created_at)
 }
 
-/** Search results: best content phrase match first, then other content hits, then metadata. */
-export function sortLibrarySearchPublications(entries: LibraryPublicationEntry[]): LibraryPublicationEntry[] {
+/**
+ * Search results: exact `d`/`T`/`N` slug match (hyphen/space-normalized) first, then content
+ * phrase/relevance score, then recency. Metadata-only catalog hits must not lose to a newer
+ * body that only fuzzy-matches scattered words.
+ */
+export function sortLibrarySearchPublications(
+  entries: LibraryPublicationEntry[],
+  query?: string
+): LibraryPublicationEntry[] {
+  const q = query?.trim() ?? ''
   return [...entries].sort((a, b) => {
+    if (q) {
+      const ra = bestIndexSlugMatchRank(q, a.event)
+      const rb = bestIndexSlugMatchRank(q, b.event)
+      if (ra !== rb) return ra - rb
+    }
     const aScore = a.contentSearchMatch?.matchScore ?? 0
     const bScore = b.contentSearchMatch?.matchScore ?? 0
     if (aScore !== bScore) return bScore - aScore
@@ -1627,14 +1641,15 @@ export function sortLibrarySearchPublicationsByLabelRank(
   entries: LibraryPublicationEntry[],
   indexEvents: Event[],
   engagement: PublicationEngagementMaps,
-  ctx?: Partial<LibraryLabelRankContext>
+  ctx?: Partial<LibraryLabelRankContext>,
+  query?: string
 ): LibraryPublicationEntry[] {
   if (entries.length <= 1) {
     return enrichLibraryPublicationEntriesWithLabelCurators(entries, indexEvents, engagement, ctx)
   }
   const indexByAddress = buildIndexByAddress(indexEvents)
   const rankCtx = defaultLibraryLabelRankContext(ctx)
-  const base = sortLibrarySearchPublications(entries)
+  const base = sortLibrarySearchPublications(entries, query)
   const sorted = base.sort((a, b) => {
     const tierDiff =
       getPublicationLabelRankTier(a, indexByAddress, engagement, rankCtx) -
@@ -2360,7 +2375,8 @@ export async function searchLibraryPublications(
   ) => {
     const indexByAddress = buildIndexByAddressMemo(indexEvents)
     const sortedEntries = sortLibrarySearchPublications(
-      libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT, contentMatches)
+      libraryEntriesFromRoots(roots, indexByAddress, context.engagement ?? EMPTY_ENGAGEMENT, contentMatches),
+      q
     )
     const phraseEntries = sortedEntries.filter(
       (entry) => (entry.contentSearchMatch?.matchScore ?? 0) >= 10_000
@@ -3207,7 +3223,8 @@ export function searchLibraryPublicationsByStructuredTagField(
     return eventMatchesExpandedIdentifier(ev, expandedId!)
   })
   const entries = sortLibrarySearchPublications(
-    libraryEntriesFromRoots(roots, indexByAddress, engagement)
+    libraryEntriesFromRoots(roots, indexByAddress, engagement),
+    q
   )
   options?.onProgress?.({ entries, mergedIndexEvents: indexEvents })
   return entries
@@ -3270,7 +3287,8 @@ export async function searchLibraryPublicationsOnRelaysByStructuredTagField(
     }
     return {
       entries: sortLibrarySearchPublications(
-        libraryEntriesFromRoots([...resolved.values()], indexByAddress, engagement)
+        libraryEntriesFromRoots([...resolved.values()], indexByAddress, engagement),
+        q
       ),
       mergedIndexEvents: mergedIndex,
       networkEventCount: accumulatedValid.size
@@ -4377,8 +4395,16 @@ export async function searchLibraryPublicationsViaMercuryStructuredQuery(
   const emitProgress = (): LibrarySearchProgress => {
     const mergedIndex = publicationIndexMapValues(structuralMap)
     const indexByAddress = buildIndexByAddressMemo(mergedIndex)
+    const rankingQuery =
+      query.title?.trim() ||
+      query.author?.trim() ||
+      query.dTag?.trim() ||
+      query.fullText?.trim() ||
+      query.identifier?.trim() ||
+      ''
     const entries = sortLibrarySearchPublications(
-      libraryEntriesFromRoots([...accumulated.values()], indexByAddress, engagement)
+      libraryEntriesFromRoots([...accumulated.values()], indexByAddress, engagement),
+      rankingQuery
     )
     const progress = { entries, mergedIndexEvents: mergedIndex, networkEventCount: accumulated.size }
     options?.onProgress?.(progress)
@@ -4590,7 +4616,8 @@ export async function searchLibraryPublicationsOnRelays(
       }
     }
     const sortedEntries = sortLibrarySearchPublications(
-      libraryEntriesFromRoots([...rootMap.values()], resolverByAddress, engagement, contentMatchesByRootId)
+      libraryEntriesFromRoots([...rootMap.values()], resolverByAddress, engagement, contentMatchesByRootId),
+      q
     )
     const phraseEntries = sortedEntries.filter(
       (entry) => (entry.contentSearchMatch?.matchScore ?? 0) >= 10_000
