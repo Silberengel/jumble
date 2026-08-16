@@ -283,16 +283,22 @@ describe('library-publication-index', () => {
     expect(docDTagSingle.every((f) => f.search == null)).toBe(true)
 
     const docTitle = buildDocumentRelayPublicationFilters('title', 'Redacted Science')
-    expect(docTitle.some((f) => (f as Filter & { '#T'?: string[] })['#T']?.includes('Redacted Science'))).toBe(
+    expect(docTitle.some((f) => (f as Filter & { '#T'?: string[] })['#T']?.includes('redacted-science'))).toBe(
       true
+    )
+    expect(docTitle.some((f) => (f as Filter & { '#T'?: string[] })['#T']?.includes('Redacted Science'))).toBe(
+      false
     )
     expect(docTitle.every((f) => !f['#d']?.length)).toBe(true)
     expect(docTitle.every((f) => !(f as Filter & { '#title'?: string[] })['#title'])).toBe(true)
     expect(docTitle.every((f) => f.search == null)).toBe(true)
 
     const docAuthor = buildDocumentRelayPublicationFilters('author', 'Jane Austen')
-    expect(docAuthor.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.includes('Jane Austen'))).toBe(
+    expect(docAuthor.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.includes('jane-austen'))).toBe(
       true
+    )
+    expect(docAuthor.some((f) => (f as Filter & { '#N'?: string[] })['#N']?.includes('Jane Austen'))).toBe(
+      false
     )
     expect(docAuthor.every((f) => !f['#d']?.length)).toBe(true)
     expect(docAuthor.every((f) => !(f as Filter & { '#author'?: string[] })['#author'])).toBe(true)

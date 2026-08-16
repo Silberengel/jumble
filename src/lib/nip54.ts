@@ -41,26 +41,41 @@ export function asciiFoldWikiText(input: string): string {
 }
 
 /**
- * NIP-54 `d` plus lookup twins for:
- * - ASCII-folded accents (`Étienne` → also `etienne-…`)
- * - legacy Wikipedia imports that stripped title hyphens (`Jean-Baptiste` → `jeanbaptiste-…`)
+ * ASCII-folded hyphen slug for relay-indexed `#T` / `#N` (scripts `text_normalize.index_slug`).
+ *
+ * Publishers store these exact values — NIP-01 tag filters must emit them, not display titles.
+ */
+export function indexSlug(input: string, maxLen = 255): string {
+  if (!input.trim()) return ''
+  const folded = asciiFoldWikiText(input)
+  let out = ''
+  for (const ch of folded) {
+    if (/\s/u.test(ch) || ch === '_') {
+      out += '-'
+    } else if (ch === '-') {
+      out += '-'
+    } else if (/[0-9A-Za-z]/u.test(ch)) {
+      out += ch.toLowerCase()
+    }
+  }
+  let slug = out.replace(/-+/g, '-').replace(/^-+|-+$/g, '')
+  if (slug.length > maxLen) slug = slug.slice(0, maxLen).replace(/-+$/g, '')
+  return slug
+}
+
+/**
+ * NIP-54 `d` plus an ASCII-folded twin for accented titles
+ * (`Étienne…` → also `etienne-…` for keyboard-friendly lookups).
+ *
+ * Hyphen-stripped / wrongly-concatenated twins (`jeanbaptiste-…`) are no longer
+ * emitted — those broken events were repaired on Mercury.
  */
 export function wikiDTagVariants(input: string): string[] {
   const variants = new Set<string>()
 
   const addFromRaw = (raw: string) => {
     const d = normalizeWikiDTag(raw)
-    if (!d) return
-    variants.add(d)
-    // Old importer dropped `-` as punctuation before space→hyphen.
-    const legacy = normalizeWikiDTag(raw.replace(/-/g, ''))
-    if (legacy) variants.add(legacy)
-    // When `raw` is already a hyphenated d-tag, try joining adjacent segments so
-    // `jean-baptiste-lamarck` also finds imported `jeanbaptiste-lamarck`.
-    const parts = d.split('-').filter(Boolean)
-    for (let i = 0; i < parts.length - 1; i++) {
-      variants.add([...parts.slice(0, i), parts[i] + parts[i + 1], ...parts.slice(i + 2)].join('-'))
-    }
+    if (d) variants.add(d)
   }
 
   addFromRaw(input)

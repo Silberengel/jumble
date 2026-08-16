@@ -15,6 +15,7 @@ import {
 import { decodeProfileSearchQueryToPubkeyHex } from '@/lib/profile-search-query'
 import { scoreContentEventsForSearch } from '@/lib/library-search-worker-client'
 import { normalizeToDTag, parseAdvancedSearch } from '@/lib/search-parser'
+import { indexSlug } from '@/lib/nip54'
 import logger from '@/lib/logger'
 import { extractNip32LabelValues, isBooklistNip32Label } from '@/lib/nip32-label'
 import {
@@ -2965,6 +2966,27 @@ export function publicationMetadataSearchTermsForHttpRelay(
   return [...seen].slice(0, LIBRARY_HTTP_METADATA_SEARCH_TERM_CAP)
 }
 
+/**
+ * Exact `#T` / `#N` values for NIP-01 filters — must match publisher `index_slug`
+ * (ASCII-folded hyphen slugs). Display titles like "Jane Austen" miss the btree/trgm indexes.
+ */
+export function publicationIndexSlugTermsForTagFilter(
+  axis: 'title' | 'author',
+  query: string
+): string[] {
+  const seen = new Set<string>()
+  const add = (value: string) => {
+    const slug = indexSlug(value)
+    if (slug) seen.add(slug)
+  }
+
+  add(query)
+  for (const source of publicationRelaySearchTermsForAxis(axis, query)) {
+    add(source)
+  }
+  return [...seen].slice(0, 8)
+}
+
 function addPublicationKindFilter(
   out: Filter[],
   seen: Set<string>,
@@ -3008,7 +3030,7 @@ export function buildDocumentRelayPublicationFilters(
   if (axis === 'author') {
     const npub = tryNpubFromQuery(searchRaw)
     if (npub) return [{ kinds: [kind], authors: [npub], limit }]
-    const authors = publicationMetadataSearchTermsForHttpRelay('author', searchRaw)
+    const authors = publicationIndexSlugTermsForTagFilter('author', searchRaw)
     if (authors.length > 0) {
       // Catalog author slug tag is `#N` (Mercury accepts single-letter tag filters only).
       add({ kinds: [kind], '#N': authors, limit } as Filter)
@@ -3018,7 +3040,7 @@ export function buildDocumentRelayPublicationFilters(
   }
 
   if (axis === 'title') {
-    const titles = publicationMetadataSearchTermsForHttpRelay('title', searchRaw)
+    const titles = publicationIndexSlugTermsForTagFilter('title', searchRaw)
     if (titles.length > 0) {
       // Catalog title slug tag is `#T`.
       add({ kinds: [kind], '#T': titles, limit } as Filter)
@@ -3951,7 +3973,7 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
       addPublicationKindFilter(out, seen, { kinds: [kind], authors: [npub], limit })
       return out
     }
-    const authors = publicationMetadataSearchTermsForHttpRelay('author', searchRaw)
+    const authors = publicationIndexSlugTermsForTagFilter('author', searchRaw)
     if (authors.length > 0) {
       addPublicationKindFilter(out, seen, { kinds: [kind], '#N': authors, limit } as Filter)
     }
@@ -3960,7 +3982,7 @@ export function buildLibraryPublicationRelaySearchFiltersForAxis(
   }
 
   if (axis === 'title') {
-    const titles = publicationMetadataSearchTermsForHttpRelay('title', searchRaw)
+    const titles = publicationIndexSlugTermsForTagFilter('title', searchRaw)
     if (titles.length > 0) {
       addPublicationKindFilter(out, seen, { kinds: [kind], '#T': titles, limit } as Filter)
     }
@@ -4160,11 +4182,14 @@ async function searchHttpIndexRelayPublicationAxis(
   }
 
   // `#T`/`#N` first; `{title}`/`{author}` only if the tag filter misses (they contend on Mercury).
-  const catalogSlugs = [
-    ...new Set(
-      [...publicationQueryDTagVariants(q), q.toLowerCase().replace(/\s+/g, '-')].filter(Boolean)
-    )
-  ].slice(0, 4)
+  const catalogSlugs =
+    axis === 'title' || axis === 'author'
+      ? publicationIndexSlugTermsForTagFilter(axis, q)
+      : [
+          ...new Set(
+            [...publicationQueryDTagVariants(q), q.toLowerCase().replace(/\s+/g, '-')].filter(Boolean)
+          )
+        ].slice(0, 4)
 
   if (axis === 'title' || axis === 'author') {
     const tagName = axis === 'title' ? '#T' : '#N'
@@ -4375,11 +4400,10 @@ export async function searchLibraryPublicationsViaMercuryStructuredQuery(
   const dTag = query.dTag?.trim()
 
   const runTagFilter = async (tagName: '#T' | '#N', raw: string, warnLabel: string) => {
-    const unique = [
-      ...new Set(
-        [...publicationQueryDTagVariants(raw), raw.toLowerCase().replace(/\s+/g, '-')].filter(Boolean)
-      )
-    ].slice(0, 4)
+    const unique =
+      tagName === '#T'
+        ? publicationIndexSlugTermsForTagFilter('title', raw)
+        : publicationIndexSlugTermsForTagFilter('author', raw)
     if (unique.length === 0) return
     const filter = {
       kinds: [ExtendedKind.PUBLICATION],

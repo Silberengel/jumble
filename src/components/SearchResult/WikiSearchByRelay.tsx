@@ -21,6 +21,7 @@ import {
   wikiEventMatchesSearchPlan,
   wikiIdentifierFiltersFromPlan
 } from '@/lib/wiki-search-query'
+import { indexSlug } from '@/lib/nip54'
 import { useNostr } from '@/providers/NostrProvider'
 import client, { queryService } from '@/services/client.service'
 import { nip66Service } from '@/services/nip66.service'
@@ -121,21 +122,23 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
       )
     }
 
-    /** WS tag filters (NIP-50 `search` added separately). `#T`/`#i` are useful on some relays. */
+    /** WS tag filters (NIP-50 `search` added separately). `#T` must be index_slug values. */
     const buildWsTagFilters = (): Filter[] => {
       const filters: Filter[] = []
+      const tSlugs = new Set<string>()
       for (const title of plan.titleNeedles) {
-        filters.push({
-          kinds: [ExtendedKind.WIKI_ARTICLE],
-          '#T': [title],
-          limit: WIKI_SEARCH_LIMIT
-        } as Filter)
+        const slug = indexSlug(title)
+        if (slug) tSlugs.add(slug)
       }
       for (const dTag of plan.dTags) {
         filters.push({ kinds: [ExtendedKind.WIKI_ARTICLE], '#d': [dTag], limit: WIKI_SEARCH_LIMIT })
+        const slug = indexSlug(dTag)
+        if (slug) tSlugs.add(slug)
+      }
+      for (const slug of tSlugs) {
         filters.push({
           kinds: [ExtendedKind.WIKI_ARTICLE],
-          '#T': [dTag],
+          '#T': [slug],
           limit: WIKI_SEARCH_LIMIT
         } as Filter)
       }
@@ -189,9 +192,8 @@ export default function WikiSearchByRelay({ searchQuery }: { searchQuery: string
       }
     }
 
-    /** Mercury `POST /api/wiki/search` (full-text + metadata). Skip when `#d` can answer — search often hangs. */
+    /** Mercury `POST /api/wiki/search` (full-text + metadata). Run in parallel with `#d`. */
     const fetchHttpWikiSearch = async () => {
-      if (plan.dTags.length > 0) return
       const queries = plan.textQueries.length > 0 ? plan.textQueries : [q]
       await Promise.all(
         WIKI_SEARCH_HTTP_BASES.flatMap((base) =>

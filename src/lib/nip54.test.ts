@@ -4,6 +4,7 @@ import {
   coordinateToNaddr,
   getWikiDeferTarget,
   getWikiForkSource,
+  indexSlug,
   normalizeWikiDTag,
   parseWikiMergeAcceptance,
   parseWikiMergeRequest,
@@ -50,14 +51,19 @@ describe('normalizeWikiDTag', () => {
   })
 })
 
+describe('indexSlug', () => {
+  it('ASCII-folds and preserves hyphens for T/N filters', () => {
+    expect(indexSlug('Jane Austen')).toBe('jane-austen')
+    expect(indexSlug('Jean-Baptiste Lamarck')).toBe('jean-baptiste-lamarck')
+    expect(indexSlug('Étienne Geoffroy Saint-Hilaire')).toBe('etienne-geoffroy-saint-hilaire')
+    expect(indexSlug('Redacted Science')).toBe('redacted-science')
+  })
+})
+
 describe('wikiDTagVariants', () => {
-  it('includes legacy hyphen-stripped import slugs', () => {
-    expect(wikiDTagVariants('Jean-Baptiste Lamarck')).toEqual(
-      expect.arrayContaining(['jean-baptiste-lamarck', 'jeanbaptiste-lamarck'])
-    )
-    expect(wikiDTagVariants('jean-baptiste-lamarck')).toEqual(
-      expect.arrayContaining(['jean-baptiste-lamarck', 'jeanbaptiste-lamarck'])
-    )
+  it('keeps hyphens and does not invent concatenated twins', () => {
+    expect(wikiDTagVariants('Jean-Baptiste Lamarck')).toEqual(['jean-baptiste-lamarck'])
+    expect(wikiDTagVariants('jean-baptiste-lamarck')).toEqual(['jean-baptiste-lamarck'])
   })
 
   it('adds an ASCII-folded twin for accented wiki titles', () => {
@@ -66,6 +72,9 @@ describe('wikiDTagVariants', () => {
         'étienne-geoffroy-saint-hilaire',
         'etienne-geoffroy-saint-hilaire'
       ])
+    )
+    expect(wikiDTagVariants('Étienne Geoffroy Saint-Hilaire')).not.toEqual(
+      expect.arrayContaining(['étienne-geoffroy-sainthilaire', 'etienne-geoffroy-sainthilaire'])
     )
   })
 })
